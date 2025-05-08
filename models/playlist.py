@@ -1,22 +1,22 @@
-from dataclasses import dataclass
+# models/playlist.py
+
+import dataclasses
 from typing import List
 
-from models.track import Track
+# Import the Track data class
+from .track import Track
 
-@dataclass
+@dataclasses.dataclass
 class Playlist:
+    """
+    Data class representing a Spotify playlist.
+    """
     id: str
     name: str
-    description: str
-    cover_url: str
-    tracks: List[Track]
+    description: str | None = None
+    cover_url: str | None = None
+    tracks: List[Track] = dataclasses.field(default_factory=list) # Added default_factory=list
 
-    @classmethod
-    def from_spotdl_metadata(cls, meta: dict, tracks: List[Track]) -> "Playlist":
-        return cls(
-            id=meta["url"].split("/")[-1],
-            name=meta["name"],
-            description=meta.get("description", ""),
-            cover_url=meta.get("cover_url", ""),
-            tracks=tracks
-        )
+    def __repr__(self):
+        return f"Playlist(id='{self.id}', name='{self.name}', tracks={len(self.tracks)} tracks)"
+

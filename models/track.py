@@ -1,27 +1,21 @@
-from dataclasses import dataclass
-from spotdl.types.song import Song as SpotdlSong
+# models/track.py
 
-@dataclass
+import dataclasses
+from typing import List
+
+@dataclasses.dataclass
 class Track:
+    """
+    Data class representing a music track.
+    """
     id: str
     title: str
-    artists: list[str]
-    album: str
-    duration: int   # seconds
-    download_url: str
-    cover_url: str
-    lyrics: str = ""
+    artists: List[str]
+    album: str | None = None
+    duration_ms: int | None = None # Duration in milliseconds
+    download_url: str | None = None # URL for downloading (e.g., YouTube URL found by spotdl)
+    isrc: str | None = None # International Standard Recording Code, often useful for matching
 
-    @classmethod
-    def from_spotdl(cls, song: SpotdlSong) -> "Track":
-        data = song.json  # dict of all metadata
-        return cls(
-            id=data["external_ids"]["isrc"],
-            title=song.name,
-            artists=song.artists,
-            album=song.album_name,
-            duration=song.duration,
-            download_url=song.source_url,
-            cover_url=song.cover_url,
-            lyrics=data.get("lyrics", "")
-        )
+    def __repr__(self):
+        return f"Track(id='{self.id}', title='{self.title}', artists={', '.join(self.artists)})"
+
