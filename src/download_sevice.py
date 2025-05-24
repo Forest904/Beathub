@@ -1,132 +1,175 @@
-# download_service.py
-import os
+# src/download_service.py
+import subprocess
 import json
 import logging
-from typing import List, Dict, Any
-
-from .models import Track, Playlist # Relative import
-from .file_manager import FileManager # Relative import
-from .spotdl_client import SpotDLClient # Relative import
+import os
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials # Only if you want to initialize it here, otherwise pass from app.py
 
 logger = logging.getLogger(__name__)
 
 class DownloadService:
-    def __init__(self, base_output_dir: str = "./downloads"):
-        self.file_manager = FileManager()
-        self.spotdl_client = SpotDLClient()
+    def __init__(self, base_output_dir, spotify_client=None):
         self.base_output_dir = base_output_dir
-        os.makedirs(self.base_output_dir, exist_ok=True)
-        logger.info(f"DownloadService initialized with base output directory: {self.base_output_dir}")
-
-    def download_spotify_content(self, spotify_link: str) -> Dict[str, Any]:
-        """
-        Main method to handle the entire download process for a Spotify link.
-        Returns a dictionary with status and details.
-        """
-        logger.info(f"Processing Spotify link: {spotify_link}")
-
-        try:
-            # Step 1: Fetch metadata using spotdl save
-            raw_tracks_data = self.spotdl_client.save_metadata(spotify_link)
-
-            if not raw_tracks_data:
-                return {"status": "error", "message": f"Could not fetch metadata for Spotify link: {spotify_link}"}
-
-            if not isinstance(raw_tracks_data, list) or not raw_tracks_data:
-                return {"status": "error", "message": "Fetched metadata is empty or in an unexpected format."}
-
-            # Convert raw data to Track objects and determine item details
-            fetched_tracks: List[Track] = []
-            item_name = "Unknown Item"
-            item_cover_url = None
-            item_type = "unknown"
-
-            # Determine item type and a good folder name/cover URL from the first track's metadata
-            first_track_data = raw_tracks_data[0]
-            if "/playlist/" in spotify_link:
-                item_type = "playlist"
-                item_name = first_track_data.get('list_name', 'Downloaded Playlist')
-                item_cover_url = first_track_data.get('list_cover_url')
-                if not item_cover_url:
-                    item_cover_url = first_track_data.get('cover_url')
-            elif "/album/" in spotify_link:
-                item_type = "album"
-                item_name = first_track_data.get('album_name', 'Downloaded Album')
-                item_cover_url = first_track_data.get('album_cover_url')
-                if not item_cover_url:
-                    item_cover_url = first_track_data.get('cover_url')
-            elif "/track/" in spotify_link:
-                item_type = "track"
-                item_name = first_track_data.get('name', 'Downloaded Track')
-                item_cover_url = first_track_data.get('cover_url')
-
-            if not item_name or item_name == "Unknown Item":
-                item_name = first_track_data.get('album_name') or first_track_data.get('name') or "Spotify_Download"
-
-            logger.info(f"Detected item type: {item_type}, Name: '{item_name}'")
-
-            # Populate Track objects for response
-            for t_data in raw_tracks_data:
-                track = Track(
-                    id=t_data.get('song_id', t_data.get('id','')),
-                    title=t_data.get('name', 'Unknown Title'),
-                    artists=t_data.get('artists', ['Unknown Artist']),
-                    album=t_data.get('album_name', t_data.get('album', 'Unknown Album')),
-                    duration_ms=t_data.get('duration') * 1000 if t_data.get('duration') is not None else None,
-                    isrc=t_data.get('isrc'),
-                    spotify_url=t_data.get('url'),
-                    cover_url=t_data.get('cover_url')
-                )
-                fetched_tracks.append(track)
-            logger.info(f"Successfully processed metadata for {len(fetched_tracks)} tracks.")
-
-            # Step 2: Determine output directory for this item
-            item_output_dir = self.file_manager.get_output_directory(self.base_output_dir, item_name)
-            logger.info(f"Content will be saved to: {item_output_dir}")
-
-            # Step 3: Save cover art
-            saved_cover_path = None
-            if item_cover_url:
-                saved_cover_path = self.file_manager.save_cover_art(item_cover_url, item_output_dir, "cover.jpg")
-            else:
-                logger.warning("No primary cover art URL found in metadata. Skipping cover art download.")
-                if fetched_tracks and fetched_tracks[0].cover_url:
-                    logger.info("Attempting to use first track's cover art as a fallback.")
-                    saved_cover_path = self.file_manager.save_cover_art(fetched_tracks[0].cover_url, item_output_dir, "cover.jpg")
-
-            # Step 4: Save the raw .spotdl (JSON) metadata file
-            metadata_filename = self.file_manager.sanitize_filename(item_name) + "_metadata.json"
-            metadata_file_path = os.path.join(item_output_dir, metadata_filename)
+        # If spotify_client is None, initialize it here. Otherwise, use the passed one.
+        # This allows app.py to manage the spotipy client and pass it.
+        self.sp = spotify_client 
+        if not self.sp: # Fallback if not passed (less ideal for shared client)
             try:
-                with open(metadata_file_path, 'w', encoding='utf-8') as f:
-                    json.dump(raw_tracks_data, f, indent=4, ensure_ascii=False)
-                logger.info(f"Metadata saved to {metadata_file_path}")
+                self.sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+                    client_id=os.environ.get('SPOTIPY_CLIENT_ID'),
+                    client_secret=os.environ.get('SPOTIPY_CLIENT_SECRET')
+                ))
             except Exception as e:
-                logger.error(f"Error saving metadata JSON: {e}", exc_info=True)
+                logger.error(f"Failed to initialize Spotipy client in DownloadService: {e}")
+                self.sp = None # Ensure it's None if initialization fails
 
-            # Step 5: Download songs
-            logger.info("Initiating song download...")
-            download_success = self.spotdl_client.download_item(spotify_link, item_output_dir)
+    def _get_item_type(self, spotify_link):
+        if "album" in spotify_link:
+            return "album"
+        elif "track" in spotify_link:
+            return "track"
+        elif "playlist" in spotify_link:
+            return "playlist"
+        return "unknown"
 
-            if download_success:
-                logger.info("All requested songs have been processed by spotdl download.")
+    def get_metadata_from_link(self, spotify_link):
+        """
+        Fetches metadata (title, artist, cover_url, spotify_id)
+        from Spotify API for a given Spotify link without downloading.
+        """
+        if not self.sp:
+            logger.error("Spotipy client not initialized. Cannot fetch metadata.")
+            return None
+
+        item_type = self._get_item_type(spotify_link)
+        try:
+            if item_type == "album":
+                album_id = spotify_link.split('/')[-1].split('?')[0]
+                album_info = self.sp.album(album_id)
                 return {
-                    "status": "success",
-                    "message": "Download completed successfully.",
-                    "item_name": item_name,
-                    "item_type": item_type,
-                    "output_directory": item_output_dir,
-                    "cover_art_saved": saved_cover_path is not None,
-                    "tracks": [t.__dict__ for t in fetched_tracks] # Return track data for frontend
+                    'spotify_id': album_info['id'],
+                    'title': album_info['name'],
+                    'artist': album_info['artists'][0]['name'],
+                    'image_url': album_info['images'][0]['url'] if album_info['images'] else None,
+                    'spotify_url': album_info['external_urls']['spotify'],
+                    'item_type': 'album'
+                }
+            elif item_type == "track":
+                track_id = spotify_link.split('/')[-1].split('?')[0]
+                track_info = self.sp.track(track_id)
+                album_info = track_info['album'] # A track belongs to an album
+                return {
+                    'spotify_id': album_info['id'], # Use album ID for consistent gallery entries
+                    'title': album_info['name'],
+                    'artist': album_info['artists'][0]['name'],
+                    'image_url': album_info['images'][0]['url'] if album_info['images'] else None,
+                    'spotify_url': album_info['external_urls']['spotify'],
+                    'item_type': 'album' # Still treat as album for gallery purposes
+                }
+            elif item_type == "playlist":
+                playlist_id = spotify_link.split('/')[-1].split('?')[0]
+                playlist_info = self.sp.playlist(playlist_id)
+                # For playlists, you might choose to show the playlist's own cover
+                # or fetch individual track/album covers. For gallery, an album is better.
+                # This example just returns placeholder for playlist for now.
+                logger.warning("Playlist metadata retrieval is complex for gallery display. Skipping full details.")
+                return {
+                    'spotify_id': playlist_info['id'],
+                    'title': playlist_info['name'],
+                    'artist': playlist_info['owner']['display_name'],
+                    'image_url': playlist_info['images'][0]['url'] if playlist_info['images'] else None,
+                    'spotify_url': playlist_info['external_urls']['spotify'],
+                    'item_type': 'playlist'
                 }
             else:
-                logger.error("Song download process failed or encountered errors.")
-                return {"status": "error", "message": "Song download process failed or encountered errors."}
-
-        except RuntimeError as e:
-            logger.error(f"Application error: {e}")
-            return {"status": "error", "message": str(e)}
+                logger.warning(f"Unsupported Spotify link type: {spotify_link}")
+                return None
         except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}", exc_info=True)
-            return {"status": "error", "message": "An unexpected server error occurred."}
+            logger.error(f"Error fetching Spotify metadata for {spotify_link}: {e}")
+            return None
 
+
+    def download_spotify_content(self, spotify_link):
+        """
+        Downloads content using spotdl and returns structured information.
+        """
+        item_type = self._get_item_type(spotify_link)
+        metadata = self.get_metadata_from_link(spotify_link)
+
+        if not metadata:
+            return {"status": "error", "message": "Could not retrieve metadata for the given Spotify link."}
+
+        # Define output directory based on item type (e.g., artist/album for albums)
+        # You'll need to adapt spotdl's output format to match this expectation.
+        # A simple approach for now:
+        output_dir = os.path.join(self.base_output_dir, metadata['artist'], metadata['title']).replace(" ", "_")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # spotdl command:
+        # --audio youtube-music (or preferred source)
+        # --format opus (or mp3)
+        # --output "{artist}/{album}/{title}.{ext}" # Example output format
+        # --embed-metadata --metadata-tags all # Embed metadata in audio file
+        # --save-file <path> # Save a list of downloaded files (useful for tracking)
+        # --download-cover # Downloads cover art as separate file
+
+        command = [
+            'spotdl',
+            spotify_link,
+            '--output', os.path.join(output_dir, "{artist} - {album}/{title}.{ext}"), # More structured output
+            '--download-cover', # This downloads album.jpg in the album's directory
+            '--embed-metadata',
+            '--metadata-tags', 'all',
+            '--overwrite', 'skip' # Skip if already exists
+        ]
+        
+        try:
+            logger.info(f"Executing spotdl command: {' '.join(command)}")
+            process = subprocess.run(command, capture_output=True, text=True, check=True)
+            logger.info(f"Spotdl stdout: {process.stdout}")
+            logger.info(f"Spotdl stderr: {process.stderr}")
+
+            # Parse spotdl output to get actual track details if possible
+            # This is a simplification; spotdl doesn't easily return structured track data
+            # in its stdout for all downloads.
+            # You might need to examine the output_dir for downloaded files.
+            
+            # For demonstration, let's assume we can get tracks from the metadata
+            tracks_info = []
+            if item_type == "album":
+                album_tracks = self.sp.album_tracks(metadata['spotify_id'])
+                for track in album_tracks['items']:
+                    tracks_info.append({
+                        'title': track['name'],
+                        'artists': [a['name'] for a in track['artists']],
+                        'cover_url': metadata['image_url'] # All tracks in an album share the same cover
+                    })
+            elif item_type == "track":
+                 track_info = self.sp.track(spotify_link.split('/')[-1].split('?')[0])
+                 tracks_info.append({
+                    'title': track_info['name'],
+                    'artists': [a['name'] for a in track_info['artists']],
+                    'cover_url': metadata['image_url']
+                 })
+
+
+            return {
+                "status": "success",
+                "message": f"Successfully downloaded/processed {item_type}: {metadata['title']}",
+                "item_name": metadata['title'],
+                "item_type": item_type,
+                "output_directory": output_dir, # This is the base directory for the item
+                "cover_art_saved": bool(metadata['image_url']),
+                "tracks": tracks_info
+            }
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Spotdl failed: {e.stderr}")
+            return {"status": "error", "message": f"Spotdl download failed: {e.stderr.strip()}"}
+        except FileNotFoundError:
+            logger.error("Spotdl command not found. Is spotdl installed and in your PATH?")
+            return {"status": "error", "message": "Spotdl command not found. Please install it."}
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during download: {e}")
+            return {"status": "error", "message": f"An unexpected error occurred: {str(e)}"}
