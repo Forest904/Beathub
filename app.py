@@ -1,4 +1,3 @@
-# app.py
 import os
 import logging
 from dotenv import load_dotenv
@@ -9,12 +8,10 @@ load_dotenv()
 # --- Flask specific imports ---
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-# Note: spotipy is now initialized within SpotifyContentDownloader, so no direct import here
-# from spotipy.oauth2 import SpotifyClientCredentials # No longer needed here
 
 # --- Import our new configuration and the main orchestrator ---
 from config import Config
-from src.spotify_content_downloader import SpotifyContentDownloader 
+from src.spotify_content_downloader import SpotifyContentDownloader
 
 # --- Import db, DownloadedItem model (formerly Album), and the initialization function ---
 from database.db_manager import db, DownloadedItem, initialize_database # Renamed Album to DownloadedItem
@@ -57,7 +54,7 @@ def create_app():
             return jsonify({"status": "error", "message": "Spotify link is required."}), 400
 
         logger.info(f"Received download request for: {spotify_link}")
-        
+
         # Delegate the entire download process to the orchestrator
         result = spotify_downloader.download_spotify_content(spotify_link)
 
@@ -65,7 +62,7 @@ def create_app():
             # Extract relevant metadata from the result for DB storage
             # These values come directly from the orchestrator's return dictionary
             item_type = result.get('item_type')
-            spotify_id = result.get('spotify_id') 
+            spotify_id = result.get('spotify_id')
             title = result.get('item_name')
             artist = result.get('artist')
             image_url = result.get('cover_art_url')
@@ -86,7 +83,7 @@ def create_app():
                 try:
                     # Check if an entry with this spotify_id already exists
                     existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
-                    
+
                     if not existing_item:
                         # Create a new entry
                         logger.info(f"Creating new DB entry for {item_type}: '{title}' by '{artist}'")
@@ -112,7 +109,7 @@ def create_app():
                             logger.info(f"Updated local_path for '{existing_item.title}' to '{local_path}'")
                         else:
                             logger.info(f"No update needed for existing {item_type} '{existing_item.title}'.")
-                
+
                 except Exception as e:
                     db.session.rollback() # IMPORTANT: Rollback the session in case of any database error
                     logger.error(f"DATABASE ERROR: Failed to save/update {item_type} '{title}' (ID: {spotify_id}) to DB: {e}", exc_info=True)
@@ -149,7 +146,7 @@ def create_app():
         item = DownloadedItem.query.get(item_id) # Use DownloadedItem model
         if not item:
             return jsonify({'success': False, 'message': 'Item not found'}), 404
-        
+
         # Optional: Add logic here to delete the actual files from the local_path
         if item.local_path and os.path.exists(item.local_path):
             try:
@@ -166,6 +163,71 @@ def create_app():
         logger.info(f"Successfully deleted {item.item_type} '{item.title}' from DB.")
         return jsonify({'success': True, 'message': 'Item deleted successfully.'}), 200
 
+    # --- NEW ARTIST BROWSER ENDPOINTS ---
+    @app.route('/api/search_artists', methods=['GET'])
+    def search_artists_api():
+        query = request.args.get('q', '')
+        if not query:
+            return jsonify({"artists": []})
+
+        try:
+            # Use the Spotipy instance from spotify_downloader
+            sp = spotify_downloader.get_spotipy_instance()
+            if not sp:
+                return jsonify({"error": "Spotify API not initialized"}), 500
+
+            results = sp.search(q=query, type='artist', limit=20) # You can adjust limit
+            artists = []
+            for artist in results['artists']['items']:
+                artists.append({
+                    'id': artist['id'],
+                    'name': artist['name'],
+                    'genres': artist['genres'],
+                    'followers': artist['followers']['total'],
+                    'image': artist['images'][0]['url'] if artist['images'] else None,
+                    'external_urls': artist['external_urls']['spotify']
+                })
+            return jsonify({"artists": artists})
+        except Exception as e:
+            logger.error(f"Error searching artists: {e}", exc_info=True)
+            return jsonify({"error": "Failed to search artists"}), 500
+
+    @app.route('/api/famous_artists', methods=['GET'])
+    def get_famous_artists_api():
+        # This is a simplified list. In a real app, you might fetch these dynamically
+        # or have a more robust way to define "famous".
+        famous_artist_names = [
+            "Queen", "Michael Jackson", "The Beatles", "Adele", "Ed Sheeran",
+            "Taylor Swift", "Beyoncé", "Drake", "Eminem", "Rihanna",
+            "Coldplay", "Bruno Mars", "Justin Bieber", "Ariana Grande", "Post Malone"
+        ]
+        artists_data = []
+        try:
+            sp = spotify_downloader.get_spotipy_instance()
+            if not sp:
+                return jsonify({"error": "Spotify API not initialized"}), 500
+
+            for name in famous_artist_names:
+                try:
+                    results = sp.search(q=name, type='artist', limit=1)
+                    if results and results['artists']['items']:
+                        artist = results['artists']['items'][0]
+                        artists_data.append({
+                            'id': artist['id'],
+                            'name': artist['name'],
+                            'genres': artist['genres'],
+                            'followers': artist['followers']['total'],
+                            'image': artist['images'][0]['url'] if artist['images'] else None,
+                            'external_urls': artist['external_urls']['spotify']
+                        })
+                except Exception as e:
+                    logger.warning(f"Error fetching data for famous artist {name}: {e}")
+                    continue # Continue to the next artist even if one fails
+            return jsonify({"artists": artists_data})
+        except Exception as e:
+            logger.error(f"General error fetching famous artists: {e}", exc_info=True)
+            return jsonify({"error": "Failed to retrieve famous artists"}), 500
+
     # --- Catch-all route for serving React app in production (remains the same) ---
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
@@ -174,13 +236,13 @@ def create_app():
             return send_from_directory(app.static_folder, path)
         else:
             return send_from_directory(app.static_folder, 'index.html')
-            
+
     return app
 
 if __name__ == '__main__':
     # Ensure the base downloads directory exists when the app starts
     os.makedirs(Config.BASE_OUTPUT_DIR, exist_ok=True)
-    
+
     # Check API credentials at startup
     if not Config.SPOTIPY_CLIENT_ID or not Config.SPOTIPY_CLIENT_SECRET:
         logger.warning("Spotify API client ID or client secret not found in environment variables.")

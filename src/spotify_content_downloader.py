@@ -1,4 +1,6 @@
 import logging
+import spotipy # Import spotipy here
+from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
 
 # Import the decoupled services using relative imports
 from .metadata_service import MetadataService
@@ -16,17 +18,43 @@ class SpotifyContentDownloader:
         """
         # These values are received as arguments
         self.base_output_dir = base_output_dir if base_output_dir is not None else 'downloads' # Provide a robust default if none is passed
-        _spotify_client_id = spotify_client_id
-        _spotify_client_secret = spotify_client_secret
-        _genius_access_token = genius_access_token
+        self._spotify_client_id = spotify_client_id
+        self._spotify_client_secret = spotify_client_secret
+        self._genius_access_token = genius_access_token
 
         # Initialize the sub-services, passing them their respective configuration
-        self.metadata_service = MetadataService(spotify_client_id=_spotify_client_id, spotify_client_secret=_spotify_client_secret)
+        self.metadata_service = MetadataService(
+            spotify_client_id=self._spotify_client_id,
+            spotify_client_secret=self._spotify_client_secret
+        )
         self.audio_cover_download_service = AudioCoverDownloadService(base_output_dir=self.base_output_dir)
-        self.lyrics_service = LyricsService(genius_access_token=_genius_access_token)
+        self.lyrics_service = LyricsService(genius_access_token=self._genius_access_token)
         self.file_manager = FileManager(base_output_dir=self.base_output_dir)
 
+        # Initialize Spotipy directly within the downloader for artist search access
+        # This uses the same credentials passed to MetadataService
+        self.sp = None # Initialize to None
+        if self._spotify_client_id and self._spotify_client_secret:
+            try:
+                self.sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+                    client_id=self._spotify_client_id,
+                    client_secret=self._spotify_client_secret
+                ))
+                logger.info("Spotipy instance initialized within SpotifyContentDownloader.")
+            except Exception as e:
+                logger.error(f"Failed to initialize Spotipy in SpotifyContentDownloader: {e}", exc_info=True)
+        else:
+            logger.warning("Spotify client ID or secret missing. Spotipy instance for direct searches will not be available.")
+
         logger.info("SpotifyContentDownloader initialized with decoupled services and configuration passed.")
+
+    def get_spotipy_instance(self):
+        """
+        Provides access to the initialized Spotipy instance.
+        This is crucial for external modules (like app.py) to perform direct Spotify API calls
+        (e.g., artist search) without re-initializing Spotipy.
+        """
+        return self.sp
 
     def download_spotify_content(self, spotify_link):
         """
@@ -75,7 +103,7 @@ class SpotifyContentDownloader:
             item_type,
             image_url_from_metadata
         )
-        
+
         # Enrich tracks with lyrics paths
         for track_detail in detailed_tracks_list:
             track_title = track_detail.get('title', 'Unknown Title')
@@ -101,7 +129,7 @@ class SpotifyContentDownloader:
             'local_cover_image_path': local_cover_image_path,
             'tracks_details': detailed_tracks_list
         }
-        
+
         metadata_json_path = self.file_manager.save_metadata_json(
             item_specific_output_dir,
             comprehensive_metadata_to_save
