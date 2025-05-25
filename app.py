@@ -77,8 +77,6 @@ def create_app():
                 return jsonify(result), 200 # Still return success for download, but warn about DB
 
             # Determine if this item type should be stored in the DownloadedItem model
-            # This logic assumes your DownloadedItem model now has an 'item_type' column.
-            # If you only want to store 'albums' in this table, change to `if item_type == "album":`
             if item_type in ["album", "track", "playlist"]:
                 try:
                     # Check if an entry with this spotify_id already exists
@@ -94,7 +92,7 @@ def create_app():
                             image_url=image_url,
                             spotify_url=spotify_url,
                             local_path=local_path,
-                            item_type=item_type # Pass the item_type to the model
+                            item_type=item_type
                         )
                         db.session.add(new_item)
                         db.session.commit()
@@ -102,7 +100,6 @@ def create_app():
                     else:
                         # Update existing entry
                         logger.info(f"{item_type.capitalize()} '{existing_item.title}' already in DB (ID: {existing_item.id}). Checking for updates.")
-                        # Check if local_path needs updating (e.g., if re-downloaded to a new path)
                         if existing_item.local_path != local_path:
                             existing_item.local_path = local_path
                             db.session.commit()
@@ -111,13 +108,10 @@ def create_app():
                             logger.info(f"No update needed for existing {item_type} '{existing_item.title}'.")
 
                 except Exception as e:
-                    db.session.rollback() # IMPORTANT: Rollback the session in case of any database error
+                    db.session.rollback()
                     logger.error(f"DATABASE ERROR: Failed to save/update {item_type} '{title}' (ID: {spotify_id}) to DB: {e}", exc_info=True)
-                    # You can decide to return an error to the client here, or just log and continue
-                    # return jsonify({"status": "error", "message": f"Download successful, but DB save failed for {item_type}: {str(e)}"}), 500
             else:
                 logger.warning(f"Unhandled item_type '{item_type}' encountered. Skipping DB storage for this item.")
-
 
             return jsonify(result), 200
         else:
@@ -125,15 +119,13 @@ def create_app():
             return jsonify(result), status_code
 
     @app.route('/api/albums', methods=['GET'])
-    def get_downloaded_items(): # Renamed function for consistency
-        # Retrieves all items (albums, tracks, etc.) from the DownloadedItem table
-        # You might want to filter by item_type here if needed, e.g., .filter_by(item_type='album')
+    def get_downloaded_items():
         items = DownloadedItem.query.order_by(DownloadedItem.title).all()
-        return jsonify([item.to_dict() for item in items]), 200 # Iterate through items and call .to_dict()
+        return jsonify([item.to_dict() for item in items]), 200
 
     @app.route('/api/albums/<int:item_id>/favorite', methods=['POST'])
-    def toggle_favorite(item_id): # Renamed parameter for consistency
-        item = DownloadedItem.query.get(item_id) # Use DownloadedItem model
+    def toggle_favorite(item_id):
+        item = DownloadedItem.query.get(item_id)
         if not item:
             return jsonify({'success': False, 'message': 'Item not found'}), 404
         item.is_favorite = not item.is_favorite
@@ -142,12 +134,11 @@ def create_app():
         return jsonify({'success': True, 'is_favorite': item.is_favorite}), 200
 
     @app.route('/api/albums/<int:item_id>', methods=['DELETE'])
-    def delete_downloaded_item(item_id): # Renamed function and parameter for consistency
-        item = DownloadedItem.query.get(item_id) # Use DownloadedItem model
+    def delete_downloaded_item(item_id):
+        item = DownloadedItem.query.get(item_id)
         if not item:
             return jsonify({'success': False, 'message': 'Item not found'}), 404
 
-        # Optional: Add logic here to delete the actual files from the local_path
         if item.local_path and os.path.exists(item.local_path):
             try:
                 import shutil
@@ -155,7 +146,6 @@ def create_app():
                 logger.info(f"Successfully deleted local directory for {item.item_type}: {item.title} at {item.local_path}")
             except Exception as e:
                 logger.error(f"Failed to delete local directory {item.local_path} for {item.title}: {e}", exc_info=True)
-                # Decide if you want to abort DB deletion if file deletion fails
                 return jsonify({'success': False, 'message': f'Failed to delete local files: {str(e)}'}), 500
 
         db.session.delete(item)
@@ -163,7 +153,6 @@ def create_app():
         logger.info(f"Successfully deleted {item.item_type} '{item.title}' from DB.")
         return jsonify({'success': True, 'message': 'Item deleted successfully.'}), 200
 
-    # --- NEW ARTIST BROWSER ENDPOINTS ---
     @app.route('/api/search_artists', methods=['GET'])
     def search_artists_api():
         query = request.args.get('q', '')
@@ -171,12 +160,11 @@ def create_app():
             return jsonify({"artists": []})
 
         try:
-            # Use the Spotipy instance from spotify_downloader
             sp = spotify_downloader.get_spotipy_instance()
             if not sp:
                 return jsonify({"error": "Spotify API not initialized"}), 500
 
-            results = sp.search(q=query, type='artist', limit=20) # You can adjust limit
+            results = sp.search(q=query, type='artist', limit=20)
             artists = []
             for artist in results['artists']['items']:
                 artists.append({
@@ -194,8 +182,6 @@ def create_app():
 
     @app.route('/api/famous_artists', methods=['GET'])
     def get_famous_artists_api():
-        # This is a simplified list. In a real app, you might fetch these dynamically
-        # or have a more robust way to define "famous".
         famous_artist_names = [
             "Queen", "Michael Jackson", "The Beatles", "Adele", "Ed Sheeran",
             "Taylor Swift", "Beyoncé", "Drake", "Eminem", "Rihanna",
@@ -222,11 +208,85 @@ def create_app():
                         })
                 except Exception as e:
                     logger.warning(f"Error fetching data for famous artist {name}: {e}")
-                    continue # Continue to the next artist even if one fails
+                    continue
             return jsonify({"artists": artists_data})
         except Exception as e:
             logger.error(f"General error fetching famous artists: {e}", exc_info=True)
             return jsonify({"error": "Failed to retrieve famous artists"}), 500
+
+    # --- NEW ARTIST DETAIL ENDPOINTS ---
+    @app.route('/api/artist_details/<string:artist_id>', methods=['GET'])
+    def get_artist_details(artist_id):
+        try:
+            sp = spotify_downloader.get_spotipy_instance()
+            if not sp:
+                return jsonify({"error": "Spotify API not initialized"}), 500
+
+            artist_data = sp.artist(artist_id)
+            if not artist_data:
+                return jsonify({"message": "Artist not found"}), 404
+
+            # Extract relevant details
+            details = {
+                'id': artist_data['id'],
+                'name': artist_data['name'],
+                'genres': artist_data['genres'],
+                'followers': artist_data['followers']['total'],
+                'popularity': artist_data['popularity'],
+                'image': artist_data['images'][0]['url'] if artist_data['images'] else None,
+                'external_urls': artist_data['external_urls']['spotify']
+            }
+            logger.info(f"Fetched details for artist: {artist_data['name']}")
+            return jsonify(details), 200
+
+        except Exception as e:
+            logger.error(f"Error fetching artist details for ID {artist_id}: {e}", exc_info=True)
+            return jsonify({"error": "Failed to retrieve artist details"}), 500
+
+    @app.route('/api/artist_discography/<string:artist_id>', methods=['GET'])
+    def get_artist_discography(artist_id):
+        try:
+            sp = spotify_downloader.get_spotipy_instance()
+            if not sp:
+                return jsonify({"error": "Spotify API not initialized"}), 500
+
+            # Fetch albums and singles
+            albums_results = sp.artist_albums(artist_id, album_type='album,single', country='US', limit=50) # You can adjust limit and country
+            if not albums_results:
+                return jsonify({"discography": []}), 200
+
+            discography = []
+            seen_albums = set() # To filter out duplicates (e.g., deluxe versions, multiple markets)
+
+            for album_data in albums_results['items']:
+                # Use a unique identifier, e.g., combine album name and release date to check for uniqueness
+                # Or, often, Spotify's 'album_group' can help, but filtering by name is usually robust enough for display
+                album_name_lower = album_data['name'].lower()
+                if album_name_lower in seen_albums:
+                    continue # Skip if we've already added this album name
+
+                # Ensure 'artists' is a list and extract names
+                artists = [a['name'] for a in album_data.get('artists', [])]
+
+                discography.append({
+                    'id': album_data['id'],
+                    'name': album_data['name'],
+                    'album_type': album_data['album_type'],
+                    'release_date': album_data.get('release_date'),
+                    'total_tracks': album_data.get('total_tracks'),
+                    'image_url': album_data['images'][0]['url'] if album_data['images'] else None,
+                    'spotify_url': album_data['external_urls']['spotify'],
+                    'artist': artists[0] if artists else 'Various Artists', # Primary artist name
+                    'artists': artists # All artists on the album
+                })
+                seen_albums.add(album_name_lower) # Mark as seen
+
+            logger.info(f"Fetched discography for artist ID {artist_id}. Found {len(discography)} unique items.")
+            return jsonify({"discography": discography}), 200
+
+        except Exception as e:
+            logger.error(f"Error fetching artist discography for ID {artist_id}: {e}", exc_info=True)
+            return jsonify({"error": "Failed to retrieve artist discography"}), 500
 
     # --- Catch-all route for serving React app in production (remains the same) ---
     @app.route('/', defaults={'path': ''})

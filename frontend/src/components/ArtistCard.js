@@ -1,11 +1,16 @@
 // src/components/ArtistCard.js
 import React from 'react';
+import { Link } from 'react-router-dom'; // Import Link
 
 function ArtistCard({ artist }) {
   const imageUrl = artist.image || 'https://via.placeholder.com/150?text=No+Image'; // Placeholder for missing images
 
   return (
-    <a href={artist.external_urls} target="_blank" rel="noopener noreferrer" className="block transform transition-transform duration-200 hover:scale-105">
+    // Use Link component for navigation
+    <Link
+      to={`/artists/${artist.id}`} // This is the crucial change: navigates to /artists/:artistId
+      className="block transform transition-transform duration-200 hover:scale-105"
+    >
       <div className="bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full">
         <div className="relative w-full h-48 sm:h-56 md:h-64 overflow-hidden">
           <img
@@ -29,7 +34,7 @@ function ArtistCard({ artist }) {
           )}
         </div>
       </div>
-    </a>
+    </Link>
   );
 }
 

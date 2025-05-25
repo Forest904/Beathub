@@ -2,24 +2,30 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
-import Header from './components/Header'; // New Header component
-import ArtistBrowserPage from './pages/ArtistBrowserPage'; // Your new artist page
-import SpotifyDownloadPage from './pages/SpotifyDownloadPage'; // Your renamed App.js
+import Header from './components/Header';
+import ArtistBrowserPage from './pages/ArtistBrowserPage';
+import SpotifyDownloadPage from './pages/SpotifyDownloadPage';
+import ArtistDetailsPage from './pages/ArtistDetailsPage'; // Import the new page
 import './App.css'; // Global styles (including Tailwind setup)
 
 function App() {
   return (
     <Router>
       <div className="App bg-gray-100 min-h-screen">
-        <Header /> {/* Render the Header here */}
+        <Header />
 
-        <main className="py-8"> {/* Add some padding to main content */}
+        <main className="py-8">
           <Routes>
-            {/* Define your routes */}
+            {/* Existing routes */}
             <Route path="/artists" element={<ArtistBrowserPage />} />
             <Route path="/downloads" element={<SpotifyDownloadPage />} />
-            {/* Set a default route, e.g., redirect to artists or downloads */}
-            <Route path="/" element={<ArtistBrowserPage />} /> {/* Default to Artist Browser */}
+
+            {/* NEW ROUTE for Artist Details Page */}
+            {/* The :artistId is a URL parameter that will be available via useParams() */}
+            <Route path="/artists/:artistId" element={<ArtistDetailsPage />} />
+
+            {/* Default route */}
+            <Route path="/" element={<ArtistBrowserPage />} />
           </Routes>
         </main>
       </div>
