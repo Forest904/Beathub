@@ -16,7 +16,7 @@ from spotipy.oauth2 import SpotifyClientCredentials
 from config import Config
 from src.download_sevice import DownloadService
 
-# --- NEW: Import db, Album model, and the initialization function from our database manager ---
+# --- Import db, Album model, and the initialization function from our database manager ---
 from database.db_manager import db, Album, initialize_database
 
 # --- Logger Configuration (remains the same) ---
@@ -35,11 +35,10 @@ def create_app():
     app.config.from_object(Config)
     CORS(app)
 
-    # NEW: Initialize database extensions by calling the function from db_manager
-    # This will also call db.create_all() internally.
+    #Initialize database
     initialize_database(app)
 
-    # Initialize Spotipy (for fetching metadata for gallery)
+    # Initialize Spotipy (for fetching metadata)
     spotipy_client = spotipy.Spotify(
         auth_manager=SpotifyClientCredentials(
             client_id=app.config.get('SPOTIPY_CLIENT_ID'),
@@ -129,10 +128,11 @@ if __name__ == '__main__':
     # Ensure the 'downloads' directory exists when the app starts
     os.makedirs("./downloads", exist_ok=True)
     
-    # Check Spotify credentials at startup (informative)
-    if not Config.SPOTIPY_CLIENT_ID or not Config.SPOTIPY_CLIENT_SECRET:
+    # Check Spotify credentials at startup
+    if not Config.SPOTIPY_CLIENT_ID or not Config.SPOTIPY_CLIENT_SECRET or not Config.GENIUS_ACCESS_TOKEN:
         logger.warning("Spotify API credentials not found in environment variables.")
         logger.warning("Please set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET for full functionality.")
+        logger.warning("Genius API access token is also recommended for lyrics fetching.")
 
     # Create the app instance here
     app = create_app()
