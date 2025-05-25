@@ -1,0 +1,15 @@
+/* src/index.css or App.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Your custom styles from original index.html can go here or in specific components */
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #1a202c; /* Dark background */
+    color: #e2e8f0; /* Light text */
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}

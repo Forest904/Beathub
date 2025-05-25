@@ -1,13 +1,13 @@
 import os
 import logging
-from flask import Flask, request, jsonify # Removed send_from_directory
+from flask import Flask, request, jsonify, send_from_directory  # Removed send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy # New
 import spotipy # New
 from spotipy.oauth2 import SpotifyClientCredentials # New
 
 # --- Import your refactored modules ---
-from src import DownloadService
+from src.download_service import DownloadService
 
 # --- Logger Configuration ---
 logging.basicConfig(
@@ -24,7 +24,7 @@ app = Flask(__name__)
 CORS(app) # Enable CORS for all routes (important for React frontend)
 
 # --- Configuration ---
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a_very_secret_key_change_me') # Good practice
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a_very_secret_key_change_me_asap') # Good practice
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/cd_collection.db' # Ensure 'instance' folder exists
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
