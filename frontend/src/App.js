@@ -93,9 +93,9 @@ function App() {
             </div>
 
             <div className="bg-gray-700 p-6 rounded-lg shadow-lg">
-                <h2 className="text-2xl font-semibold text-white mb-4">My Previously Downloaded Albums</h2>
+                <h2 className="text-2xl font-semibold text-white mb-4">My Previous Downloads:</h2>
                 {loading && <p className="text-gray-300 text-center">Loading albums...</p>}
-                {!loading && albums.length === 0 && <p className="text-gray-300 text-center">No albums in your collection yet. Add some!</p>}
+                {!loading && albums.length === 0 && <p className="text-gray-300 text-center">Not one thing in your collection yet. Add some!</p>}
                 <AlbumGallery
                     albums={albums}
                     onToggleFavorite={handleToggleFavorite}

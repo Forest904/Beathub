@@ -2,7 +2,7 @@ import logging
 
 # Import the decoupled services using relative imports
 from .metadata_service import MetadataService
-from .download_sevice import DownloadService
+from .download_sevice import AudioCoverDownloadService
 from .lyrics_service import LyricsService
 from .file_manager import FileManager
 
@@ -22,7 +22,7 @@ class SpotifyContentDownloader:
 
         # Initialize the sub-services, passing them their respective configuration
         self.metadata_service = MetadataService(spotify_client_id=_spotify_client_id, spotify_client_secret=_spotify_client_secret)
-        self.audio_cover_download_service = DownloadService(base_output_dir=self.base_output_dir)
+        self.audio_cover_download_service = AudioCoverDownloadService(base_output_dir=self.base_output_dir)
         self.lyrics_service = LyricsService(genius_access_token=_genius_access_token)
         self.file_manager = FileManager(base_output_dir=self.base_output_dir)
 

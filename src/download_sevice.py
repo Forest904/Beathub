@@ -7,7 +7,7 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-class DownloadService:
+class AudioCoverDownloadService:
     def __init__(self, base_output_dir=None, spotdl_audio_source="youtube-music", spotdl_format="opus"):
         """
         Initializes the DownloadService.
