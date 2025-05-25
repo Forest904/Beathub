@@ -1,6 +1,6 @@
 // src/App.js
 import React, { useState, useEffect } from 'react';
-import axios from 'axios'; // Or use native fetch
+import axios from 'axios';
 import DownloadForm from './components/DownloadForm';
 import AlbumGallery from './components/AlbumGallery';
 import Message from './components/Message';
@@ -84,16 +84,16 @@ function App() {
 
     return (
         <div className="container mx-auto p-4">
-            <h1 className="text-4xl font-bold text-white text-center mb-8">CD Collector & Spotify Downloader</h1>
+            <h1 className="text-4xl font-bold text-white text-center mb-8">My Spotify Downloader</h1>
 
             <div className="bg-gray-700 p-6 rounded-lg shadow-lg mb-8">
-                <h2 className="text-2xl font-semibold text-white mb-4">Download Spotify Content</h2>
+                <h2 className="text-2xl font-semibold text-white mb-4">Download from Spotify </h2>
                 <DownloadForm onSubmit={handleDownload} loading={loading} />
                 {message && <Message type={message.type} text={message.text} />}
             </div>
 
             <div className="bg-gray-700 p-6 rounded-lg shadow-lg">
-                <h2 className="text-2xl font-semibold text-white mb-4">My CD Collection Gallery</h2>
+                <h2 className="text-2xl font-semibold text-white mb-4">My Previously Downloaded Albums</h2>
                 {loading && <p className="text-gray-300 text-center">Loading albums...</p>}
                 {!loading && albums.length === 0 && <p className="text-gray-300 text-center">No albums in your collection yet. Add some!</p>}
                 <AlbumGallery

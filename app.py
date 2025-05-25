@@ -1,7 +1,7 @@
 # app.py
 import os
 import logging
-from dotenv import load_dotenv # For loading .env variables
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
@@ -12,15 +12,14 @@ from flask_cors import CORS
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
-# --- Import our new configuration and database modules ---
+# --- Import our new configuration and refactored service module ---
 from config import Config
-from database import db
-from models import Album # Import Album model to register it with SQLAlchemy
-
-# --- Import our refactored service module ---
 from src.download_sevice import DownloadService
 
-# --- Logger Configuration ---
+# --- NEW: Import db, Album model, and the initialization function from our database manager ---
+from database.db_manager import db, Album, initialize_database
+
+# --- Logger Configuration (remains the same) ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -32,11 +31,13 @@ logger = logging.getLogger(__name__)
 
 
 def create_app():
-    app = Flask(__name__, static_folder='build', static_url_path='') # Point to React's build folder
-    app.config.from_object(Config) # Load config from config.py
-    CORS(app) # Enable CORS for all routes
+    app = Flask(__name__, static_folder='build', static_url_path='')
+    app.config.from_object(Config)
+    CORS(app)
 
-    db.init_app(app) # Initialize SQLAlchemy with the app
+    # NEW: Initialize database extensions by calling the function from db_manager
+    # This will also call db.create_all() internally.
+    initialize_database(app)
 
     # Initialize Spotipy (for fetching metadata for gallery)
     spotipy_client = spotipy.Spotify(
@@ -49,10 +50,10 @@ def create_app():
     # Initialize the DownloadService
     download_service = DownloadService(
         base_output_dir="./downloads",
-        spotify_client=spotipy_client # Pass sp client
+        spotify_client=spotipy_client
     )
 
-    # --- API Endpoints ---
+    # --- API Endpoints (referencing Album from db_manager) ---
     @app.route('/api/download', methods=['POST'])
     def download_spotify_item_api():
         data = request.get_json()
@@ -75,15 +76,15 @@ def create_app():
                         artist=album_data['artist'],
                         image_url=album_data['image_url'],
                         spotify_url=album_data['spotify_url'],
-                        local_path=result.get('output_directory')
+                        local_path=result.get('output_directory_base')
                     )
                     db.session.add(new_album)
                     db.session.commit()
                     logger.info(f"Added new album to DB: {new_album.title}")
                 else:
                     logger.info(f"Album already in DB, skipping add: {existing_album.title}")
-                    if not existing_album.local_path and result.get('output_directory'):
-                        existing_album.local_path = result.get('output_directory')
+                    if not existing_album.local_path and result.get('output_directory_base'):
+                        existing_album.local_path = result.get('output_directory_base')
                         db.session.commit()
             return jsonify(result), 200
         else:
@@ -113,7 +114,7 @@ def create_app():
         db.session.commit()
         return jsonify({'success': True, 'message': 'Album deleted successfully.'}), 200
 
-    # --- Catch-all route for serving React app in production ---
+    # --- Catch-all route for serving React app in production (remains the same) ---
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve_react_app(path):
@@ -122,7 +123,7 @@ def create_app():
         else:
             return send_from_directory(app.static_folder, 'index.html')
             
-    return app # Return the app instance
+    return app
 
 if __name__ == '__main__':
     # Ensure the 'downloads' directory exists when the app starts
@@ -133,6 +134,7 @@ if __name__ == '__main__':
         logger.warning("Spotify API credentials not found in environment variables.")
         logger.warning("Please set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET for full functionality.")
 
-    app = create_app() # Create the app instance here
+    # Create the app instance here
+    app = create_app()
     logger.info("Starting Flask application...")
     app.run(debug=True, host='0.0.0.0', port=5000)

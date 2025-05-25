@@ -1,11 +1,11 @@
 # src/download_service.py
 import subprocess
-import json
 import logging
 import os
 import re # For filename sanitization
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,8 @@ class DownloadService:
         :param spotdl_format: The audio format to download (e.g., "opus", "mp3", "flac").
         """
         self.base_output_dir = base_output_dir
-        self.spotdl_audio_source = spotdl_audio_source
+        # These are no longer directly used in the spotdl command but kept for potential future use or context
+        self.spotdl_audio_source = spotdl_audio_source 
         self.spotdl_format = spotdl_format
 
         # Initialize Spotipy client
@@ -125,11 +126,7 @@ class DownloadService:
         if not metadata:
             return {"status": "error", "message": "Could not retrieve metadata for the given Spotify link."}
 
-        # spotdl command:
-        # --output "{artist} - {album}/{title}.{ext}" ensures structure like Artist Name - Album Name/Track.ext
-        # within the base_output_dir.
         # Sanitizing artist/title for path safety.
-        # Note: spotdl itself often sanitizes, but doing it beforehand adds robustness.
         sanitized_artist = self._sanitize_filename(metadata['artist'])
         sanitized_album_title = self._sanitize_filename(metadata['title'])
 
@@ -140,56 +137,42 @@ class DownloadService:
         output_template = os.path.join(
             self.base_output_dir,
             f"{sanitized_artist} - {sanitized_album_title}",
-            "{title}.{ext}" # spotdl will replace {title} and {ext}
+            "{title}.{ext}"
         )
 
+        # SIMPLIFIED COMMAND: Removed custom flags, relying on spotdl defaults
         command = [
-            'spotdl',
+            sys.executable, '-m', 'spotdl',
             spotify_link,
             '--output', output_template,
-            '--download-cover', 
-            '--embed-metadata',
-            '--metadata-tags', 'all',
-            '--overwrite', 'skip', # Skip if already exists
-            '--audio', self.spotdl_audio_source, # Use configurable audio source
-            '--format', self.spotdl_format # Use configurable audio format
+            # Removed: '--download-cover', '--embed-metadata', '--metadata-tags', 'all',
+            # Removed: '--overwrite', 'skip', '--audio', self.spotdl_audio_source, '--format', self.spotdl_format
         ]
         
         try:
             logger.info(f"Executing spotdl command: {' '.join(command)}")
             process = subprocess.run(command, capture_output=True, text=True, check=True)
             logger.info(f"Spotdl stdout: {process.stdout}")
-            # Check for errors in stderr, as spotdl often puts warnings/errors there
             if process.stderr:
                 logger.warning(f"Spotdl stderr: {process.stderr.strip()}")
 
             tracks_info = []
-            # For albums/playlists, we need to iterate over the items from Spotify API
-            # or try to parse spotdl's output (which is less straightforward).
-            # The current approach populates tracks_info from Spotify API calls
-            # before download, but spotdl's actual downloaded files might vary.
-            # A more advanced approach would be to parse spotdl's --log-level debug output
-            # or scan the output_directory after download.
-
             if item_type == "album":
                 album_tracks_response = self.sp.album_tracks(metadata['spotify_id'])
                 for track in album_tracks_response['items']:
                     tracks_info.append({
                         'title': track['name'],
                         'artists': [a['name'] for a in track['artists']],
-                        'cover_url': metadata['image_url'] # All tracks in an album share the same cover
+                        'cover_url': metadata['image_url']
                     })
             elif item_type == "track":
-                # For a single track download, populate its info
-                track_info = self.sp.track(metadata['spotify_id']) # Use the track's spotify_id directly
+                track_info = self.sp.track(metadata['spotify_id'])
                 tracks_info.append({
                     'title': track_info['name'],
                     'artists': [a['name'] for a in track_info['artists']],
-                    'cover_url': metadata['image_url'] # Use album cover from metadata
+                    'cover_url': metadata['image_url']
                 })
             elif item_type == "playlist":
-                # Fetch tracks for playlist for the returned `tracks` array
-                # Note: This might involve multiple API calls for large playlists
                 playlist_tracks = []
                 results = self.sp.playlist_items(metadata['spotify_id'])
                 playlist_tracks.extend(results['items'])
@@ -198,12 +181,12 @@ class DownloadService:
                     playlist_tracks.extend(results['items'])
                 
                 for item in playlist_tracks:
-                    track = item['track']
-                    if track: # Ensure track is not None (e.g. if item was removed from playlist)
+                    track = item.get('track')
+                    if track:
                         tracks_info.append({
                             'title': track['name'],
                             'artists': [a['name'] for a in track['artists']],
-                            'cover_url': track['album']['images'][0]['url'] if track['album']['images'] else None
+                            'cover_url': track['album']['images'][0]['url'] if track['album'].get('images') else None
                         })
             
             return {
@@ -211,8 +194,8 @@ class DownloadService:
                 "message": f"Successfully downloaded/processed {item_type}: {metadata['title']}",
                 "item_name": metadata['title'],
                 "item_type": item_type,
-                "output_directory_base": os.path.join(self.base_output_dir, f"{sanitized_artist} - {sanitized_album_title}"), # The specific directory spotdl used
-                "cover_art_saved": bool(metadata['image_url']), # Spotdl saves cover.jpg
+                "output_directory_base": os.path.join(self.base_output_dir, f"{sanitized_artist} - {sanitized_album_title}"),
+                "cover_art_saved": bool(metadata['image_url']),
                 "tracks": tracks_info
             }
 
@@ -220,8 +203,8 @@ class DownloadService:
             logger.error(f"Spotdl failed with exit code {e.returncode}. Stderr: {e.stderr.strip()}")
             return {"status": "error", "message": f"Spotdl download failed: {e.stderr.strip()}"}
         except FileNotFoundError:
-            logger.error("Spotdl command not found. Is spotdl installed and in your system's PATH?")
-            return {"status": "error", "message": "Spotdl command not found. Please install it (e.g., `pip install spotdl`)."}
+            logger.error("Python executable not found for subprocess call. Check your environment.")
+            return {"status": "error", "message": "Python executable not found for subprocess call."}
         except Exception as e:
             logger.error(f"An unexpected error occurred during download: {e}")
             return {"status": "error", "message": f"An unexpected error occurred during download: {str(e)}"}
