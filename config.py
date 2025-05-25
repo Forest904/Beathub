@@ -14,3 +14,9 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SPOTIPY_CLIENT_ID = os.environ.get('SPOTIPY_CLIENT_ID')
     SPOTIPY_CLIENT_SECRET = os.environ.get('SPOTIPY_CLIENT_SECRET')
+
+    # Genius API credentials
+    GENIUS_ACCESS_TOKEN = os.getenv('GENIUS_ACCESS_TOKEN')
+
+    # You can add other configurations here, e.g., default output directory
+    BASE_OUTPUT_DIR = os.getenv('BASE_OUTPUT_DIR', 'downloads') # Default to 'downloads' if not set in .env

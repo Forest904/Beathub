@@ -1,0 +1,47 @@
+{
+    "spotify_id": "64OrNo96k5KY8uaneMuIQw",
+    "title": "Banana12345",
+    "artist": "Luca Foresti",
+    "image_url": "https://i.scdn.co/image/ab67616d00001e02388a49c048fd9f67e338c3c6",
+    "spotify_url": "https://open.spotify.com/playlist/64OrNo96k5KY8uaneMuIQw",
+    "item_type": "playlist",
+    "tracks_details": [
+        {
+            "spotify_id": "2VyvDGdcVY04cNYou9MFVX",
+            "title": "Dirty Cash (Money Talks)",
+            "artists": [
+                "PAWSA",
+                "The Adventures Of Stevie V"
+            ],
+            "duration_ms": 221448,
+            "track_number": 1,
+            "disc_number": 1,
+            "explicit": false,
+            "spotify_url": "https://open.spotify.com/track/2VyvDGdcVY04cNYou9MFVX",
+            "album_name": "Dirty Cash (Money Talks)",
+            "album_spotify_id": "2d9NxyCSygtJcvsAmBtXOj",
+            "album_image_url": "https://i.scdn.co/image/ab67616d0000b273388a49c048fd9f67e338c3c6",
+            "added_at": "2025-05-23T15:27:05Z",
+            "added_by_id": "11178239062",
+            "local_lyrics_path": "./downloads\\Luca Foresti - Banana12345\\Dirty Cash (Money Talks) - PAWSA.txt"
+        },
+        {
+            "spotify_id": "1jdotZBW7ybF2wf6896occ",
+            "title": "Sola Una Volta",
+            "artists": [
+                "Alex Britti"
+            ],
+            "duration_ms": 241946,
+            "track_number": 3,
+            "disc_number": 1,
+            "explicit": false,
+            "spotify_url": "https://open.spotify.com/track/1jdotZBW7ybF2wf6896occ",
+            "album_name": "it.pop",
+            "album_spotify_id": "5HCZg475b1R5XJvgmiAN7t",
+            "album_image_url": "https://i.scdn.co/image/ab67616d0000b2731a06e328323753a167071f25",
+            "added_at": "2025-05-23T15:27:27Z",
+            "added_by_id": "11178239062",
+            "local_lyrics_path": "./downloads\\Luca Foresti - Banana12345\\Sola Una Volta - Alex Britti.txt"
+        }
+    ]
+}
