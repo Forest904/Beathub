@@ -2,7 +2,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-function AlbumCard({ album, onToggleFavorite, onDeleteAlbum, onAlbumClick, pageType }) {
+function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
     const navigate = useNavigate();
 
     const handleCopyLink = () => {
@@ -22,7 +22,7 @@ function AlbumCard({ album, onToggleFavorite, onDeleteAlbum, onAlbumClick, pageT
         }
     };
 
-    // This function will handle the click on the album card itself (excluding buttons)
+    // Function to handle the click on the album card itself (excluding buttons)
     const handleClick = (e) => {
         // Prevent click from propagating to the card if a button was clicked
         if (e.target.tagName === 'BUTTON') {
@@ -32,12 +32,10 @@ function AlbumCard({ album, onToggleFavorite, onDeleteAlbum, onAlbumClick, pageT
 
         // Conditional navigation based on pageType
         if (pageType === 'discography') {
-            // Navigate to album details page
             if (onAlbumClick) {
                 onAlbumClick(album.id);
             }
         } else if (pageType === 'history') {
-            // Open Spotify link in a new tab
             if (album.spotify_url) {
                 window.open(album.spotify_url, '_blank', 'noopener,noreferrer');
             } else {
@@ -61,7 +59,6 @@ function AlbumCard({ album, onToggleFavorite, onDeleteAlbum, onAlbumClick, pageT
                 <p className="text-sm text-gray-400 mb-3 truncate">{album.artist}</p>
                 <div className="flex flex-col space-y-2">
 
-                    {/* Always show Copy Spotify Link (unless spotify_url is missing) */}
                     {album.spotify_url && (
                         <button
                             onClick={handleCopyLink}
@@ -71,7 +68,6 @@ function AlbumCard({ album, onToggleFavorite, onDeleteAlbum, onAlbumClick, pageT
                         </button>
                     )}
 
-                    {/* Show Direct Download button only on Discography page */}
                     {pageType === 'discography' && album.spotify_url && (
                         <button
                             onClick={handleDirectDownload}
@@ -81,22 +77,6 @@ function AlbumCard({ album, onToggleFavorite, onDeleteAlbum, onAlbumClick, pageT
                         </button>
                     )}
 
-                    {
-                    /*
-                    {/* Show Add to Favorites button only on History page 
-                    {pageType === 'history' && onToggleFavorite && (
-                        <button
-                            onClick={() => onToggleFavorite(album.id)}
-                            className={`font-medium py-2 px-3 rounded-md transition duration-150 text-sm
-                                ${album.is_favorite ? 'bg-yellow-500 hover:bg-yellow-600 text-gray-900' : 'bg-green-600 hover:bg-green-700 text-white'}`}
-                        >
-                            {album.is_favorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
-                        </button>
-                    )}
-                    */
-                    }
-
-                    {/* Show Delete button only on History page */}
                     {pageType === 'history' && onDeleteAlbum && (
                         <button
                             onClick={() => onDeleteAlbum(album.id)}

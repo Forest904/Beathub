@@ -123,15 +123,6 @@ def create_app():
         items = DownloadedItem.query.order_by(DownloadedItem.title).all()
         return jsonify([item.to_dict() for item in items]), 200
 
-    @app.route('/api/albums/<int:item_id>/favorite', methods=['POST'])
-    def toggle_favorite(item_id):
-        item = DownloadedItem.query.get(item_id)
-        if not item:
-            return jsonify({'success': False, 'message': 'Item not found'}), 404
-        item.is_favorite = not item.is_favorite
-        db.session.commit()
-        logger.info(f"Toggled favorite status for {item.item_type}: {item.title} to {item.is_favorite}")
-        return jsonify({'success': True, 'is_favorite': item.is_favorite}), 200
 
     @app.route('/api/albums/<int:item_id>', methods=['DELETE'])
     def delete_downloaded_item(item_id):
@@ -183,10 +174,13 @@ def create_app():
     @app.route('/api/famous_artists', methods=['GET'])
     def get_famous_artists_api():
         famous_artist_names = [
-            "Queen", "Michael Jackson", "The Beatles", "Adele", "Ed Sheeran",
-            "Taylor Swift", "Beyoncé", "Drake", "Eminem", "Rihanna",
-            "Coldplay", "Bruno Mars", "Justin Bieber", "Ariana Grande", "Post Malone"
+            "Queen", "Michael Jackson", "The Beatles",
+            "Taylor Swift", "Eminem", "Rihanna",
+            "Coldplay", "Ariana Grande", "Post Malone",
+            "Madonna", "Elton John", "The Rolling Stones",
+            "Katy Perry", "Maroon 5", "U2",
         ]
+
         artists_data = []
         try:
             sp = spotify_downloader.get_spotipy_instance()
@@ -214,7 +208,6 @@ def create_app():
             logger.error(f"General error fetching famous artists: {e}", exc_info=True)
             return jsonify({"error": "Failed to retrieve famous artists"}), 500
 
-    # --- NEW ARTIST DETAIL ENDPOINTS ---
     @app.route('/api/artist_details/<string:artist_id>', methods=['GET'])
     def get_artist_details(artist_id):
         try:
@@ -226,7 +219,6 @@ def create_app():
             if not artist_data:
                 return jsonify({"message": "Artist not found"}), 404
 
-            # Extract relevant details
             details = {
                 'id': artist_data['id'],
                 'name': artist_data['name'],
@@ -250,7 +242,6 @@ def create_app():
             if not sp:
                 return jsonify({"error": "Spotify API not initialized"}), 500
 
-            # Fetch albums and singles
             albums_results = sp.artist_albums(artist_id, album_type='album,single', country='US', limit=50) # You can adjust limit and country
             if not albums_results:
                 return jsonify({"discography": []}), 200
@@ -260,12 +251,10 @@ def create_app():
 
             for album_data in albums_results['items']:
                 # Use a unique identifier, e.g., combine album name and release date to check for uniqueness
-                # Or, often, Spotify's 'album_group' can help, but filtering by name is usually robust enough for display
                 album_name_lower = album_data['name'].lower()
                 if album_name_lower in seen_albums:
                     continue # Skip if we've already added this album name
 
-                # Ensure 'artists' is a list and extract names
                 artists = [a['name'] for a in album_data.get('artists', [])]
 
                 discography.append({
@@ -276,10 +265,10 @@ def create_app():
                     'total_tracks': album_data.get('total_tracks'),
                     'image_url': album_data['images'][0]['url'] if album_data['images'] else None,
                     'spotify_url': album_data['external_urls']['spotify'],
-                    'artist': artists[0] if artists else 'Various Artists', # Primary artist name
-                    'artists': artists # All artists on the album
+                    'artist': artists[0] if artists else 'Various Artists',
+                    'artists': artists
                 })
-                seen_albums.add(album_name_lower) # Mark as seen
+                seen_albums.add(album_name_lower)
 
             logger.info(f"Fetched discography for artist ID {artist_id}. Found {len(discography)} unique items.")
             return jsonify({"discography": discography}), 200
@@ -303,8 +292,8 @@ def create_app():
 
             tracks_details = spotify_downloader.metadata_service.get_tracks_details(
                 album_id,
-                "album", # Explicitly pass "album" as item_type
-                album_metadata.get('image_url') # Pass the album's main image URL
+                "album",
+                album_metadata.get('image_url')
             )
 
             album_full_details = {

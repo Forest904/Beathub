@@ -3,13 +3,13 @@ import React from 'react';
 
 function SearchBar({ searchTerm, onSearchChange, placeholder = "Search..." }) {
   return (
-    <div className="mb-8 p-4 bg-gray-900 rounded-lg shadow-md"> {/* Changed background to dark gray */}
+    <div className="mb-8 p-4 bg-gray-900 rounded-lg shadow-md">
       <input
         type="text"
         placeholder={placeholder}
         value={searchTerm}
         onChange={onSearchChange}
-        // Adjusted input styles for dark theme:
+        // Input styles for dark theme:
         // bg-gray-700 for input background
         // text-white for input text
         // border-gray-600 for border

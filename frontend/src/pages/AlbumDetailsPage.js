@@ -1,11 +1,11 @@
 // frontend/src/pages/AlbumDetailsPage.js
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom'; // Import useNavigate
+import { useParams, useNavigate } from 'react-router-dom';
 import { formatDuration } from '../utils/helpers';
 
 function AlbumDetailsPage() {
     const { albumId } = useParams();
-    const navigate = useNavigate(); // Initialize useNavigate
+    const navigate = useNavigate();
     const [albumDetails, setAlbumDetails] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -48,7 +48,6 @@ function AlbumDetailsPage() {
         }
     };
 
-    // NEW FUNCTION for direct download
     const handleDirectDownload = () => {
         if (albumDetails && albumDetails.spotify_url) {
             navigate('/download', { state: { spotifyLinkToDownload: albumDetails.spotify_url } });
@@ -106,9 +105,9 @@ function AlbumDetailsPage() {
                                 Copy Spotify Link
                             </button>
                         )}
-                        {albumDetails.spotify_url && ( // Conditionally render the button
+                        {albumDetails.spotify_url && (
                             <button
-                                onClick={handleDirectDownload} // Call the new handler
+                                onClick={handleDirectDownload}
                                 className="inline-block bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
                             >
                                 Direct Download

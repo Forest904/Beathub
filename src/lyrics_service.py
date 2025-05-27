@@ -7,10 +7,7 @@ logger = logging.getLogger(__name__)
 
 class LyricsService:
     def __init__(self, genius_access_token=None):
-        """
-        Initializes the LyricsService.
-        :param genius_access_token: Your Genius API access token.
-        """
+        """ Initializes the LyricsService. """
         self.genius_client = None
         if genius_access_token:
             try:
@@ -29,13 +26,7 @@ class LyricsService:
         return name
 
     def download_lyrics(self, track_title, track_artist, output_dir):
-        """
-        Downloads lyrics for a given track and saves them to a file.
-        :param track_title: The title of the track.
-        :param track_artist: The artist of the track.
-        :param output_dir: The directory where the lyrics file will be saved.
-        :return: The local path to the downloaded lyrics file, or None if not found/error.
-        """
+        """ Downloads lyrics for a given track and saves them to a file. """
         if not self.genius_client:
             logger.warning("LyricsGenius client not initialized. Cannot download lyrics.")
             return None

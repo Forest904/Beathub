@@ -47,9 +47,6 @@ class AudioCoverDownloadService:
             spotify_link,
             '--output', output_template,
             '--overwrite', 'skip', # Prevent re-downloading existing files
-            # Possible add --audio-source and --format here if you want to explicitly use them
-            # '--audio-source', self.spotdl_audio_source,
-            # '--format', self.spotdl_format,
         ]
 
         try:

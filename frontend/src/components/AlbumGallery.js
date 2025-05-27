@@ -1,10 +1,9 @@
 // src/components/AlbumGallery.js
 import React from 'react';
 import AlbumCard from './AlbumCard.js';
-import { useNavigate } from 'react-router-dom'; // Import useNavigate
+import { useNavigate } from 'react-router-dom';
 
-// Add 'pageType' to the destructured props
-function AlbumGallery({ albums, onToggleFavorite, onDeleteAlbum, pageType }) {
+function AlbumGallery({ albums, onDeleteAlbum, pageType }) {
     const navigate = useNavigate();
 
     const handleAlbumClick = (albumId) => {
@@ -17,7 +16,6 @@ function AlbumGallery({ albums, onToggleFavorite, onDeleteAlbum, pageType }) {
                 <AlbumCard
                     key={album.id}
                     album={album}
-                    onToggleFavorite={onToggleFavorite}
                     onDeleteAlbum={onDeleteAlbum}
                     onAlbumClick={handleAlbumClick}
                     pageType={pageType}

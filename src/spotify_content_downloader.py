@@ -49,19 +49,11 @@ class SpotifyContentDownloader:
         logger.info("SpotifyContentDownloader initialized with decoupled services and configuration passed.")
 
     def get_spotipy_instance(self):
-        """
-        Provides access to the initialized Spotipy instance.
-        This is crucial for external modules (like app.py) to perform direct Spotify API calls
-        (e.g., artist search) without re-initializing Spotipy.
-        """
+        """ Provides access to the initialized Spotipy instance. """
         return self.sp
 
     def download_spotify_content(self, spotify_link):
-        """
-        Orchestrates the download of Spotify content (audio, cover, lyrics, metadata).
-        :param spotify_link: The Spotify URL (track, album, or playlist).
-        :return: A dictionary containing download status and details.
-        """
+        """ Orchestrates the download of Spotify content (audio, cover, lyrics, metadata). """
         initial_metadata = self.metadata_service.get_metadata_from_link(spotify_link)
 
         if not initial_metadata:

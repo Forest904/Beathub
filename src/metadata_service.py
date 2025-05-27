@@ -8,12 +8,7 @@ logger = logging.getLogger(__name__)
 
 class MetadataService:
     def __init__(self, spotify_client_id=None, spotify_client_secret=None, spotify_client=None):
-        """
-        Initializes the MetadataService.
-        :param spotify_client_id: Your Spotify client ID.
-        :param spotify_client_secret: Your Spotify client secret.
-        :param spotify_client: An initialized Spotipy client instance (optional, will be created if None).
-        """
+        """ Initializes the MetadataService. """
         self.sp = spotify_client
         if not self.sp:
             if spotify_client_id and spotify_client_secret:
@@ -40,11 +35,7 @@ class MetadataService:
         return "unknown"
 
     def get_album_by_id(self, album_id):
-        """
-        Fetches detailed metadata for a specific Spotify album by its ID.
-        :param album_id: The Spotify ID of the album.
-        :return: A dictionary containing album metadata, or None if an error occurs.
-        """
+        """ Fetches detailed metadata for a specific Spotify album by its ID. """
         if not self.sp:
             logger.error("Spotipy client not initialized. Cannot fetch album by ID.")
             return None
@@ -67,11 +58,7 @@ class MetadataService:
             return None
 
     def get_metadata_from_link(self, spotify_link):
-        """
-        Fetches metadata for a given Spotify link (track, album, or playlist).
-        :param spotify_link: The Spotify URL.
-        :return: A dictionary containing metadata, or None if an error occurs.
-        """
+        """ Fetches metadata for a given Spotify link (track, album, or playlist). """
         if not self.sp:
             logger.error("Spotipy client not initialized. Cannot fetch metadata.")
             return None
@@ -112,10 +99,7 @@ class MetadataService:
             return None
 
     def get_tracks_details(self, spotify_id, item_type, image_url_from_metadata):
-        """
-        Fetches detailed track information for albums, tracks, or playlists.
-        This is a helper to get full track lists, often used after initial metadata.
-        """
+        """ Fetches detailed track information for albums, tracks, or playlists. """
         if not self.sp:
             logger.error("Spotipy client not initialized. Cannot fetch detailed track list.")
             return []

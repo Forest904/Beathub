@@ -1,19 +1,18 @@
 // src/pages/ArtistDetailsPage.js
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom'; // Import useNavigate
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
 
 function ArtistDetailsPage() {
     const { artistId } = useParams();
-    const navigate = useNavigate(); // Initialize useNavigate
+    const navigate = useNavigate();
     const [artistDetails, setArtistDetails] = useState(null);
     const [discography, setDiscography] = useState([]);
     const [loadingArtist, setLoadingArtist] = useState(true);
     const [loadingDiscography, setLoadingDiscography] = useState(true);
     const [error, setError] = useState(null);
 
-    // --- Effect to fetch Artist Details ---
     useEffect(() => {
         if (!artistId) {
             setError("Artist ID is missing.");
@@ -39,7 +38,6 @@ function ArtistDetailsPage() {
         fetchArtistDetails();
     }, [artistId]);
 
-    // --- Effect to fetch Artist Discography ---
     useEffect(() => {
         if (!artistId) {
             setLoadingDiscography(false);
@@ -64,7 +62,6 @@ function ArtistDetailsPage() {
         fetchDiscography();
     }, [artistId]);
 
-    // Handler for when an album card in the discography is clicked
     const handleAlbumCardClick = (albumId) => {
         navigate(`/album/${albumId}`);
     };
@@ -134,8 +131,8 @@ function ArtistDetailsPage() {
                 {discography.length > 0 ? (
                     <AlbumGallery
                         albums={discography}
-                        onAlbumClick={handleAlbumCardClick} // Pass the handler for navigating to album details
-                        pageType="discography" // <--- Crucial: Pass the pageType prop here
+                        onAlbumClick={handleAlbumCardClick} 
+                        pageType="discography"
                     />
                 ) : (
                     <p className="text-center text-gray-400 text-lg">No albums or singles found for this artist.</p>
