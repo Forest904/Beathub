@@ -4,26 +4,26 @@ import { Link } from 'react-router-dom';
 
 function Header() {
   return (
-    <header className="bg-blue-600 p-4 shadow-md">
+    <header className="bg-gray-900 p-4 shadow-xl"> {/* Darker background, more pronounced shadow */}
       <nav className="container mx-auto flex justify-between items-center">
-        <Link to="/" className="text-white text-2xl font-bold">
-          My CD Collection
+        <Link to="/" className="text-white text-3xl font-extrabold tracking-wide"> {/* Larger, bolder text, wider tracking */}
+          My Spotify Collection
         </Link>
-        <ul className="flex space-x-6">
+        <ul className="flex space-x-8"> {/* Increased spacing between links */}
           <li>
             <Link
-              to="/" // Artist Browser is now the landing page
-              className="text-white text-lg font-semibold hover:text-blue-200 transition duration-200"
+              to="/"
+              className="text-gray-300 text-lg font-medium hover:text-green-400 transition duration-300 ease-in-out" // Subtle text, Spotify green hover
             >
-              Artist Browser
+              Artists
             </Link>
           </li>
           <li>
             <Link
-              to="/download" // Corrected path to /download as per App.js
-              className="text-white text-lg font-semibold hover:text-blue-200 transition duration-200"
+              to="/download"
+              className="text-gray-300 text-lg font-medium hover:text-green-400 transition duration-300 ease-in-out" // Subtle text, Spotify green hover
             >
-              My Downloads
+              Downloads
             </Link>
           </li>
         </ul>

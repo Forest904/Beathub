@@ -3,11 +3,12 @@ import React from 'react';
 import AlbumCard from './AlbumCard.js';
 import { useNavigate } from 'react-router-dom'; // Import useNavigate
 
-function AlbumGallery({ albums, onToggleFavorite, onDeleteAlbum }) {
-    const navigate = useNavigate(); // Initialize useNavigate
+// Add 'pageType' to the destructured props
+function AlbumGallery({ albums, onToggleFavorite, onDeleteAlbum, pageType }) {
+    const navigate = useNavigate();
 
     const handleAlbumClick = (albumId) => {
-        navigate(`/album/${albumId}`); // Navigate to the new album details page
+        navigate(`/album/${albumId}`);
     };
 
     return (
@@ -18,7 +19,8 @@ function AlbumGallery({ albums, onToggleFavorite, onDeleteAlbum }) {
                     album={album}
                     onToggleFavorite={onToggleFavorite}
                     onDeleteAlbum={onDeleteAlbum}
-                    onAlbumClick={handleAlbumClick} // Pass the new click handler
+                    onAlbumClick={handleAlbumClick}
+                    pageType={pageType}
                 />
             ))}
         </div>

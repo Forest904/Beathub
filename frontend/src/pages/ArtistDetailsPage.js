@@ -1,11 +1,12 @@
 // src/pages/ArtistDetailsPage.js
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom'; // Import useNavigate
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
 
 function ArtistDetailsPage() {
     const { artistId } = useParams();
+    const navigate = useNavigate(); // Initialize useNavigate
     const [artistDetails, setArtistDetails] = useState(null);
     const [discography, setDiscography] = useState([]);
     const [loadingArtist, setLoadingArtist] = useState(true);
@@ -63,6 +64,11 @@ function ArtistDetailsPage() {
         fetchDiscography();
     }, [artistId]);
 
+    // Handler for when an album card in the discography is clicked
+    const handleAlbumCardClick = (albumId) => {
+        navigate(`/album/${albumId}`);
+    };
+
     if (loadingArtist || loadingDiscography) {
         return (
             <div className="text-center mt-12 text-white">
@@ -107,9 +113,9 @@ function ArtistDetailsPage() {
                             <span className="font-semibold">Popularity:</span> {artistDetails.popularity}% (on Spotify)
                         </p>
                     )}
-                    {artistDetails.external_urls && artistDetails.external_urls.spotify && ( // Ensure external_urls.spotify is accessed correctly
+                    {artistDetails.external_urls && artistDetails.external_urls.spotify && (
                         <a
-                            href={artistDetails.external_urls.spotify} // Corrected: access .spotify property
+                            href={artistDetails.external_urls.spotify}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-5 rounded-full transition-colors duration-200"
@@ -126,7 +132,11 @@ function ArtistDetailsPage() {
             <section className="bg-gray-800 rounded-lg shadow-lg p-6">
                 <h2 className="text-3xl font-bold text-white mb-6 text-center">Discography</h2>
                 {discography.length > 0 ? (
-                    <AlbumGallery albums={discography} />
+                    <AlbumGallery
+                        albums={discography}
+                        onAlbumClick={handleAlbumCardClick} // Pass the handler for navigating to album details
+                        pageType="discography" // <--- Crucial: Pass the pageType prop here
+                    />
                 ) : (
                     <p className="text-center text-gray-400 text-lg">No albums or singles found for this artist.</p>
                 )}

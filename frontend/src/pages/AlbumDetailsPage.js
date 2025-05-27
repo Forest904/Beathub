@@ -1,13 +1,15 @@
 // frontend/src/pages/AlbumDetailsPage.js
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { formatDuration } from '../utils/helpers'; // Assuming you'll have a helper for duration formatting
+import { useParams, useNavigate } from 'react-router-dom'; // Import useNavigate
+import { formatDuration } from '../utils/helpers';
 
 function AlbumDetailsPage() {
-    const { albumId } = useParams(); // Get albumId from URL parameters
+    const { albumId } = useParams();
+    const navigate = useNavigate(); // Initialize useNavigate
     const [albumDetails, setAlbumDetails] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [copySuccess, setCopySuccess] = useState('');
 
     useEffect(() => {
         const fetchAlbumDetails = async () => {
@@ -31,7 +33,29 @@ function AlbumDetailsPage() {
         if (albumId) {
             fetchAlbumDetails();
         }
-    }, [albumId]); // Re-fetch when albumId changes
+    }, [albumId]);
+
+    const handleCopySpotifyLink = async () => {
+        if (albumDetails && albumDetails.spotify_url) {
+            try {
+                await navigator.clipboard.writeText(albumDetails.spotify_url);
+                setCopySuccess('Link copied!');
+                setTimeout(() => setCopySuccess(''), 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+                setCopySuccess('Failed to copy!');
+            }
+        }
+    };
+
+    // NEW FUNCTION for direct download
+    const handleDirectDownload = () => {
+        if (albumDetails && albumDetails.spotify_url) {
+            navigate('/download', { state: { spotifyLinkToDownload: albumDetails.spotify_url } });
+        } else {
+            alert('Spotify URL not available for download.');
+        }
+    };
 
     if (loading) {
         return <p className="text-center text-blue-600 text-xl mt-8">Loading album details...</p>;
@@ -63,15 +87,36 @@ function AlbumDetailsPage() {
                         Release Date: {albumDetails.release_date ? new Date(albumDetails.release_date).toLocaleDateString() : 'N/A'}
                     </p>
                     <p className="text-md text-gray-500">Total Tracks: {albumDetails.total_tracks}</p>
-                    {albumDetails.spotify_url && (
-                        <a
-                            href={albumDetails.spotify_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-block mt-4 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
-                        >
-                            Listen on Spotify
-                        </a>
+                    <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-4">
+                        {albumDetails.spotify_url && (
+                            <a
+                                href={albumDetails.spotify_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-block bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
+                            >
+                                Listen on Spotify
+                            </a>
+                        )}
+                        {albumDetails.spotify_url && (
+                            <button
+                                onClick={handleCopySpotifyLink}
+                                className="inline-block bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
+                            >
+                                Copy Spotify Link
+                            </button>
+                        )}
+                        {albumDetails.spotify_url && ( // Conditionally render the button
+                            <button
+                                onClick={handleDirectDownload} // Call the new handler
+                                className="inline-block bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
+                            >
+                                Direct Download
+                            </button>
+                        )}
+                    </div>
+                    {copySuccess && (
+                        <p className="text-green-400 mt-2 text-sm">{copySuccess}</p>
                     )}
                 </div>
             </div>
