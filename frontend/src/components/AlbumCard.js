@@ -1,7 +1,8 @@
 // src/components/AlbumCard.js
 import React from 'react';
 
-function AlbumCard({ album, onToggleFavorite, onDeleteAlbum }) {
+// Destructure onAlbumClick from props
+function AlbumCard({ album, onToggleFavorite, onDeleteAlbum, onAlbumClick }) {
     const handleCopyLink = () => {
         navigator.clipboard.writeText(album.spotify_url)
             .then(() => alert('Spotify link copied to clipboard!'))
@@ -11,15 +12,33 @@ function AlbumCard({ album, onToggleFavorite, onDeleteAlbum }) {
             });
     };
 
+    // This function will handle the click on the album card itself,
+    // preventing the default behavior and stopping event propagation
+    // if a button inside the card is clicked.
+    const handleClick = (e) => {
+        // Prevent click from propagating to the card if a button was clicked
+        if (e.target.tagName === 'BUTTON') {
+            return;
+        }
+        // Call the onAlbumClick prop, passing the album's actual Spotify ID (album.id)
+        if (onAlbumClick) {
+            onAlbumClick(album.id); // CORRECTED: pass album.id
+        }
+    };
+
     return (
-        <div className="album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105">
+        // Make the entire card div clickable
+        <div
+            className="album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105 cursor-pointer"
+            onClick={handleClick} // Attach the click handler to the card
+        >
             <img
                 src={album.image_url || 'https://via.placeholder.com/200x200.png?text=No+Cover'}
-                alt={`${album.title} Album Cover`}
+                alt={`${album.name} Album Cover`} // Changed to album.name for consistency
                 className="w-full h-auto object-cover"
             />
             <div className="p-4 text-center">
-                <h3 className="text-lg font-semibold text-white mb-1 truncate">{album.title}</h3>
+                <h3 className="text-lg font-semibold text-white mb-1 truncate">{album.name}</h3>
                 <p className="text-sm text-gray-400 mb-3 truncate">{album.artist}</p>
                 <div className="flex flex-col space-y-2">
                     <button

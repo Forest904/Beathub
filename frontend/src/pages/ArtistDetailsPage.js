@@ -2,20 +2,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import AlbumGallery from '../components/AlbumGallery'; // Assuming you have this
-import Message from '../components/Message'; // For displaying error messages
+import AlbumGallery from '../components/AlbumGallery';
 
 function ArtistDetailsPage() {
-    const { artistId } = useParams(); // Get artistId from the URL parameter
+    const { artistId } = useParams();
     const [artistDetails, setArtistDetails] = useState(null);
     const [discography, setDiscography] = useState([]);
     const [loadingArtist, setLoadingArtist] = useState(true);
     const [loadingDiscography, setLoadingDiscography] = useState(true);
     const [error, setError] = useState(null);
-
-    const API_BASE_URL = process.env.NODE_ENV === 'production'
-                            ? window.location.origin
-                            : 'http://localhost:5000';
 
     // --- Effect to fetch Artist Details ---
     useEffect(() => {
@@ -29,9 +24,9 @@ function ArtistDetailsPage() {
             setLoadingArtist(true);
             setError(null);
             try {
-                const response = await axios.get(`${API_BASE_URL}/api/artist_details/${artistId}`);
+                const response = await axios.get(`/api/artist_details/${artistId}`);
                 setArtistDetails(response.data);
-                console.log(`Workspaceed details for artist ${response.data.name}`); // Changed from logger.info
+                console.info(`Workspaceed details for artist ${response.data.name}`);
             } catch (err) {
                 console.error("Error fetching artist details:", err);
                 setError("Failed to load artist details.");
@@ -41,7 +36,7 @@ function ArtistDetailsPage() {
         };
 
         fetchArtistDetails();
-    }, [artistId, API_BASE_URL]); // Re-run if artistId or base URL changes
+    }, [artistId]);
 
     // --- Effect to fetch Artist Discography ---
     useEffect(() => {
@@ -52,11 +47,11 @@ function ArtistDetailsPage() {
 
         const fetchDiscography = async () => {
             setLoadingDiscography(true);
-            setError(null); // Clear error for discography specific to this fetch
+            setError(null);
             try {
-                const response = await axios.get(`${API_BASE_URL}/api/artist_discography/${artistId}`);
+                const response = await axios.get(`/api/artist_discography/${artistId}`);
                 setDiscography(response.data.discography);
-                console.log(`Workspaceed discography for artist ${artistId}. Found ${response.data.discography.length} items.`); // Changed from logger.info
+                console.info(`Workspaceed discography for artist ${artistId}. Found ${response.data.discography.length} items.`);
             } catch (err) {
                 console.error("Error fetching discography:", err);
                 setError("Failed to load artist's discography.");
@@ -66,30 +61,28 @@ function ArtistDetailsPage() {
         };
 
         fetchDiscography();
-    }, [artistId, API_BASE_URL]); // Re-run if artistId or base URL changes
+    }, [artistId]);
 
     if (loadingArtist || loadingDiscography) {
         return (
-            <div className="text-center mt-12">
-                <p className="text-gray-700 text-xl">Loading artist information and discography...</p>
-                {/* Basic spinner, consider a dedicated Spinner component */}
+            <div className="text-center mt-12 text-white">
+                <p className="text-xl">Loading artist information and discography...</p>
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mt-4"></div>
             </div>
         );
     }
 
     if (error) {
-        return <Message type="error" text={error} />;
+        return <p className="text-center text-red-500 text-xl mt-8">{error}</p>;
     }
 
     if (!artistDetails) {
-        return <Message type="info" text="No artist found with this ID." />;
+        return <p className="text-center text-gray-400 text-xl mt-8">No artist found with this ID.</p>;
     }
 
     return (
         <div className="container mx-auto px-4 py-8">
-            {/* Artist Header Section */}
-            <section className="bg-white rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-start gap-6">
+            <section className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-start gap-6">
                 <div className="flex-shrink-0">
                     <img
                         src={artistDetails.image || 'https://via.placeholder.com/200?text=No+Image'}
@@ -98,25 +91,25 @@ function ArtistDetailsPage() {
                     />
                 </div>
                 <div className="text-center md:text-left flex-grow">
-                    <h1 className="text-5xl font-extrabold text-gray-900 mb-2">{artistDetails.name}</h1>
+                    <h1 className="text-5xl font-extrabold text-white mb-2">{artistDetails.name}</h1>
                     {artistDetails.genres && artistDetails.genres.length > 0 && (
-                        <p className="text-lg text-gray-600 mb-2">
+                        <p className="text-lg text-gray-300 mb-2">
                             <span className="font-semibold">Genres:</span> {artistDetails.genres.join(', ')}
                         </p>
                     )}
                     {artistDetails.followers !== undefined && (
-                        <p className="text-lg text-gray-600 mb-2">
+                        <p className="text-lg text-gray-300 mb-2">
                             <span className="font-semibold">Followers:</span> {artistDetails.followers.toLocaleString()}
                         </p>
                     )}
                     {artistDetails.popularity !== undefined && (
-                        <p className="text-lg text-gray-600 mb-4">
+                        <p className="text-lg text-gray-300 mb-4">
                             <span className="font-semibold">Popularity:</span> {artistDetails.popularity}% (on Spotify)
                         </p>
                     )}
-                    {artistDetails.external_urls && artistDetails.external_urls && (
+                    {artistDetails.external_urls && artistDetails.external_urls.spotify && ( // Ensure external_urls.spotify is accessed correctly
                         <a
-                            href={artistDetails.external_urls}
+                            href={artistDetails.external_urls.spotify} // Corrected: access .spotify property
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-5 rounded-full transition-colors duration-200"
@@ -130,13 +123,12 @@ function ArtistDetailsPage() {
                 </div>
             </section>
 
-            {/* Discography Section */}
-            <section className="bg-white rounded-lg shadow-lg p-6">
-                <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">Discography</h2>
+            <section className="bg-gray-800 rounded-lg shadow-lg p-6">
+                <h2 className="text-3xl font-bold text-white mb-6 text-center">Discography</h2>
                 {discography.length > 0 ? (
                     <AlbumGallery albums={discography} />
                 ) : (
-                    <p className="text-center text-gray-500 text-lg">No albums or singles found for this artist.</p>
+                    <p className="text-center text-gray-400 text-lg">No albums or singles found for this artist.</p>
                 )}
             </section>
         </div>

@@ -7,7 +7,6 @@ import os # Import os for path handling
 db = SQLAlchemy()
 
 # --- Define Your Database Models Here ---
-# Renamed from Album to DownloadedItem for more flexibility
 class DownloadedItem(db.Model):
     __tablename__ = 'downloaded_items' # Explicitly set table name
 

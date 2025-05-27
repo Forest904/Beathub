@@ -13,7 +13,7 @@ from flask_cors import CORS
 from config import Config
 from src.spotify_content_downloader import SpotifyContentDownloader
 
-# --- Import db, DownloadedItem model (formerly Album), and the initialization function ---
+# --- Import db, DownloadedItem model, and the initialization function ---
 from database.db_manager import db, DownloadedItem, initialize_database # Renamed Album to DownloadedItem
 
 # --- Logger Configuration ---
@@ -287,6 +287,42 @@ def create_app():
         except Exception as e:
             logger.error(f"Error fetching artist discography for ID {artist_id}: {e}", exc_info=True)
             return jsonify({"error": "Failed to retrieve artist discography"}), 500
+        
+    @app.route('/api/album_details/<string:album_id>', methods=['GET'])
+    def get_album_details(album_id):
+        """
+        Fetches detailed information for a specific Spotify album, including its tracks,
+        using the new get_album_by_id method.
+        """
+        try:
+            album_metadata = spotify_downloader.metadata_service.get_album_by_id(album_id)
+
+            if not album_metadata:
+                logger.warning(f"Album not found for ID: {album_id}")
+                return jsonify({"error": "Album not found"}), 404
+
+            tracks_details = spotify_downloader.metadata_service.get_tracks_details(
+                album_id,
+                "album", # Explicitly pass "album" as item_type
+                album_metadata.get('image_url') # Pass the album's main image URL
+            )
+
+            album_full_details = {
+                "spotify_id": album_metadata.get('spotify_id'),
+                "title": album_metadata.get('title'),
+                "artist": album_metadata.get('artist'),
+                "image_url": album_metadata.get('image_url'),
+                "spotify_url": album_metadata.get('spotify_url'),
+                "release_date": album_metadata.get('release_date'),
+                "total_tracks": album_metadata.get('total_tracks'),
+                "tracks": tracks_details
+            }
+
+            return jsonify(album_full_details), 200
+
+        except Exception as e:
+            logger.exception(f"Error fetching album details for ID {album_id}: {e}")
+            return jsonify({"error": "Internal server error"}), 500
 
     # --- Catch-all route for serving React app in production (remains the same) ---
     @app.route('/', defaults={'path': ''})

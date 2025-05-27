@@ -1,3 +1,4 @@
+# src/metadata_service.py
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import logging
@@ -38,6 +39,33 @@ class MetadataService:
             return "playlist"
         return "unknown"
 
+    def get_album_by_id(self, album_id):
+        """
+        Fetches detailed metadata for a specific Spotify album by its ID.
+        :param album_id: The Spotify ID of the album.
+        :return: A dictionary containing album metadata, or None if an error occurs.
+        """
+        if not self.sp:
+            logger.error("Spotipy client not initialized. Cannot fetch album by ID.")
+            return None
+        try:
+            album_info = self.sp.album(album_id)
+            if album_info:
+                return {
+                    'spotify_id': album_info['id'],
+                    'title': album_info['name'],
+                    'artist': album_info['artists'][0]['name'] if album_info.get('artists') else 'Unknown Artist',
+                    'image_url': album_info['images'][0]['url'] if album_info.get('images') else None,
+                    'spotify_url': album_info.get('external_urls', {}).get('spotify'),
+                    'item_type': 'album',
+                    'release_date': album_info.get('release_date'),
+                    'total_tracks': album_info.get('total_tracks')
+                }
+            return None
+        except Exception as e:
+            logger.exception(f"Error fetching Spotify album details for ID {album_id}: {e}")
+            return None
+
     def get_metadata_from_link(self, spotify_link):
         """
         Fetches metadata for a given Spotify link (track, album, or playlist).
@@ -52,15 +80,7 @@ class MetadataService:
         try:
             if item_type == "album":
                 album_id = spotify_link.split('/')[-1].split('?')[0]
-                album_info = self.sp.album(album_id)
-                return {
-                    'spotify_id': album_info['id'],
-                    'title': album_info['name'],
-                    'artist': album_info['artists'][0]['name'] if album_info.get('artists') else 'Unknown Artist',
-                    'image_url': album_info['images'][0]['url'] if album_info.get('images') else None,
-                    'spotify_url': album_info.get('external_urls', {}).get('spotify'),
-                    'item_type': 'album',
-                }
+                return self.get_album_by_id(album_id) # Reuse the new method
             elif item_type == "track":
                 track_id = spotify_link.split('/')[-1].split('?')[0]
                 track_info = self.sp.track(track_id)

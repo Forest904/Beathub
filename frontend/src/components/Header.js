@@ -12,7 +12,7 @@ function Header() {
         <ul className="flex space-x-6">
           <li>
             <Link
-              to="/artists"
+              to="/" // Artist Browser is now the landing page
               className="text-white text-lg font-semibold hover:text-blue-200 transition duration-200"
             >
               Artist Browser
@@ -20,7 +20,7 @@ function Header() {
           </li>
           <li>
             <Link
-              to="/downloads"
+              to="/download" // Corrected path to /download as per App.js
               className="text-white text-lg font-semibold hover:text-blue-200 transition duration-200"
             >
               My Downloads
