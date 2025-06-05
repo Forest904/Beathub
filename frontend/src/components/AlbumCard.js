@@ -1,10 +1,12 @@
 // src/components/AlbumCard.js
+
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
 function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
     const navigate = useNavigate();
 
+    // Existing functions (keep as is, they will be conditionally rendered)
     const handleCopyLink = () => {
         navigator.clipboard.writeText(album.spotify_url)
             .then(() => alert('Spotify link copied to clipboard!'))
@@ -22,7 +24,6 @@ function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
         }
     };
 
-    // Function to handle the click on the album card itself (excluding buttons)
     const handleClick = (e) => {
         // Prevent click from propagating to the card if a button was clicked
         if (e.target.tagName === 'BUTTON') {
@@ -30,23 +31,33 @@ function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
             return;
         }
 
-        // Conditional navigation based on pageType
+        // Conditional navigation/action based on pageType ---
         if (pageType === 'discography') {
+            // Original behavior for artist discography page
             if (onAlbumClick) {
                 onAlbumClick(album.id);
             }
         } else if (pageType === 'history') {
+            // Original behavior for downloaded history page
             if (album.spotify_url) {
                 window.open(album.spotify_url, '_blank', 'noopener,noreferrer');
             } else {
                 alert('Spotify URL not available for this album.');
+            }
+        } else if (pageType === 'burn-selection') {
+            // Behavior for the CD Burner Page
+            if (onAlbumClick) {
+                onAlbumClick(album); // Pass the whole album object for selection
             }
         }
     };
 
     return (
         <div
-            className="album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105 cursor-pointer"
+            className={`album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105 cursor-pointer
+                ${pageType === 'burn-selection' && onAlbumClick ? 'border-2 border-blue-500' : ''} 
+                ${pageType === 'burn-selection' ? 'hover:border-blue-700' : ''}
+                `}
             onClick={handleClick}
         >
             <img
@@ -59,7 +70,7 @@ function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
                 <p className="text-sm text-gray-400 mb-3 truncate">{album.artist}</p>
                 <div className="flex flex-col space-y-2">
 
-                    {album.spotify_url && (
+                    {pageType !== 'burn-selection' && album.spotify_url && (
                         <button
                             onClick={handleCopyLink}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"

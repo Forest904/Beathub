@@ -20,6 +20,7 @@ from database.db_manager import db, DownloadedItem, initialize_database # Adjust
 from src.routes.download_routes import download_bp
 from src.routes.artist_routes import artist_bp
 from src.routes.album_details_routes import album_details_bp
+from src.routes.cd_burning_routes import cd_burning_bp
 
 
 # --- Logger Configuration (remains the same) ---
@@ -57,6 +58,8 @@ def create_app():
     app.register_blueprint(download_bp)
     app.register_blueprint(artist_bp)
     app.register_blueprint(album_details_bp)
+    # --- NEW: Register the CD Burning Blueprint ---
+    app.register_blueprint(cd_burning_bp)
 
     # --- Catch-all route for serving React app in production ---
     @app.route('/', defaults={'path': ''})

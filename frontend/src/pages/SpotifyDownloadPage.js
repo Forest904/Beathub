@@ -1,14 +1,13 @@
 // src/pages/SpotifyDownloadPage.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // <--- Import useCallback
 import axios from 'axios';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import DownloadForm from '../components/DownloadForm';
 import AlbumGallery from '../components/AlbumGallery';
 import Message from '../components/Message';
 
 function SpotifyDownloadPage() {
     const location = useLocation();
-    const navigate = useNavigate();
     const [downloadMessage, setDownloadMessage] = useState(null);
     const [albums, setAlbums] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -19,7 +18,9 @@ function SpotifyDownloadPage() {
         ? window.location.origin
         : 'http://localhost:5000';
 
-    const fetchAlbums = async () => {
+    // Wrap fetchAlbums with useCallback
+    // Its dependency is API_BASE_URL.
+    const fetchAlbums = useCallback(async () => {
         setLoading(true);
         try {
             const response = await axios.get(`${API_BASE_URL}/api/albums`);
@@ -30,16 +31,19 @@ function SpotifyDownloadPage() {
             setLoading(false);
             setInitialFetchComplete(true);
         }
-    };
+    }, [API_BASE_URL]);
 
-    const handleDownload = async (spotifyLink) => {
+    // Wrap handleDownload with useCallback
+    // Its dependencies are API_BASE_URL and fetchAlbums.
+    // fetchAlbums is now stable because it's also wrapped in useCallback.
+    const handleDownload = useCallback(async (spotifyLink) => {
         setDownloadMessage({ type: 'info', text: "Initiating download..." });
         setLoading(true);
 
         try {
             const response = await axios.post(`${API_BASE_URL}/api/download`, { spotify_link: spotifyLink });
             setDownloadMessage({ type: 'success', text: response.data.message });
-            await fetchAlbums();
+            await fetchAlbums(); // Call the stable fetchAlbums
         } catch (error) {
             console.error('Download error:', error);
             const errorMessage = error.response?.data?.message || error.message || 'An unknown error occurred during download.';
@@ -48,27 +52,20 @@ function SpotifyDownloadPage() {
             setLoading(false);
             setTimeout(() => setDownloadMessage(null), 5000);
         }
-    };
+    }, [API_BASE_URL, fetchAlbums]); // Add fetchAlbums here
 
-    useEffect(() => {
-        fetchAlbums();
-
-        if (location.state && location.state.spotifyLinkToDownload && !autoDownloadAttempted.current) {
-            const linkToDownload = location.state.spotifyLinkToDownload;
-            handleDownload(linkToDownload);
-            autoDownloadAttempted.current = true;
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, [location.state]);
-
-
-    const handleDeleteAlbum = async (albumId) => {
+    // Wrap handleDeleteAlbum with useCallback
+    // Its dependency is API_BASE_URL.
+    // setAlbums and setDownloadMessage are state setters, which are stable by default
+    // and don't need to be in the dependency array.
+    const handleDeleteAlbum = useCallback(async (albumId) => {
         if (window.confirm('Are you sure you want to delete this album?')) {
             setDownloadMessage(null);
             try {
                 const response = await axios.delete(`${API_BASE_URL}/api/albums/${albumId}`);
                 if (response.data.success) {
-                    setAlbums(albums.filter(album => album.id !== albumId));
+                    // Use functional update for state when new state depends on previous state
+                    setAlbums(prevAlbums => prevAlbums.filter(album => album.id !== albumId));
                     setDownloadMessage({ type: 'success', text: response.data.message });
                 } else {
                     const data = response.data;
@@ -81,8 +78,20 @@ function SpotifyDownloadPage() {
                 setTimeout(() => setDownloadMessage(null), 3000);
             }
         }
-    };
-    
+    }, [API_BASE_URL]); // Add API_BASE_URL here
+
+    useEffect(() => {
+        // Now fetchAlbums and handleDownload are stable, so they can be safely added to dependencies
+        fetchAlbums();
+
+        if (location.state && location.state.spotifyLinkToDownload && !autoDownloadAttempted.current) {
+            const linkToDownload = location.state.spotifyLinkToDownload;
+            handleDownload(linkToDownload);
+            autoDownloadAttempted.current = true;
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, [location.state, fetchAlbums, handleDownload]); // <--- Add fetchAlbums and handleDownload here
+
 
     return (
         <div className="container mx-auto p-4 min-h-screen">
@@ -107,8 +116,8 @@ function SpotifyDownloadPage() {
                     ) : (
                         <AlbumGallery
                             albums={albums}
-                            onDeleteAlbum={handleDeleteAlbum}
-                            pageType="history" 
+                            onDeleteAlbum={handleDeleteAlbum} // Pass the useCallback-wrapped handleDeleteAlbum
+                            pageType="history"
                         />
                     )
                 )}
