@@ -29,21 +29,10 @@ function CDBurnerPage() {
     const fetchDownloadedItems = useCallback(async () => {
         setIsLoadingItems(true);
         try {
-            // Assuming you have an existing endpoint to list downloaded items
-            // If not, you'll need to create one in your backend (e.g., /api/downloads/history)
-            const response = await axios.get(`${API_BASE_URL}/api/downloads/history`); // Example endpoint, adjust as per your backend
-            // Map the fetched items to match the AlbumCard's expected props if necessary
-            const items = response.data.downloaded_items.map(item => ({
-                id: item.id,
-                name: item.title, // AlbumCard expects 'name'
-                artist: item.artist,
-                image_url: item.image_url,
-                spotify_url: item.spotify_url,
-                item_type: item.item_type,
-                // Add any other props AlbumCard expects
-            }));
-            setDownloadedItems(items);
-            setMessage({ type: 'success', text: `Loaded ${items.length} downloaded items.` });
+            const response = await axios.get(`${API_BASE_URL}/api/albums`);
+            // The API returns an array of downloaded items
+            setDownloadedItems(response.data); 
+            setMessage({ type: 'success', text: `Loaded ${response.data.length} downloaded items.` });
         } catch (error) {
             console.error('Error fetching downloaded items:', error);
             setMessage({ type: 'error', text: 'Failed to load downloaded items. Please try again.' });
