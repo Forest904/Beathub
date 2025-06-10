@@ -1,3 +1,5 @@
+# src/download_service.py
+
 import subprocess
 import logging
 import os
@@ -8,7 +10,7 @@ import sys
 logger = logging.getLogger(__name__)
 
 class AudioCoverDownloadService:
-    def __init__(self, base_output_dir=None, spotdl_audio_source="youtube-music", spotdl_format="opus"):
+    def __init__(self, base_output_dir=None, spotdl_audio_source="youtube-music", spotdl_format="mp3"): # <--- IMPORTANT: Changed default to "mp3"
         """
         Initializes the DownloadService.
         :param base_output_dir: The base directory where downloaded content will be saved.
@@ -17,7 +19,7 @@ class AudioCoverDownloadService:
         """
         self.base_output_dir = base_output_dir if base_output_dir is not None else 'downloads'
         self.spotdl_audio_source = spotdl_audio_source
-        self.spotdl_format = spotdl_format
+        self.spotdl_format = spotdl_format # This will now be "mp3" by default or from config
         os.makedirs(self.base_output_dir, exist_ok=True)
         logger.info(f"DownloadService initialized with base output directory: {self.base_output_dir}")
 
@@ -37,6 +39,9 @@ class AudioCoverDownloadService:
         :return: True on success, False on failure.
         """
         sanitized_item_title = self._sanitize_filename(item_title)
+        # Ensure the output template uses the correct extension based on self.spotdl_format
+        # You can either let spotdl handle {ext} or be explicit if you know it's always mp3.
+        # Given your log showed {ext}.mp3, let's keep it consistent.
         output_template = os.path.join(
             output_directory,
             "{title}.{ext}" # spotdl will fill in {title} and {ext}
@@ -47,6 +52,8 @@ class AudioCoverDownloadService:
             spotify_link,
             '--output', output_template,
             '--overwrite', 'skip', # Prevent re-downloading existing files
+            '--format', self.spotdl_format, # <--- ADD THIS LINE: Explicitly set the output format
+            '--audio', self.spotdl_audio_source, # <--- ADD THIS LINE: Ensure audio source is used
         ]
 
         try:
@@ -58,6 +65,9 @@ class AudioCoverDownloadService:
             return True
         except subprocess.CalledProcessError as e:
             logger.error(f"Spotdl failed with exit code {e.returncode}. stdout: {e.stdout.strip() if e.stdout else ''}, stderr: {e.stderr.strip() if e.stderr else 'No stderr'}")
+            # Check for rate limit specific error messages here if you want to provide user feedback
+            if "rate/request limit" in (e.stderr or ""):
+                logger.error("Spotdl hit a rate limit. Please wait and try again.")
             return False
         except FileNotFoundError:
             logger.error("Python executable or spotdl module not found for subprocess call. Check your environment.")

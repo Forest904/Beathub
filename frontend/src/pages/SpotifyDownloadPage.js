@@ -94,33 +94,35 @@ function SpotifyDownloadPage() {
 
 
     return (
-        <div className="container mx-auto p-4 min-h-screen">
-            <h1 className="text-4xl font-bold text-white text-center mb-8">My Spotify Downloader</h1>
-
-            <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
-                <h2 className="text-2xl font-semibold text-white mb-4">Download from Spotify</h2>
-                <DownloadForm onSubmit={handleDownload} loading={loading} />
-                {downloadMessage && <Message type={downloadMessage.type} text={downloadMessage.text} />}
-            </div>
-
-            <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
-                <h2 className="text-2xl font-semibold text-white mb-4">My Previous Downloads:</h2>
-                {loading && !initialFetchComplete ? (
-                    <div className="text-center mt-4">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-                        <p className="text-gray-300 mt-2">Loading albums...</p>
-                    </div>
-                ) : (
-                    albums.length === 0 && initialFetchComplete ? (
-                        <p className="text-gray-300 text-center">Not one thing in your collection yet. Add some!</p>
+        <div className="min-h-screen bg-gray-900 text-white"> {/* Added this wrapper div */}
+            <div className="container mx-auto p-4"> {/* Removed redundant text-white and min-h-screen here */}
+                <h1 className="text-4xl font-bold text-center mb-8">My Spotify Downloader</h1> {/* text-white already covered by parent */}
+    
+                <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+                    <h2 className="text-2xl font-semibold text-white mb-4">Download from Spotify</h2>
+                    <DownloadForm onSubmit={handleDownload} loading={loading} />
+                    {downloadMessage && <Message type={downloadMessage.type} text={downloadMessage.text} />}
+                </div>
+    
+                <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h2 className="text-2xl font-semibold text-white mb-4">My Previous Downloads:</h2>
+                    {loading && !initialFetchComplete ? (
+                        <div className="text-center mt-4">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+                            <p className="text-gray-300 mt-2">Loading albums...</p>
+                        </div>
                     ) : (
-                        <AlbumGallery
-                            albums={albums}
-                            onDeleteAlbum={handleDeleteAlbum} // Pass the useCallback-wrapped handleDeleteAlbum
-                            pageType="history"
-                        />
-                    )
-                )}
+                        albums.length === 0 && initialFetchComplete ? (
+                            <p className="text-gray-300 text-center">Not one thing in your collection yet. Add some!</p>
+                        ) : (
+                            <AlbumGallery
+                                albums={albums}
+                                onDeleteAlbum={handleDeleteAlbum}
+                                pageType="history"
+                            />
+                        )
+                    )}
+                </div>
             </div>
         </div>
     );

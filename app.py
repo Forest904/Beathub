@@ -6,15 +6,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Flask specific imports ---
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 
 # --- Import our new configuration and the main orchestrator ---
 from config import Config
 from src.spotify_content_downloader import SpotifyContentDownloader
+from src.cd_burning_service import CDBurningService, CD_BURN_STATUS_MANAGER # Make sure this import is there
 
 # --- Import db, DownloadedItem model, and the initialization function ---
-from database.db_manager import db, DownloadedItem, initialize_database # Adjusted path to src/database
+from database.db_manager import initialize_database # Adjusted path to src/database
 
 # --- Import Blueprints from new routes directory ---
 from src.routes.download_routes import download_bp
@@ -49,10 +50,16 @@ def create_app():
         spotify_client_secret=app.config.get('SPOTIPY_CLIENT_SECRET'),
         genius_access_token=app.config.get('GENIUS_ACCESS_TOKEN')
     )
-
+    
     # Store the spotify_downloader instance in app.extensions
     # This allows blueprints to access it via current_app.extensions['spotify_downloader']
     app.extensions['spotify_downloader'] = spotify_downloader
+
+    # Initialize the CD Burning Service
+    # This will log its initialization at app startup
+    cd_burning_service_instance = CDBurningService(app_logger=app.logger, base_output_dir=app.config.get('BASE_OUTPUT_DIR'))
+    # This allows blueprints to access it via current_app.extensions['cd_burning_service']
+    app.extensions['cd_burning_service'] = cd_burning_service_instance
 
     # --- Register Blueprints ---
     app.register_blueprint(download_bp)

@@ -1,3 +1,15 @@
 /venv
 .env
 /downloads
+.cache
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# MyPy cache
+.mypy_cache/
+
+# Pytest cache
+.pytest_cache/

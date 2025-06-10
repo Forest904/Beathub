@@ -8,7 +8,7 @@ function Header() {
         <header className="bg-gray-800 text-white p-4 shadow-md">
             <div className="container mx-auto flex justify-between items-center">
                 <Link to="/" className="text-2xl font-bold text-blue-400 hover:text-blue-300 transition duration-150">
-                    Spotify Download Manager
+                    CD Burner
                 </Link>
                 <nav>
                     <ul className="flex space-x-6">
@@ -24,7 +24,7 @@ function Header() {
                         </li>
                         <li>
                             <Link to="/burn-cd" className="hover:text-blue-400 transition duration-150">
-                                CD Burner
+                                Burner
                             </Link>
                         </li>
                     </ul>

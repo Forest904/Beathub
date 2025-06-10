@@ -3,7 +3,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
+function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType, isSelected }) { // Added isSelected prop
     const navigate = useNavigate();
 
     // Existing functions (keep as is, they will be conditionally rendered)
@@ -55,9 +55,8 @@ function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
     return (
         <div
             className={`album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105 cursor-pointer
-                ${pageType === 'burn-selection' && onAlbumClick ? 'border-2 border-blue-500' : ''} 
-                ${pageType === 'burn-selection' ? 'hover:border-blue-700' : ''}
-                `}
+                ${isSelected ? 'border-4 border-blue-500' : 'border-2 border-transparent'}
+            `}
             onClick={handleClick}
         >
             <img
@@ -66,8 +65,8 @@ function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType }) {
                 className="w-full h-auto object-cover"
             />
             <div className="p-4 text-center">
-                <h3 className="text-lg font-semibold text-white mb-1 truncate">{album.name}</h3>
-                <p className="text-sm text-gray-400 mb-3 truncate">{album.artist}</p>
+                <h3 className="text-lg font-semibold text-white mb-1 truncate">{album.name}</h3> {/* Displays album/playlist/track name  */}
+                <p className="text-sm text-gray-400 mb-3 truncate">{album.title}</p>
                 <div className="flex flex-col space-y-2">
 
                     {pageType !== 'burn-selection' && album.spotify_url && (
