@@ -26,13 +26,29 @@ class MetadataService:
 
     def _get_item_type(self, spotify_link):
         """Determines the type of Spotify item from its link."""
-        if "album" in spotify_link:
+        link_lower = spotify_link.lower()
+        if "album" in link_lower:
             return "album"
-        elif "track" in spotify_link:
+        elif "track" in link_lower:
             return "track"
-        elif "playlist" in spotify_link:
+        elif "playlist" in link_lower:
             return "playlist"
         return "unknown"
+
+    def _extract_id_from_url(self, spotify_link):
+        """Extracts the Spotify ID from the provided link.
+
+        This helper normalizes links that may contain query strings or trailing
+        slashes which would otherwise result in an empty ID when simply
+        splitting on '/' and '?'.
+        """
+        from urllib.parse import urlparse
+
+        path = urlparse(spotify_link).path
+        segments = [segment for segment in path.split('/') if segment]
+        if segments:
+            return segments[-1]
+        return ""
 
     def get_album_by_id(self, album_id):
         """ Fetches detailed metadata for a specific Spotify album by its ID. """
@@ -66,10 +82,16 @@ class MetadataService:
         item_type = self._get_item_type(spotify_link)
         try:
             if item_type == "album":
-                album_id = spotify_link.split('/')[-1].split('?')[0]
+                album_id = self._extract_id_from_url(spotify_link)
+                if not album_id:
+                    logger.warning(f"Could not parse album ID from {spotify_link}")
+                    return None
                 return self.get_album_by_id(album_id) # Reuse the new method
             elif item_type == "track":
-                track_id = spotify_link.split('/')[-1].split('?')[0]
+                track_id = self._extract_id_from_url(spotify_link)
+                if not track_id:
+                    logger.warning(f"Could not parse track ID from {spotify_link}")
+                    return None
                 track_info = self.sp.track(track_id)
                 album_info = track_info.get('album', {})
                 return {
@@ -81,7 +103,10 @@ class MetadataService:
                     'item_type': 'track',
                 }
             elif item_type == "playlist":
-                playlist_id = spotify_link.split('/')[-1].split('?')[0]
+                playlist_id = self._extract_id_from_url(spotify_link)
+                if not playlist_id:
+                    logger.warning(f"Could not parse playlist ID from {spotify_link}")
+                    return None
                 playlist_info = self.sp.playlist(playlist_id)
                 return {
                     'spotify_id': playlist_info['id'],
