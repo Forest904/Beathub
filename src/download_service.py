@@ -39,12 +39,12 @@ class AudioCoverDownloadService:
         :return: True on success, False on failure.
         """
         sanitized_item_title = self._sanitize_filename(item_title)
-        # Ensure the output template uses the correct extension based on self.spotdl_format
-        # You can either let spotdl handle {ext} or be explicit if you know it's always mp3.
-        # Given your log showed {ext}.mp3, let's keep it consistent.
+        # Build the output template using the sanitized title to avoid invalid
+        # characters in the generated filename. SpotDL will still replace
+        # ``{ext}`` with the appropriate file extension.
         output_template = os.path.join(
             output_directory,
-            "{title}.{ext}" # spotdl will fill in {title} and {ext}
+            f"{sanitized_item_title}.{{ext}}",
         )
 
         command = [

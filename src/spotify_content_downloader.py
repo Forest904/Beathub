@@ -4,7 +4,7 @@ from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCreden
 
 # Import the decoupled services using relative imports
 from .metadata_service import MetadataService
-from .download_sevice import AudioCoverDownloadService
+from .download_service import AudioCoverDownloadService
 from .lyrics_service import LyricsService
 from .file_manager import FileManager
 
