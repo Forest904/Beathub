@@ -23,15 +23,33 @@ class AudioCoverDownloadService:
         name = re.sub(r'_{2,}', '_', name)
         return name
 
-    def download_audio(self, spotify_link: str, output_directory: str, item_title: str,
-                       progress_callback: Optional[Callable[[str, float], None]] = None) -> bool:
+    def _detect_item_type(self, spotify_link: str) -> str:
+        match = re.search(r"open\.spotify\.com/(track|album|playlist)", spotify_link)
+        return match.group(1) if match else "track"
+
+    def download_audio(
+        self,
+        spotify_link: str,
+        output_directory: str,
+        item_title: str,
+        item_type: Optional[str] = None,
+        progress_callback: Optional[Callable[[str, float], None]] = None,
+    ) -> bool:
         """Download audio using the SpotDL Python API."""
+        if item_type is None:
+            item_type = self._detect_item_type(spotify_link)
+
         sanitized_item_title = self._sanitize_filename(item_title)
-        output_template = os.path.join(output_directory, f"{sanitized_item_title}.{{ext}}")
+        if item_type == "track":
+            output_template = os.path.join(output_directory, f"{sanitized_item_title}.{{ext}}")
+        else:
+            output_template = os.path.join(output_directory, "{artists} - {title}.{ext}")
 
         try:
             from spotdl.download.downloader import Downloader, DownloaderOptions
             from spotdl.types.song import Song
+            from spotdl.types.playlist import Playlist
+            from spotdl.types.album import Album
         except Exception as exc:
             logger.error("Failed to import SpotDL API: %s", exc)
             return False
@@ -58,18 +76,32 @@ class AudioCoverDownloadService:
             downloader.progress_handler.update_callback = _update
 
         try:
-            song = Song.from_url(spotify_link)
-        except Exception as exc:
-            logger.error("Failed to parse song from URL %s: %s", spotify_link, exc, exc_info=True)
-            if progress_callback:
-                progress_callback("error", 0)
-            return False
+            if item_type == "track":
+                song = Song.from_url(spotify_link)
+                result = downloader.download_song(song)
+                success = result[1] is not None
+            elif item_type == "playlist":
+                playlist = Playlist.from_url(spotify_link)
+                results = downloader.download_multiple_songs(playlist.songs)
+                success = all(path for _, path in results)
+            elif item_type == "album":
+                album = Album.from_url(spotify_link)
+                results = downloader.download_multiple_songs(album.songs)
+                success = all(path for _, path in results)
+            else:
+                logger.error("Unsupported item type: %s", item_type)
+                if progress_callback:
+                    progress_callback("error", 0)
+                return False
 
-        try:
-            downloader.download_song(song)
-            if progress_callback:
-                progress_callback("finished", 100)
-            return True
+            if success:
+                if progress_callback:
+                    progress_callback("finished", 100)
+                return True
+            else:
+                if progress_callback:
+                    progress_callback("error", 0)
+                return False
         except Exception as e:
             logger.error("SpotDL download failed: %s", e, exc_info=True)
             if progress_callback:
