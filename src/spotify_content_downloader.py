@@ -92,8 +92,18 @@ class SpotifyContentDownloader:
                 )
             return {"status": "error", "message": error_msg}
 
+        # Progress weights per phase (sum to 100)
+        WEIGHTS = {
+            "metadata": 10.0,
+            "cover": 5.0,
+            "audio": 70.0,
+            "lyrics": 12.0,
+            "save": 3.0,
+        }
+        progress_so_far = 0.0
+
         if job_id:
-            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="fetching metadata", progress=0)
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="Loading item metadata...", progress=0)
 
         initial_metadata = self.metadata_service.get_metadata_from_link(spotify_link)
 
@@ -119,21 +129,33 @@ class SpotifyContentDownloader:
         item_specific_output_dir = self.file_manager.create_item_output_directory(artist_name, title_name)
         if not item_specific_output_dir:
             return {"status": "error", "message": f"Could not create output directory for {title_name}."}
+        if job_id:
+            progress_so_far += WEIGHTS["metadata"]
+            pretty_item = f"{item_type}: {title_name} - {artist_name}"
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status=f"Loaded metadata - {pretty_item}", progress=progress_so_far)
 
         # --- Download and save album cover ---
+        if job_id:
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="Downloading cover...", progress=progress_so_far)
         local_cover_image_path = self.audio_cover_download_service.download_cover_image(
             image_url_from_metadata,
             item_specific_output_dir
         )
+        if job_id:
+            progress_so_far += WEIGHTS["cover"]
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="Cover downloaded", progress=progress_so_far)
         # --- End download and save album cover ---
 
         # --- Download audio ---
         if job_id:
-            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="downloading audio", progress=0)
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="Preparing audio download...", progress=progress_so_far)
 
         def progress_cb(status_text: str, percent: float) -> None:
             if job_id:
-                DOWNLOAD_STATUS_MANAGER.update_job(job_id, status=status_text, progress=percent)
+                overall = progress_so_far + WEIGHTS["audio"] * (percent / 100.0)
+                # Clamp
+                overall = max(0.0, min(99.0, overall))
+                DOWNLOAD_STATUS_MANAGER.update_job(job_id, status=f"Downloading music - {status_text}", progress=overall)
 
         audio_download_success = self.audio_cover_download_service.download_audio(
             spotify_link,
@@ -154,22 +176,39 @@ class SpotifyContentDownloader:
         # --- End download audio ---
 
         # --- Get detailed track list and download lyrics ---
+        if job_id:
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="Fetching track list...", progress=progress_so_far + WEIGHTS["audio"])
         detailed_tracks_list = self.metadata_service.get_tracks_details(
             spotify_id, # Use spotify_id here
             item_type,
             image_url_from_metadata
         )
+        track_count = len(detailed_tracks_list) if detailed_tracks_list else 1
 
         # Enrich tracks with lyrics paths
+        completed_lyrics = 0
         for track_detail in detailed_tracks_list:
             track_title = track_detail.get('title', 'Unknown Title')
             track_artist = track_detail.get('artists', ['Unknown Artist'])[0] # Use first artist
+            if job_id:
+                base = progress_so_far + WEIGHTS["audio"]
+                fraction = (completed_lyrics / track_count) if track_count else 0
+                current_progress = base + WEIGHTS["lyrics"] * fraction
+                DOWNLOAD_STATUS_MANAGER.update_job(job_id, status=f"Downloading lyrics - {track_title} - {track_artist}", progress=current_progress)
             lyrics_path = self.lyrics_service.download_lyrics(
                 track_title,
                 track_artist,
                 item_specific_output_dir
             )
             track_detail['local_lyrics_path'] = lyrics_path
+            completed_lyrics += 1
+            if job_id:
+                base = progress_so_far + WEIGHTS["audio"]
+                fraction = (completed_lyrics / track_count) if track_count else 1
+                current_progress = base + WEIGHTS["lyrics"] * fraction
+                DOWNLOAD_STATUS_MANAGER.update_job(job_id, status=f"Downloaded lyrics - {track_title}", progress=current_progress)
+        if job_id:
+            progress_so_far += WEIGHTS["audio"] + WEIGHTS["lyrics"]
         # --- End get detailed track list and download lyrics ---
 
         # --- Save comprehensive metadata JSON ---
@@ -186,10 +225,14 @@ class SpotifyContentDownloader:
             'tracks_details': detailed_tracks_list
         }
 
+        if job_id:
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="Saving metadata...", progress=progress_so_far)
         metadata_json_path = self.file_manager.save_metadata_json(
             item_specific_output_dir,
             comprehensive_metadata_to_save
         )
+        if job_id:
+            progress_so_far += WEIGHTS["save"]
         # --- End save comprehensive metadata JSON ---
 
         simplified_tracks_info_for_return = []
