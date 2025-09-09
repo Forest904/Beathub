@@ -31,7 +31,6 @@ class AudioCoverDownloadService:
 
         try:
             from spotdl.download.downloader import Downloader, DownloaderOptions
-            from spotdl.download.progress_handler import ProgressHandler
         except Exception as exc:
             logger.error("Failed to import SpotDL API: %s", exc)
             return False
@@ -47,7 +46,6 @@ class AudioCoverDownloadService:
             except Exception:
                 pass
 
-        progress_handler = ProgressHandler(update_callback=_update)
         options = DownloaderOptions(
             audio_providers=[self.spotdl_audio_source],
             output=output_template,
@@ -55,7 +53,8 @@ class AudioCoverDownloadService:
             overwrite="skip",
         )
         downloader = Downloader(options)
-        downloader.progress_handler = progress_handler
+        if downloader.progress_handler:
+            downloader.progress_handler.update_callback = _update
 
         try:
             downloader.download([spotify_link])  # type: ignore[call-arg]
