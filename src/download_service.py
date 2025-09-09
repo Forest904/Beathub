@@ -54,7 +54,8 @@ class AudioCoverDownloadService:
             format=self.spotdl_format,
             overwrite="skip",
         )
-        downloader = Downloader(options, progress_handler=progress_handler)
+        downloader = Downloader(options)
+        downloader.progress_handler = progress_handler
 
         try:
             downloader.download([spotify_link])  # type: ignore[call-arg]
