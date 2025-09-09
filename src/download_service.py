@@ -31,6 +31,7 @@ class AudioCoverDownloadService:
 
         try:
             from spotdl.download.downloader import Downloader, DownloaderOptions
+            from spotdl.types.song import Song
         except Exception as exc:
             logger.error("Failed to import SpotDL API: %s", exc)
             return False
@@ -57,7 +58,15 @@ class AudioCoverDownloadService:
             downloader.progress_handler.update_callback = _update
 
         try:
-            downloader.download([spotify_link])  # type: ignore[call-arg]
+            song = Song.from_url(spotify_link)
+        except Exception as exc:
+            logger.error("Failed to parse song from URL %s: %s", spotify_link, exc, exc_info=True)
+            if progress_callback:
+                progress_callback("error", 0)
+            return False
+
+        try:
+            downloader.download_song(song)
             if progress_callback:
                 progress_callback("finished", 100)
             return True
