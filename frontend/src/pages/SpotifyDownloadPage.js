@@ -11,8 +11,11 @@ function SpotifyDownloadPage() {
     const [downloadMessage, setDownloadMessage] = useState(null);
     const [albums, setAlbums] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [jobProgress, setJobProgress] = useState(null);
+    const [statusText, setStatusText] = useState('');
     const [initialFetchComplete, setInitialFetchComplete] = useState(false);
     const autoDownloadAttempted = useRef(false);
+    const eventSourceRef = useRef(null);
 
     const API_BASE_URL = process.env.NODE_ENV === 'production'
         ? window.location.origin
@@ -42,15 +45,35 @@ function SpotifyDownloadPage() {
 
         try {
             const response = await axios.post(`${API_BASE_URL}/api/download`, { spotify_link: spotifyLink });
-            setDownloadMessage({ type: 'success', text: response.data.message });
-            await fetchAlbums(); // Call the stable fetchAlbums
+            const { job_id } = response.data;
+            setJobProgress(0);
+            setStatusText('Starting download...');
+            const es = new EventSource(`${API_BASE_URL}/api/download/events/${job_id}`);
+            eventSourceRef.current = es;
+
+            es.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                setJobProgress(data.progress);
+                setStatusText(data.status || '');
+                if (data.finished) {
+                    es.close();
+                    setLoading(false);
+                    setDownloadMessage({ type: data.status === 'error' ? 'error' : 'success', text: data.message || '' });
+                    setTimeout(() => setDownloadMessage(null), 5000);
+                    setJobProgress(null);
+                    fetchAlbums();
+                }
+            };
+
+            es.onerror = () => {
+                es.close();
+                setLoading(false);
+                setDownloadMessage({ type: 'error', text: 'Connection lost.' });
+            };
         } catch (error) {
             console.error('Download error:', error);
             const errorMessage = error.response?.data?.message || error.message || 'An unknown error occurred during download.';
             setDownloadMessage({ type: 'error', text: errorMessage });
-        } finally {
-            setLoading(false);
-            setTimeout(() => setDownloadMessage(null), 5000);
         }
     }, [API_BASE_URL, fetchAlbums]); // Add fetchAlbums here
 
@@ -101,6 +124,14 @@ function SpotifyDownloadPage() {
                 <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
                     <h2 className="text-2xl font-semibold text-white mb-4">Download from Spotify</h2>
                     <DownloadForm onSubmit={handleDownload} loading={loading} />
+                    {jobProgress !== null && (
+                        <div className="mt-4">
+                            <div className="w-full bg-gray-700 rounded">
+                                <div className="bg-blue-500 h-4 rounded" style={{ width: `${jobProgress}%` }}></div>
+                            </div>
+                            <p className="text-sm mt-2 text-gray-300">{statusText} {Math.round(jobProgress)}%</p>
+                        </div>
+                    )}
                     {downloadMessage && <Message type={downloadMessage.type} text={downloadMessage.text} />}
                 </div>
     

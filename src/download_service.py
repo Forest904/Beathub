@@ -1,110 +1,94 @@
-# src/download_service.py
-
-import subprocess
 import logging
 import os
 import re
 import requests
-import sys
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 class AudioCoverDownloadService:
-    def __init__(self, base_output_dir=None, spotdl_audio_source="youtube-music", spotdl_format="mp3"): # <--- IMPORTANT: Changed default to "mp3"
+    def __init__(self, base_output_dir=None, spotdl_audio_source="youtube-music", spotdl_format="mp3"):
         """
-        Initializes the DownloadService.
-        :param base_output_dir: The base directory where downloaded content will be saved.
-        :param spotdl_audio_source: The audio source to use for spotdl (e.g., "youtube-music", "youtube", "spotify").
-        :param spotdl_format: The audio format to download (e.g., "opus", "mp3", "flac").
+        Service responsible for downloading audio via SpotDL and fetching cover images.
         """
         self.base_output_dir = base_output_dir if base_output_dir is not None else 'downloads'
         self.spotdl_audio_source = spotdl_audio_source
-        self.spotdl_format = spotdl_format # This will now be "mp3" by default or from config
+        self.spotdl_format = spotdl_format
         os.makedirs(self.base_output_dir, exist_ok=True)
-        logger.info(f"DownloadService initialized with base output directory: {self.base_output_dir}")
+        logger.info("DownloadService initialized with base output directory: %s", self.base_output_dir)
 
-    def _sanitize_filename(self, name):
-        """Sanitizes a string to be used as a filename."""
+    def _sanitize_filename(self, name: str) -> str:
         name = re.sub(r'[\\/:*?"<>|]', '_', name)
         name = name.strip()
         name = re.sub(r'_{2,}', '_', name)
         return name
 
-    def download_audio(self, spotify_link, output_directory, item_title):
-        """
-        Downloads audio content using spotdl.
-        :param spotify_link: The Spotify URL to download.
-        :param output_directory: The directory where the audio will be saved.
-        :param item_title: The title of the item (album/track/playlist) for output path formatting.
-        :return: True on success, False on failure.
-        """
+    def download_audio(self, spotify_link: str, output_directory: str, item_title: str,
+                       progress_callback: Optional[Callable[[str, float], None]] = None) -> bool:
+        """Download audio using the SpotDL Python API."""
         sanitized_item_title = self._sanitize_filename(item_title)
-        # Build the output template using the sanitized title to avoid invalid
-        # characters in the generated filename. SpotDL will still replace
-        # ``{ext}`` with the appropriate file extension.
-        output_template = os.path.join(
-            output_directory,
-            f"{sanitized_item_title}.{{ext}}",
-        )
-
-        command = [
-            sys.executable, '-m', 'spotdl',
-            spotify_link,
-            '--output', output_template,
-            '--overwrite', 'skip', # Prevent re-downloading existing files
-            '--format', self.spotdl_format, # <--- ADD THIS LINE: Explicitly set the output format
-            '--audio', self.spotdl_audio_source, # <--- ADD THIS LINE: Ensure audio source is used
-        ]
+        output_template = os.path.join(output_directory, f"{sanitized_item_title}.{{ext}}")
 
         try:
-            logger.info(f"Executing spotdl command: {' '.join(command)}")
-            process = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
-            logger.info(f"Spotdl stdout: {process.stdout}")
-            if process.stderr:
-                logger.warning(f"Spotdl stderr: {process.stderr.strip()}")
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Spotdl failed with exit code {e.returncode}. stdout: {e.stdout.strip() if e.stdout else ''}, stderr: {e.stderr.strip() if e.stderr else 'No stderr'}")
-            # Check for rate limit specific error messages here if you want to provide user feedback
-            if "rate/request limit" in (e.stderr or ""):
-                logger.error("Spotdl hit a rate limit. Please wait and try again.")
-            return False
-        except FileNotFoundError:
-            logger.error("Python executable or spotdl module not found for subprocess call. Check your environment.")
-            return False
-        except Exception as e:
-            logger.exception(f"An unexpected error occurred during audio download for {spotify_link}: {e}")
+            from spotdl.download.downloader import Downloader
+            from spotdl.download.progress_handler import ProgressHandler
+        except Exception as exc:
+            logger.error("Failed to import SpotDL API: %s", exc)
             return False
 
-    def download_cover_image(self, image_url, output_dir, filename="cover.jpg"):
-        """
-        Downloads a cover image from a URL and saves it to a specified directory.
-        :param image_url: The URL of the image to download.
-        :param output_dir: The directory where the image will be saved.
-        :param filename: The name of the file to save the image as.
-        :return: The local path to the downloaded image file, or None if an error occurs.
-        """
+        def _update(tracker):
+            try:
+                overall_total = getattr(tracker, 'overall_total', 100)
+                overall_progress = getattr(tracker, 'overall_progress', 0)
+                percent = (overall_progress / overall_total) * 100 if overall_total else getattr(tracker, 'progress', 0)
+                status_text = getattr(tracker, 'status', '')
+                if progress_callback:
+                    progress_callback(status_text, percent)
+            except Exception:
+                pass
+
+        progress_handler = ProgressHandler(update_callback=_update)
+        downloader = Downloader(  # type: ignore[call-arg]
+            audio_providers=[self.spotdl_audio_source],
+            output=output_template,
+            output_format=self.spotdl_format,
+            overwrite="skip",
+            progress_handler=progress_handler,
+        )
+
+        try:
+            downloader.download([spotify_link])  # type: ignore[call-arg]
+            if progress_callback:
+                progress_callback("finished", 100)
+            return True
+        except Exception as e:
+            logger.error("SpotDL download failed: %s", e, exc_info=True)
+            if progress_callback:
+                progress_callback("error", 0)
+            return False
+
+    def download_cover_image(self, image_url: str, output_dir: str, filename: str = "cover.jpg") -> Optional[str]:
         if not image_url:
             logger.info("No image URL provided, skipping cover art download.")
             return None
 
         local_image_path = os.path.join(output_dir, filename)
         try:
-            logger.info(f"Attempting to download cover art from {image_url} to {local_image_path}")
+            logger.info("Attempting to download cover art from %s to %s", image_url, local_image_path)
             response = requests.get(image_url, stream=True, timeout=15)
             response.raise_for_status()
 
             with open(local_image_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-            logger.info(f"Successfully downloaded cover art to {local_image_path}")
+            logger.info("Successfully downloaded cover art to %s", local_image_path)
             return local_image_path
         except requests.exceptions.Timeout:
-            logger.error(f"Timeout while trying to download cover art from {image_url}")
+            logger.error("Timeout while trying to download cover art from %s", image_url)
             return None
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to download cover art from {image_url}: {e}")
+            logger.error("Failed to download cover art from %s: %s", image_url, e)
             return None
         except IOError as e:
-            logger.error(f"Failed to save cover art to {local_image_path}: {e}")
+            logger.error("Failed to save cover art to %s: %s", local_image_path, e)
             return None
