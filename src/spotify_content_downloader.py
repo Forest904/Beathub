@@ -1,7 +1,9 @@
 import logging
-import spotipy # Import spotipy here
-from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
+
+import spotipy  # Import spotipy here
+from spotipy.oauth2 import SpotifyClientCredentials  # Import SpotifyClientCredentials here
 from spotdl.utils.spotify import SpotifyClient
+from config import Config
 
 # Import the decoupled services using relative imports
 from .metadata_service import MetadataService
@@ -16,13 +18,15 @@ class SpotifyContentDownloader:
     def __init__(self, base_output_dir=None, spotify_client_id=None, spotify_client_secret=None, genius_access_token=None):
         """
         Initializes the SpotifyContentDownloader with all necessary services.
-        Configuration values are passed directly as arguments.
+
+        Configuration values can be supplied directly or will default to values
+        defined in :class:`config.Config`.
         """
-        # These values are received as arguments
-        self.base_output_dir = base_output_dir if base_output_dir is not None else 'downloads' # Provide a robust default if none is passed
-        self._spotify_client_id = spotify_client_id
-        self._spotify_client_secret = spotify_client_secret
-        self._genius_access_token = genius_access_token
+        # Resolve configuration using provided arguments or fall back to Config defaults
+        self.base_output_dir = base_output_dir or Config.BASE_OUTPUT_DIR
+        self._spotify_client_id = spotify_client_id or Config.SPOTIPY_CLIENT_ID
+        self._spotify_client_secret = spotify_client_secret or Config.SPOTIPY_CLIENT_SECRET
+        self._genius_access_token = genius_access_token or Config.GENIUS_ACCESS_TOKEN
 
         if self._spotify_client_id and self._spotify_client_secret:
             try:
