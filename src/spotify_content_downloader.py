@@ -5,6 +5,7 @@ from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCreden
 # Import the decoupled services using relative imports
 from .metadata_service import MetadataService
 from .download_service import AudioCoverDownloadService
+from .download_status_manager import DOWNLOAD_STATUS_MANAGER
 from .lyrics_service import LyricsService
 from .file_manager import FileManager
 
@@ -52,11 +53,26 @@ class SpotifyContentDownloader:
         """ Provides access to the initialized Spotipy instance. """
         return self.sp
 
-    def download_spotify_content(self, spotify_link):
-        """ Orchestrates the download of Spotify content (audio, cover, lyrics, metadata). """
+    def download_spotify_content(self, spotify_link: str, job_id: str | None = None):
+        """Orchestrates the download of Spotify content (audio, cover, lyrics, metadata).
+
+        If ``job_id`` is provided the function will update :class:`DownloadStatusManager`
+        with progress information that can be consumed by Server Sent Events.
+        """
+
+        if job_id:
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="fetching metadata", progress=0)
+
         initial_metadata = self.metadata_service.get_metadata_from_link(spotify_link)
 
         if not initial_metadata:
+            if job_id:
+                DOWNLOAD_STATUS_MANAGER.update_job(
+                    job_id,
+                    status="error",
+                    message="Could not retrieve initial metadata for the given Spotify link.",
+                    finished=True,
+                )
             return {"status": "error", "message": "Could not retrieve initial metadata for the given Spotify link."}
 
         # Extract relevant info from initial_metadata for clearer variable names
@@ -80,12 +96,27 @@ class SpotifyContentDownloader:
         # --- End download and save album cover ---
 
         # --- Download audio ---
+        if job_id:
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="downloading audio", progress=0)
+
+        def progress_cb(status_text: str, percent: float) -> None:
+            if job_id:
+                DOWNLOAD_STATUS_MANAGER.update_job(job_id, status=status_text, progress=percent)
+
         audio_download_success = self.audio_cover_download_service.download_audio(
             spotify_link,
             item_specific_output_dir,
-            title_name # Pass item_title for output formatting
+            title_name,  # Pass item_title for output formatting
+            progress_callback=progress_cb,
         )
         if not audio_download_success:
+            if job_id:
+                DOWNLOAD_STATUS_MANAGER.update_job(
+                    job_id,
+                    status="error",
+                    message=f"Audio download failed for {title_name}.",
+                    finished=True,
+                )
             return {"status": "error", "message": f"Audio download failed for {title_name}."}
         # --- End download audio ---
 
@@ -138,17 +169,22 @@ class SpotifyContentDownloader:
                     'local_lyrics_path': t_detail.get('local_lyrics_path')
                 })
 
-        return {
+        result = {
             "status": "success",
             "message": f"Successfully processed {item_type}: {title_name}",
             "item_name": title_name,
             "item_type": item_type,
-            "spotify_id": spotify_id, # Include spotify_id in return
-            "artist": artist_name, # Include artist in return
-            "spotify_url": spotify_url, # Include spotify_url in return
+            "spotify_id": spotify_id,  # Include spotify_id in return
+            "artist": artist_name,  # Include artist in return
+            "spotify_url": spotify_url,  # Include spotify_url in return
             "output_directory": item_specific_output_dir,
             "cover_art_url": image_url_from_metadata,
             "local_cover_image_path": local_cover_image_path,
             "tracks": simplified_tracks_info_for_return,
-            "metadata_file_path": metadata_json_path
+            "metadata_file_path": metadata_json_path,
         }
+
+        if job_id:
+            DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="finished", progress=100, finished=True)
+
+        return result

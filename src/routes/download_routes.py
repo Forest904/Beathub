@@ -1,8 +1,13 @@
 import os
 import shutil
 import logging
-from flask import Blueprint, request, jsonify
-from database.db_manager import db, DownloadedItem # Corrected: relative to project root
+import threading
+import hashlib
+import json
+import time
+from flask import Blueprint, request, jsonify, Response, stream_with_context
+from database.db_manager import db, DownloadedItem  # Corrected: relative to project root
+from src.download_status_manager import DOWNLOAD_STATUS_MANAGER
 
 logger = logging.getLogger(__name__)
 
@@ -15,76 +20,74 @@ def get_spotify_downloader():
 
 @download_bp.route('/download', methods=['POST'])
 def download_spotify_item_api():
-    spotify_downloader = get_spotify_downloader()
     data = request.get_json()
     spotify_link = data.get('spotify_link')
 
     if not spotify_link:
         return jsonify({"status": "error", "message": "Spotify link is required."}), 400
 
-    logger.info(f"Received download request for: {spotify_link}")
+    job_id = hashlib.sha1(spotify_link.encode()).hexdigest()[:16]
+    DOWNLOAD_STATUS_MANAGER.create_job(job_id)
+    logger.info("Received download request for %s with job id %s", spotify_link, job_id)
 
-    # Delegate the entire download process to the orchestrator
-    result = spotify_downloader.download_spotify_content(spotify_link)
+    spotify_downloader = get_spotify_downloader()
 
-    if result["status"] == "success":
-        # Extract relevant metadata from the result for DB storage
-        item_type = result.get('item_type')
-        spotify_id = result.get('spotify_id')
-        title = result.get('item_name')
-        artist = result.get('artist')
-        image_url = result.get('cover_art_url')
-        spotify_url = result.get('spotify_url')
-        local_path = result.get('output_directory')
+    def _run_download():
+        result = spotify_downloader.download_spotify_content(spotify_link, job_id=job_id)
+        if result.get("status") == "success":
+            item_type = result.get('item_type')
+            spotify_id = result.get('spotify_id')
+            title = result.get('item_name')
+            artist = result.get('artist')
+            image_url = result.get('cover_art_url')
+            spotify_url = result.get('spotify_url')
+            local_path = result.get('output_directory')
 
-        logger.info(f"Attempting to save to DB: Type='{item_type}', ID='{spotify_id}', Title='{title}', Artist='{artist}'")
+            logger.info("Attempting to save to DB: Type='%s', ID='%s', Title='%s', Artist='%s'", item_type, spotify_id, title, artist)
 
-        # Validate essential fields before attempting DB save
-        if not spotify_id or not title:
-            logger.warning(f"Missing crucial data for DB save (Spotify ID or Title). Skipping DB storage for {spotify_link}.")
-            return jsonify(result), 200 # Still return success for download, but warn about DB
-
-        # Determine if this item type should be stored in the DownloadedItem model
-        if item_type in ["album", "track", "playlist"]:
-            try:
-                # Check if an entry with this spotify_id already exists
-                existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
-
-                if not existing_item:
-                    # Create a new entry
-                    logger.info(f"Creating new DB entry for {item_type}: '{title}' by '{artist}'")
-                    new_item = DownloadedItem(
-                        spotify_id=spotify_id,
-                        title=title,
-                        artist=artist,
-                        image_url=image_url,
-                        spotify_url=spotify_url,
-                        local_path=local_path,
-                        item_type=item_type
-                    )
-                    db.session.add(new_item)
-                    db.session.commit()
-                    logger.info(f"Successfully added new {item_type} to DB: {new_item.title} (DB ID: {new_item.id})")
-                else:
-                    # Update existing entry
-                    logger.info(f"{item_type.capitalize()} '{existing_item.title}' already in DB (ID: {existing_item.id}). Checking for updates.")
-                    if existing_item.local_path != local_path:
-                        existing_item.local_path = local_path
+            if spotify_id and title and item_type in ["album", "track", "playlist"]:
+                try:
+                    existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
+                    if not existing_item:
+                        new_item = DownloadedItem(
+                            spotify_id=spotify_id,
+                            title=title,
+                            artist=artist,
+                            image_url=image_url,
+                            spotify_url=spotify_url,
+                            local_path=local_path,
+                            item_type=item_type,
+                        )
+                        db.session.add(new_item)
                         db.session.commit()
-                        logger.info(f"Updated local_path for '{existing_item.title}' to '{local_path}'")
+                        logger.info("Successfully added new %s to DB: %s", item_type, new_item.title)
                     else:
-                        logger.info(f"No update needed for existing {item_type} '{existing_item.title}'.")
+                        if existing_item.local_path != local_path:
+                            existing_item.local_path = local_path
+                            db.session.commit()
+                        logger.info("No update needed for existing %s '%s'.", item_type, existing_item.title)
+                except Exception as e:
+                    db.session.rollback()
+                    logger.error("DATABASE ERROR: %s", e, exc_info=True)
 
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"DATABASE ERROR: Failed to save/update {item_type} '{title}' (ID: {spotify_id}) to DB: {e}", exc_info=True)
-        else:
-            logger.warning(f"Unhandled item_type '{item_type}' encountered. Skipping DB storage for this item.")
+    threading.Thread(target=_run_download, daemon=True).start()
 
-        return jsonify(result), 200
-    else:
-        status_code = 500 if "unexpected" in result.get("message", "").lower() else 400
-        return jsonify(result), status_code
+    return jsonify({"job_id": job_id}), 202
+
+@download_bp.route('/download/events/<job_id>')
+def stream_download_events(job_id):
+    def event_stream():
+        while True:
+            status = DOWNLOAD_STATUS_MANAGER.get_job(job_id)
+            if not status:
+                break
+            yield f"data: {json.dumps(status)}\n\n"
+            if status.get("finished"):
+                DOWNLOAD_STATUS_MANAGER.reset_job(job_id)
+                break
+            time.sleep(1)
+
+    return Response(stream_with_context(event_stream()), mimetype='text/event-stream')
 
 @download_bp.route('/albums', methods=['GET'])
 def get_downloaded_items():
