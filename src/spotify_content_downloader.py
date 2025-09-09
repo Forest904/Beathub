@@ -1,6 +1,7 @@
 import logging
 import spotipy # Import spotipy here
 from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
+from spotdl.utils.spotify import SpotifyClient
 
 # Import the decoupled services using relative imports
 from .metadata_service import MetadataService
@@ -22,6 +23,23 @@ class SpotifyContentDownloader:
         self._spotify_client_id = spotify_client_id
         self._spotify_client_secret = spotify_client_secret
         self._genius_access_token = genius_access_token
+
+        if self._spotify_client_id and self._spotify_client_secret:
+            try:
+                SpotifyClient.init(
+                    client_id=self._spotify_client_id,
+                    client_secret=self._spotify_client_secret,
+                    user_auth=False,
+                    open_browser=False,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to initialize SpotifyClient: %s", e, exc_info=True
+                )
+        else:
+            logger.error(
+                "Spotify client ID or secret missing. SpotifyClient not initialized; downloads will be skipped."
+            )
 
         # Initialize the sub-services, passing them their respective configuration
         self.metadata_service = MetadataService(
@@ -59,6 +77,15 @@ class SpotifyContentDownloader:
         If ``job_id`` is provided the function will update :class:`DownloadStatusManager`
         with progress information that can be consumed by Server Sent Events.
         """
+
+        if not self._spotify_client_id or not self._spotify_client_secret:
+            error_msg = "Spotify client ID or secret missing. Cannot download content."
+            logger.error(error_msg)
+            if job_id:
+                DOWNLOAD_STATUS_MANAGER.update_job(
+                    job_id, status="error", message=error_msg, finished=True
+                )
+            return {"status": "error", "message": error_msg}
 
         if job_id:
             DOWNLOAD_STATUS_MANAGER.update_job(job_id, status="fetching metadata", progress=0)
