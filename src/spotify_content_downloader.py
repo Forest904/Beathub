@@ -107,6 +107,7 @@ class SpotifyContentDownloader:
             spotify_link,
             item_specific_output_dir,
             title_name,  # Pass item_title for output formatting
+            item_type=item_type,
             progress_callback=progress_cb,
         )
         if not audio_download_success:
