@@ -30,11 +30,12 @@ class SpotifyContentDownloader:
 
         if self._spotify_client_id and self._spotify_client_secret:
             try:
+                # Initialize SpotDL's SpotifyClient singleton with the installed API signature
                 SpotifyClient.init(
                     client_id=self._spotify_client_id,
                     client_secret=self._spotify_client_secret,
                     user_auth=False,
-                    open_browser=False,
+                    headless=True,
                 )
             except Exception as e:
                 logger.error(

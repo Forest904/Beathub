@@ -32,45 +32,58 @@ def download_spotify_item_api():
 
     spotify_downloader = get_spotify_downloader()
 
-    def _run_download():
-        result = spotify_downloader.download_spotify_content(spotify_link, job_id=job_id)
-        if result.get("status") == "success":
-            item_type = result.get('item_type')
-            spotify_id = result.get('spotify_id')
-            title = result.get('item_name')
-            artist = result.get('artist')
-            image_url = result.get('cover_art_url')
-            spotify_url = result.get('spotify_url')
-            local_path = result.get('output_directory')
+    # Capture the current Flask app to provide an application context in the thread
+    from flask import current_app
+    app = current_app._get_current_object()
 
-            logger.info("Attempting to save to DB: Type='%s', ID='%s', Title='%s', Artist='%s'", item_type, spotify_id, title, artist)
+    def _run_download(flask_app):
+        # Ensure DB/session operations run within an application context
+        with flask_app.app_context():
+            try:
+                result = spotify_downloader.download_spotify_content(spotify_link, job_id=job_id)
+                if result.get("status") == "success":
+                    item_type = result.get('item_type')
+                    spotify_id = result.get('spotify_id')
+                    title = result.get('item_name')
+                    artist = result.get('artist')
+                    image_url = result.get('cover_art_url')
+                    spotify_url = result.get('spotify_url')
+                    local_path = result.get('output_directory')
 
-            if spotify_id and title and item_type in ["album", "track", "playlist"]:
+                    logger.info("Attempting to save to DB: Type='%s', ID='%s', Title='%s', Artist='%s'", item_type, spotify_id, title, artist)
+
+                    if spotify_id and title and item_type in ["album", "track", "playlist"]:
+                        try:
+                            existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
+                            if not existing_item:
+                                new_item = DownloadedItem(
+                                    spotify_id=spotify_id,
+                                    title=title,
+                                    artist=artist,
+                                    image_url=image_url,
+                                    spotify_url=spotify_url,
+                                    local_path=local_path,
+                                    item_type=item_type,
+                                )
+                                db.session.add(new_item)
+                                db.session.commit()
+                                logger.info("Successfully added new %s to DB: %s", item_type, new_item.title)
+                            else:
+                                if existing_item.local_path != local_path:
+                                    existing_item.local_path = local_path
+                                    db.session.commit()
+                                logger.info("No update needed for existing %s '%s'.", item_type, existing_item.title)
+                        except Exception as e:
+                            db.session.rollback()
+                            logger.error("DATABASE ERROR: %s", e, exc_info=True)
+            finally:
+                # Ensure the scoped session is removed for this thread
                 try:
-                    existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
-                    if not existing_item:
-                        new_item = DownloadedItem(
-                            spotify_id=spotify_id,
-                            title=title,
-                            artist=artist,
-                            image_url=image_url,
-                            spotify_url=spotify_url,
-                            local_path=local_path,
-                            item_type=item_type,
-                        )
-                        db.session.add(new_item)
-                        db.session.commit()
-                        logger.info("Successfully added new %s to DB: %s", item_type, new_item.title)
-                    else:
-                        if existing_item.local_path != local_path:
-                            existing_item.local_path = local_path
-                            db.session.commit()
-                        logger.info("No update needed for existing %s '%s'.", item_type, existing_item.title)
-                except Exception as e:
-                    db.session.rollback()
-                    logger.error("DATABASE ERROR: %s", e, exc_info=True)
+                    db.session.remove()
+                except Exception:
+                    pass
 
-    threading.Thread(target=_run_download, daemon=True).start()
+    threading.Thread(target=_run_download, args=(app,), daemon=True).start()
 
     return jsonify({"job_id": job_id}), 202
 

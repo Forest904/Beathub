@@ -1,8 +1,15 @@
 # config.py
 import os
+from dotenv import load_dotenv
 
 # This assumes config.py is at the root of your project
 basedir = os.path.abspath(os.path.dirname(__file__))
+
+# Load environment variables from a `.env` file located at the project root.
+# This ensures that Spotify and Genius credentials are picked up even when they
+# aren't exported in the shell environment.
+load_dotenv(os.path.join(basedir, '.env'))
+
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your_super_secret_key_lmao' 

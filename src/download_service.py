@@ -3,6 +3,13 @@ import os
 import re
 import requests
 from typing import Callable, Optional
+from config import Config
+
+try:
+    from spotdl.utils.spotify import SpotifyClient, SpotifyError  # type: ignore
+except Exception:  # SpotDL may not be installed at import time; handled later in function
+    SpotifyClient = None  # type: ignore
+    SpotifyError = Exception  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +61,49 @@ class AudioCoverDownloadService:
             logger.error("Failed to import SpotDL API: %s", exc)
             return False
 
-        def _update(tracker):
+        # Ensure SpotDL Spotify client is initialized (singleton)
+        if SpotifyClient is not None:
             try:
-                overall_total = getattr(tracker, 'overall_total', 100)
-                overall_progress = getattr(tracker, 'overall_progress', 0)
-                percent = (overall_progress / overall_total) * 100 if overall_total else getattr(tracker, 'progress', 0)
-                status_text = getattr(tracker, 'status', '')
+                # This will raise if not initialized in this process
+                SpotifyClient()
+            except Exception:
+                # Attempt to initialize using Config defaults
+                client_id = Config.SPOTIPY_CLIENT_ID
+                client_secret = Config.SPOTIPY_CLIENT_SECRET
+                if not client_id or not client_secret:
+                    logger.error("Spotify credentials missing; cannot initialize SpotDL SpotifyClient.")
+                    if progress_callback:
+                        progress_callback("error", 0)
+                    return False
+                try:
+                    SpotifyClient.init(
+                        client_id=client_id,
+                        client_secret=client_secret,
+                        user_auth=False,
+                        headless=True,
+                    )
+                    logger.info("Initialized SpotDL SpotifyClient in download service.")
+                except Exception as exc:
+                    logger.error("Failed to initialize SpotDL SpotifyClient: %s", exc, exc_info=True)
+                    if progress_callback:
+                        progress_callback("error", 0)
+                    return False
+
+        def _update(tracker, message: str = ""):
+            try:
+                parent = getattr(tracker, 'parent', None)
+                overall_total = getattr(parent, 'overall_total', None)
+                overall_progress = getattr(parent, 'overall_progress', None)
+                if overall_total and overall_total > 0 and overall_progress is not None:
+                    percent = (overall_progress / overall_total) * 100
+                else:
+                    percent = float(getattr(tracker, 'progress', 0))
+
+                status_text = message or getattr(tracker, 'status', '')
                 if progress_callback:
                     progress_callback(status_text, percent)
             except Exception:
+                # Swallow any progress callback errors to not break downloads
                 pass
 
         options = DownloaderOptions(
