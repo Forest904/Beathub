@@ -3,7 +3,8 @@ import os
 import re
 import requests
 import time
-from typing import Callable, Optional
+import shutil
+from typing import Callable, Optional, List, Dict, Any
 from config import Config
 
 try:
@@ -48,8 +49,13 @@ class AudioCoverDownloadService:
         item_title: str,
         item_type: Optional[str] = None,
         progress_callback: Optional[Callable[[str, float], None]] = None,
-    ) -> bool:
-        """Download audio using the SpotDL Python API."""
+    ) -> tuple[bool, List[Dict[str, Any]]]:
+        """Download audio using the SpotDL Python API.
+
+        Returns a tuple ``(success, track_reports)`` where ``track_reports``
+        is a list of dictionaries with ``song_name``, ``success`` and
+        ``download_age`` (seconds) for each processed track.
+        """
         if item_type is None:
             item_type = self._detect_item_type(spotify_link)
 
@@ -59,6 +65,12 @@ class AudioCoverDownloadService:
         else:
             output_template = os.path.join(output_directory, "{artists} - {title}.{ext}")
 
+        if shutil.which("ffmpeg") is None:
+            logger.error("ffmpeg is not installed or not found in PATH.")
+            if progress_callback:
+                progress_callback("error", 0)
+            return False, []
+
         try:
             from spotdl.download.downloader import Downloader, DownloaderOptions
             from spotdl.types.song import Song
@@ -66,7 +78,7 @@ class AudioCoverDownloadService:
             from spotdl.types.album import Album
         except Exception as exc:
             logger.error("Failed to import SpotDL API: %s", exc)
-            return False
+            return False, []
 
         # Ensure SpotDL Spotify client is initialized (singleton)
         if SpotifyClient is not None:
@@ -81,7 +93,7 @@ class AudioCoverDownloadService:
                     logger.error("Spotify credentials missing; cannot initialize SpotDL SpotifyClient.")
                     if progress_callback:
                         progress_callback("error", 0)
-                    return False
+                    return False, []
                 try:
                     SpotifyClient.init(
                         client_id=client_id,
@@ -94,10 +106,11 @@ class AudioCoverDownloadService:
                     logger.error("Failed to initialize SpotDL SpotifyClient: %s", exc, exc_info=True)
                     if progress_callback:
                         progress_callback("error", 0)
-                    return False
+                    return False, []
 
         # Track elapsed time per song and detect SpotDL errors to shorten timeouts
-        song_start_times = {}
+        song_start_times: Dict[str, float] = {}
+        track_reports: List[Dict[str, Any]] = []
         from threading import Event
         error_event = Event()
 
@@ -172,38 +185,58 @@ class AudioCoverDownloadService:
                 logger.error("Unsupported item type: %s", item_type)
                 if progress_callback:
                     progress_callback("error", 0)
-                return False
+                return False, []
         except Exception as e:
             logger.error("Failed to prepare download objects: %s", e, exc_info=True)
             if progress_callback:
                 progress_callback("error", 0)
-            return False
+            return False, []
 
-        result_holder = {"success": False, "finished": False}
+        result_holder = {"success": False, "finished": False, "tracks": track_reports}
 
         def _run_download():
             try:
+                run_start = time.monotonic()
                 # Create the downloader in this thread so its asyncio loop is bound here
                 downloader = Downloader(options)
                 if downloader.progress_handler:
                     downloader.progress_handler.update_callback = _update
+
+                results: List[tuple[Any, Optional[str]]] = []
                 if to_download["kind"] == "track":
                     res = downloader.download_song(to_download["obj"])  # type: ignore[index]
-                    result_holder["success"] = res[1] is not None
+                    results = [res]
                 elif to_download["kind"] == "playlist":
                     results = downloader.download_multiple_songs(to_download["obj"].songs)  # type: ignore[index]
                     success_count = sum(1 for _, path in results if path)
                     total_count = len(results)
-                    result_holder["success"] = success_count > 0
                     if progress_callback:
                         progress_callback(f"Finished playlist: {success_count}/{total_count} tracks downloaded", 100)
                 elif to_download["kind"] == "album":
                     results = downloader.download_multiple_songs(to_download["obj"].songs)  # type: ignore[index]
                     success_count = sum(1 for _, path in results if path)
                     total_count = len(results)
-                    result_holder["success"] = success_count > 0
                     if progress_callback:
                         progress_callback(f"Finished album: {success_count}/{total_count} tracks downloaded", 100)
+
+                success_count = 0
+                for song, path in results:
+                    name = getattr(song, "display_name", getattr(song, "name", "Unknown"))
+                    start_time_for_song = song_start_times.get(name, run_start)
+                    download_age = int(time.monotonic() - start_time_for_song)
+                    success = bool(path)
+                    if success:
+                        success_count += 1
+                        logger.info("Downloaded %s in %ss", name, download_age)
+                    else:
+                        logger.error("Failed to download %s in %ss", name, download_age)
+                    track_reports.append({
+                        "song_name": name,
+                        "success": success,
+                        "download_age": download_age,
+                    })
+
+                result_holder["success"] = success_count > 0
             except Exception as e:
                 logger.error("SpotDL download failed: %s", e, exc_info=True)
                 result_holder["success"] = False
@@ -238,23 +271,22 @@ class AudioCoverDownloadService:
 
         if not result_holder["finished"]:
             logger.warning(
-                "Download timed out after %ss (tracks=%s); returning success to continue pipeline.",
+                "Download timed out after %ss (tracks=%s); marking as failure.",
                 int(current_deadline - start_time),
                 track_count,
             )
             if progress_callback:
                 progress_callback("timeout", 100)
-            # Return True to allow pipeline to continue; background thread will be daemon
-            return True
+            return False, track_reports
 
         if result_holder["success"]:
             if progress_callback:
                 progress_callback("finished", 100)
-            return True
+            return True, track_reports
         else:
             if progress_callback:
                 progress_callback("error", 0)
-            return False
+            return False, track_reports
 
     def download_cover_image(self, image_url: str, output_dir: str, filename: str = "cover.jpg") -> Optional[str]:
         if not image_url:

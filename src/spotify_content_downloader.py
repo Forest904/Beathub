@@ -157,14 +157,17 @@ class SpotifyContentDownloader:
                 overall = max(0.0, min(99.0, overall))
                 DOWNLOAD_STATUS_MANAGER.update_job(job_id, status=f"Downloading music - {status_text}", progress=overall)
 
-        audio_download_success = self.audio_cover_download_service.download_audio(
+        audio_download_success, track_reports = self.audio_cover_download_service.download_audio(
             spotify_link,
             item_specific_output_dir,
             title_name,  # Pass item_title for output formatting
             item_type=item_type,
             progress_callback=progress_cb,
         )
+        failed_tracks = [t for t in track_reports if not t["success"]]
         if not audio_download_success:
+            if failed_tracks:
+                logger.error("Tracks failed to download: %s", ", ".join(t["song_name"] for t in failed_tracks))
             if job_id:
                 DOWNLOAD_STATUS_MANAGER.update_job(
                     job_id,
@@ -172,7 +175,10 @@ class SpotifyContentDownloader:
                     message=f"Audio download failed for {title_name}.",
                     finished=True,
                 )
-            return {"status": "error", "message": f"Audio download failed for {title_name}."}
+            return {"status": "error", "message": f"Audio download failed for {title_name}.", "failed_tracks": track_reports}
+        else:
+            if failed_tracks:
+                logger.warning("Some tracks failed to download: %s", ", ".join(t["song_name"] for t in failed_tracks))
         # --- End download audio ---
 
         # --- Get detailed track list and download lyrics ---
@@ -258,6 +264,7 @@ class SpotifyContentDownloader:
             "local_cover_image_path": local_cover_image_path,
             "tracks": simplified_tracks_info_for_return,
             "metadata_file_path": metadata_json_path,
+            "download_report": track_reports,
         }
 
         if job_id:
