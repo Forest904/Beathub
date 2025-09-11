@@ -2,13 +2,7 @@ import logging
 import spotipy # Import spotipy here
 from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
 
-# Import configuration and decoupled services using relative imports
-from .config import (
-    BASE_OUTPUT_DIR,
-    SPOTIPY_CLIENT_ID,
-    SPOTIPY_CLIENT_SECRET,
-    GENIUS_ACCESS_TOKEN,
-)
+# Import the decoupled services using relative imports
 from .metadata_service import MetadataService
 from .download_service import AudioCoverDownloadService
 from .lyrics_service import LyricsService
@@ -19,25 +13,33 @@ logger = logging.getLogger(__name__)
 class SpotifyContentDownloader:
     def __init__(
         self,
-        base_output_dir=BASE_OUTPUT_DIR,
-        spotify_client_id=SPOTIPY_CLIENT_ID,
-        spotify_client_secret=SPOTIPY_CLIENT_SECRET,
-        genius_access_token=GENIUS_ACCESS_TOKEN,
+        base_output_dir=None,
+        spotify_client_id=None,
+        spotify_client_secret=None,
+        genius_access_token=None,
+        spotdl_audio_source=None,
+        spotdl_format=None,
     ):
         """Initializes the SpotifyContentDownloader with all necessary services."""
 
-        # Configuration values with centralized defaults
-        self.base_output_dir = base_output_dir
+        # Configuration values
+        self.base_output_dir = base_output_dir if base_output_dir is not None else 'downloads'
         self._spotify_client_id = spotify_client_id
         self._spotify_client_secret = spotify_client_secret
         self._genius_access_token = genius_access_token
+        self._spotdl_audio_source = spotdl_audio_source
+        self._spotdl_format = spotdl_format
 
         # Initialize the sub-services, passing them their respective configuration
         self.metadata_service = MetadataService(
             spotify_client_id=self._spotify_client_id,
             spotify_client_secret=self._spotify_client_secret
         )
-        self.audio_cover_download_service = AudioCoverDownloadService(base_output_dir=self.base_output_dir)
+        self.audio_cover_download_service = AudioCoverDownloadService(
+            base_output_dir=self.base_output_dir,
+            spotdl_audio_source=(self._spotdl_audio_source or "youtube-music"),
+            spotdl_format=(self._spotdl_format or "mp3"),
+        )
         self.lyrics_service = LyricsService(genius_access_token=self._genius_access_token)
         self.file_manager = FileManager(base_output_dir=self.base_output_dir)
 

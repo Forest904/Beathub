@@ -50,7 +50,11 @@ SPOTIPY_CLIENT_ID=your_spotify_client_id
 SPOTIPY_CLIENT_SECRET=your_spotify_client_secret
 
 # Genius (https://genius.com/api-clients)
-GENIUS_ACCESS_TOKEN=your_genius_token
+  GENIUS_ACCESS_TOKEN=your_genius_token
+
+# spotDL (optional)
+SPOTDL_AUDIO_SOURCE=youtube-music
+SPOTDL_FORMAT=mp3
 ```
 
 3) Frontend (development or production)
@@ -130,7 +134,7 @@ On first run, the SQLite DB and tables are created automatically.
 
 ## Configuration Tips
 
-- spotDL format/source: Defaults are `mp3` and `youtube-music` in `src/download_service.py`. Adjust `spotdl_format` and `spotdl_audio_source` if desired.
+- spotDL format/source: Defaults are `mp3` and `youtube-music`. Configure via env vars `SPOTDL_FORMAT` and `SPOTDL_AUDIO_SOURCE` or change defaults in `src/download_service.py`.
 - DB file: Default is `database/instance/cd_collector.db` (configured in `config.py`). Created on startup.
 - Static build: Flask serves `frontend/build` when present. During dev, use CRA dev server with the proxy.
 
@@ -152,4 +156,3 @@ On first run, the SQLite DB and tables are created automatically.
 ## License
 
 No license specified. Add one if you plan to distribute.
-

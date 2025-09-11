@@ -48,7 +48,9 @@ def create_app():
         base_output_dir=app.config.get('BASE_OUTPUT_DIR'),
         spotify_client_id=app.config.get('SPOTIPY_CLIENT_ID'),
         spotify_client_secret=app.config.get('SPOTIPY_CLIENT_SECRET'),
-        genius_access_token=app.config.get('GENIUS_ACCESS_TOKEN')
+        genius_access_token=app.config.get('GENIUS_ACCESS_TOKEN'),
+        spotdl_audio_source=app.config.get('SPOTDL_AUDIO_SOURCE'),
+        spotdl_format=app.config.get('SPOTDL_FORMAT'),
     )
     
     # Store the spotify_downloader instance in app.extensions
