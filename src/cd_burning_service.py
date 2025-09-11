@@ -7,7 +7,7 @@ import tempfile
 import shutil
 import threading
 
-from .config import BASE_OUTPUT_DIR
+from config import Config
 
 # Ensure pydub and its dependencies (like ffmpeg) are installed
 from pydub import AudioSegment
@@ -116,10 +116,10 @@ CD_BURN_STATUS_MANAGER = CDBurnStatusManager()
 
 
 class CDBurningService:
-    def __init__(self, app_logger=None, base_output_dir=BASE_OUTPUT_DIR):
+    def __init__(self, app_logger=None, base_output_dir=None):
         # Use the provided app_logger or create a new one for this instance
         self.logger = app_logger if app_logger else logging.getLogger(self.__class__.__name__)
-        self.base_output_dir = base_output_dir
+        self.base_output_dir = base_output_dir or Config.BASE_OUTPUT_DIR
         # Ensure cdrecord/wodim and ffmpeg are in PATH or provide full path
         self.cdrecord_path = "cdrecord" # Or "wodim" on some Linux systems
         self.ffmpeg_path = "ffmpeg"    # pydub typically handles this, but good to note

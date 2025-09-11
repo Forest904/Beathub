@@ -4,15 +4,19 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import logging
 import os
 
-from .config import SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 class MetadataService:
-    def __init__(self, spotify_client_id=SPOTIPY_CLIENT_ID,
-                 spotify_client_secret=SPOTIPY_CLIENT_SECRET,
+    def __init__(self, spotify_client_id=None,
+                 spotify_client_secret=None,
                  spotify_client=None):
-        """Initializes the MetadataService."""
+        """Initializes the MetadataService using keys from Config by default."""
+        # Fallback to values from Config if not explicitly provided
+        spotify_client_id = spotify_client_id or Config.SPOTIPY_CLIENT_ID
+        spotify_client_secret = spotify_client_secret or Config.SPOTIPY_CLIENT_SECRET
+
         self.sp = spotify_client
         if not self.sp:
             if spotify_client_id and spotify_client_secret:
@@ -26,7 +30,7 @@ class MetadataService:
                     logger.error(f"Failed to initialize Spotipy client in MetadataService: {e}")
                     self.sp = None
             else:
-                logger.warning("Spotify client ID and secret not provided. MetadataService will be limited.")
+                logger.warning("Spotify client ID and secret not provided in Config or args. MetadataService will be limited.")
 
     def _get_item_type(self, spotify_link):
         """Determines the type of Spotify item from its link."""

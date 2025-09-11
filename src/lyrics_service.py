@@ -3,13 +3,15 @@ import logging
 import re
 import os
 
-from .config import GENIUS_ACCESS_TOKEN
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 class LyricsService:
-    def __init__(self, genius_access_token=GENIUS_ACCESS_TOKEN):
-        """Initializes the LyricsService."""
+    def __init__(self, genius_access_token=None):
+        """Initializes the LyricsService using token from Config by default."""
+        # Fallback to Config if not explicitly provided
+        genius_access_token = genius_access_token or Config.GENIUS_ACCESS_TOKEN
         self.genius_client = None
         if genius_access_token:
             try:

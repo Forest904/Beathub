@@ -1,6 +1,7 @@
 import logging
 import spotipy # Import spotipy here
 from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
+from config import Config
 
 # Import the decoupled services using relative imports
 from .metadata_service import MetadataService
@@ -22,13 +23,13 @@ class SpotifyContentDownloader:
     ):
         """Initializes the SpotifyContentDownloader with all necessary services."""
 
-        # Configuration values
-        self.base_output_dir = base_output_dir if base_output_dir is not None else 'downloads'
-        self._spotify_client_id = spotify_client_id
-        self._spotify_client_secret = spotify_client_secret
-        self._genius_access_token = genius_access_token
-        self._spotdl_audio_source = spotdl_audio_source
-        self._spotdl_format = spotdl_format
+        # Configuration values (fallback to Config if not provided)
+        self.base_output_dir = base_output_dir if base_output_dir is not None else Config.BASE_OUTPUT_DIR
+        self._spotify_client_id = spotify_client_id or Config.SPOTIPY_CLIENT_ID
+        self._spotify_client_secret = spotify_client_secret or Config.SPOTIPY_CLIENT_SECRET
+        self._genius_access_token = genius_access_token or Config.GENIUS_ACCESS_TOKEN
+        self._spotdl_audio_source = spotdl_audio_source or Config.SPOTDL_AUDIO_SOURCE
+        self._spotdl_format = spotdl_format or Config.SPOTDL_FORMAT
 
         # Initialize the sub-services, passing them their respective configuration
         self.metadata_service = MetadataService(

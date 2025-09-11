@@ -7,23 +7,24 @@ import re
 import requests
 import sys
 
-from .config import BASE_OUTPUT_DIR, SPOTDL_AUDIO_SOURCE, SPOTDL_FORMAT
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 class AudioCoverDownloadService:
-    def __init__(self, base_output_dir=BASE_OUTPUT_DIR,
-                 spotdl_audio_source=SPOTDL_AUDIO_SOURCE,
-                 spotdl_format=SPOTDL_FORMAT):
-        """Initializes the DownloadService.
+    def __init__(self, base_output_dir=None,
+                 spotdl_audio_source=None,
+                 spotdl_format=None):
+        """Initializes the DownloadService using Config defaults if not provided.
 
         :param base_output_dir: The base directory where downloaded content will be saved.
         :param spotdl_audio_source: The audio source to use for spotdl (e.g., "youtube-music", "youtube", "spotify").
         :param spotdl_format: The audio format to download (e.g., "opus", "mp3", "flac").
         """
-        self.base_output_dir = base_output_dir
-        self.spotdl_audio_source = spotdl_audio_source
-        self.spotdl_format = spotdl_format
+        # Fallback to Config values when args are not provided
+        self.base_output_dir = base_output_dir or Config.BASE_OUTPUT_DIR
+        self.spotdl_audio_source = spotdl_audio_source or Config.SPOTDL_AUDIO_SOURCE
+        self.spotdl_format = spotdl_format or Config.SPOTDL_FORMAT
         os.makedirs(self.base_output_dir, exist_ok=True)
         logger.info(f"DownloadService initialized with base output directory: {self.base_output_dir}")
 
