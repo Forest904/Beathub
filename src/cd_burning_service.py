@@ -7,6 +7,8 @@ import tempfile
 import shutil
 import threading
 
+from .config import BASE_OUTPUT_DIR
+
 # Ensure pydub and its dependencies (like ffmpeg) are installed
 from pydub import AudioSegment
 
@@ -114,7 +116,7 @@ CD_BURN_STATUS_MANAGER = CDBurnStatusManager()
 
 
 class CDBurningService:
-    def __init__(self, app_logger=None, base_output_dir=None):
+    def __init__(self, app_logger=None, base_output_dir=BASE_OUTPUT_DIR):
         # Use the provided app_logger or create a new one for this instance
         self.logger = app_logger if app_logger else logging.getLogger(self.__class__.__name__)
         self.base_output_dir = base_output_dir

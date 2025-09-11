@@ -4,11 +4,15 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import logging
 import os
 
+from .config import SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET
+
 logger = logging.getLogger(__name__)
 
 class MetadataService:
-    def __init__(self, spotify_client_id=None, spotify_client_secret=None, spotify_client=None):
-        """ Initializes the MetadataService. """
+    def __init__(self, spotify_client_id=SPOTIPY_CLIENT_ID,
+                 spotify_client_secret=SPOTIPY_CLIENT_SECRET,
+                 spotify_client=None):
+        """Initializes the MetadataService."""
         self.sp = spotify_client
         if not self.sp:
             if spotify_client_id and spotify_client_secret:
