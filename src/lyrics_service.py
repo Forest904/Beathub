@@ -3,11 +3,13 @@ import logging
 import re
 import os
 
+from .config import GENIUS_ACCESS_TOKEN
+
 logger = logging.getLogger(__name__)
 
 class LyricsService:
-    def __init__(self, genius_access_token=None):
-        """ Initializes the LyricsService. """
+    def __init__(self, genius_access_token=GENIUS_ACCESS_TOKEN):
+        """Initializes the LyricsService."""
         self.genius_client = None
         if genius_access_token:
             try:

@@ -2,7 +2,13 @@ import logging
 import spotipy # Import spotipy here
 from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
 
-# Import the decoupled services using relative imports
+# Import configuration and decoupled services using relative imports
+from .config import (
+    BASE_OUTPUT_DIR,
+    SPOTIPY_CLIENT_ID,
+    SPOTIPY_CLIENT_SECRET,
+    GENIUS_ACCESS_TOKEN,
+)
 from .metadata_service import MetadataService
 from .download_service import AudioCoverDownloadService
 from .lyrics_service import LyricsService
@@ -11,13 +17,17 @@ from .file_manager import FileManager
 logger = logging.getLogger(__name__)
 
 class SpotifyContentDownloader:
-    def __init__(self, base_output_dir=None, spotify_client_id=None, spotify_client_secret=None, genius_access_token=None):
-        """
-        Initializes the SpotifyContentDownloader with all necessary services.
-        Configuration values are passed directly as arguments.
-        """
-        # These values are received as arguments
-        self.base_output_dir = base_output_dir if base_output_dir is not None else 'downloads' # Provide a robust default if none is passed
+    def __init__(
+        self,
+        base_output_dir=BASE_OUTPUT_DIR,
+        spotify_client_id=SPOTIPY_CLIENT_ID,
+        spotify_client_secret=SPOTIPY_CLIENT_SECRET,
+        genius_access_token=GENIUS_ACCESS_TOKEN,
+    ):
+        """Initializes the SpotifyContentDownloader with all necessary services."""
+
+        # Configuration values with centralized defaults
+        self.base_output_dir = base_output_dir
         self._spotify_client_id = spotify_client_id
         self._spotify_client_secret = spotify_client_secret
         self._genius_access_token = genius_access_token

@@ -2,12 +2,14 @@ import os
 import re
 import logging
 
+from .config import BASE_OUTPUT_DIR
+
 logger = logging.getLogger(__name__)
 
 class FileManager:
-    def __init__(self, base_output_dir='downloads'):
-        """
-        Initializes the FileManager.
+    def __init__(self, base_output_dir=BASE_OUTPUT_DIR):
+        """Initializes the FileManager.
+
         :param base_output_dir: The base directory for all downloads.
         """
         self.base_output_dir = base_output_dir
