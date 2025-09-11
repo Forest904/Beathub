@@ -11,7 +11,7 @@ class Config:
 
     # Database
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///' + os.path.join(basedir, 'database', 'instance', 'cd_collector.db')
+        'sqlite:///' + os.path.join(basedir, 'src', 'database', 'instance', 'cd_collector.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Spotify API

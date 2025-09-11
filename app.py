@@ -15,7 +15,7 @@ from src.spotify_content_downloader import SpotifyContentDownloader
 from src.cd_burning_service import CDBurningService, CD_BURN_STATUS_MANAGER # Make sure this import is there
 
 # --- Import db, DownloadedItem model, and the initialization function ---
-from database.db_manager import initialize_database # Adjusted path to src/database
+from src.database.db_manager import initialize_database
 
 # --- Import Blueprints from new routes directory ---
 from src.routes.download_routes import download_bp

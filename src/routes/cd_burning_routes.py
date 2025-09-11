@@ -5,7 +5,7 @@ import os
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import SQLAlchemyError
 
-from database.db_manager import db, DownloadedItem
+from src.database.db_manager import db, DownloadedItem
 # CD_BURN_STATUS_MANAGER is still imported as it's a global singleton,
 # but CDBurningService itself will be accessed via current_app.extensions.
 from src.cd_burning_service import CD_BURN_STATUS_MANAGER

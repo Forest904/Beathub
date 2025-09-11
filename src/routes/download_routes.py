@@ -2,7 +2,7 @@ import os
 import shutil
 import logging
 from flask import Blueprint, request, jsonify
-from database.db_manager import db, DownloadedItem # Corrected: relative to project root
+from src.database.db_manager import db, DownloadedItem
 
 logger = logging.getLogger(__name__)
 
