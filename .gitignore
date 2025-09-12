@@ -1,7 +1,7 @@
 /venv
 .env
 /downloads
-.cache
+src/log
 
 # Python bytecode
 __pycache__/
@@ -13,3 +13,4 @@ __pycache__/
 
 # Pytest cache
 .pytest_cache/
+.cache

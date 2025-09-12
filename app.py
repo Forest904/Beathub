@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -24,15 +25,55 @@ from src.routes.album_details_routes import album_details_bp
 from src.routes.cd_burning_routes import cd_burning_bp
 
 
-# --- Logger Configuration (remains the same) ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
+
+
+def configure_logging(log_dir: str) -> str:
+    """
+    Configure root logging with:
+      - FileHandler (INFO+) to a new file per run: LOG-YYYY-MM-DD-HH-MM-SS
+      - StreamHandler (WARNING+) to console
+      - Werkzueg/Flask loggers routed to root (no extra console spam)
+
+    Returns the path to the created log file.
+    """
+    os.makedirs(log_dir, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    log_filename = f"LOG-{timestamp}"
+    log_path = os.path.join(log_dir, log_filename)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    # Clear any pre-existing handlers to avoid duplicates
+    root.handlers = []
+
+    formatter = logging.Formatter(
+        fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # File: INFO and above
+    file_handler = logging.FileHandler(log_path, encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
+
+    # Console: WARNING and above
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(formatter)
+    root.addHandler(console_handler)
+
+    # Quiet Flask/Werkzeug own console handlers; let them propagate to root
+    for name in ("werkzeug", "flask.app"):
+        _l = logging.getLogger(name)
+        _l.setLevel(logging.INFO)
+        _l.handlers = []
+        _l.propagate = True
+
+    return log_path
 
 
 def create_app():
@@ -87,6 +128,14 @@ if __name__ == '__main__':
     # Ensure the base downloads directory exists when the app starts
     os.makedirs(Config.BASE_OUTPUT_DIR, exist_ok=True)
 
+    # Configure logging only in the reloader child (avoids duplicate files)
+    # When not using the reloader, this condition is false and we still configure.
+    reloader_child = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+    if reloader_child:
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'log')
+        log_file_path = configure_logging(log_dir)
+        logger.info("File logging initialized at %s", log_file_path)
+
     # Check API credentials at startup
     if not Config.SPOTIPY_CLIENT_ID or not Config.SPOTIPY_CLIENT_SECRET:
         logger.warning("Spotify API client ID or client secret not found in environment variables.")
@@ -96,5 +145,9 @@ if __name__ == '__main__':
 
     # Create the app instance here
     app = create_app()
+    # Route app.logger through root handlers, keep levels consistent
+    app.logger.handlers = []
+    app.logger.setLevel(logging.INFO)
+    app.logger.propagate = True
     logger.info("Starting Flask application...")
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -2,9 +2,11 @@
 
 from flask_sqlalchemy import SQLAlchemy
 import os # Import os for path handling
+import logging
 
 # Initialize the SQLAlchemy object
 db = SQLAlchemy()
+logger = logging.getLogger(__name__)
 
 # --- Define Your Database Models Here ---
 class DownloadedItem(db.Model):
@@ -48,9 +50,9 @@ def initialize_database(app):
     instance_path = app.instance_path
     if not os.path.exists(instance_path):
         os.makedirs(instance_path)
-        print(f"Created instance folder: {instance_path}")
+        logger.info("Created instance folder: %s", instance_path)
 
     # Create database tables within the application context
     with app.app_context():
         db.create_all()
-        print("Database tables created or already exist.")
+        logger.info("Database tables created or already exist.")
