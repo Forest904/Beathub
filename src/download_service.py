@@ -59,10 +59,30 @@ class AudioCoverDownloadService:
             '--overwrite', 'skip', # Prevent re-downloading existing files
             '--format', self.spotdl_format, # <--- ADD THIS LINE: Explicitly set the output format
             '--audio', self.spotdl_audio_source, # <--- ADD THIS LINE: Ensure audio source is used
+            '--threads', str(Config.SPOTDL_THREADS),
         ]
 
+        # If Spotify credentials are available, pass them to spotDL to avoid
+        # falling back to shared/default creds that hit rate limits quickly.
+        if Config.SPOTIPY_CLIENT_ID and Config.SPOTIPY_CLIENT_SECRET:
+            command.extend([
+                '--client-id', Config.SPOTIPY_CLIENT_ID,
+                '--client-secret', Config.SPOTIPY_CLIENT_SECRET,
+            ])
+
         try:
-            logger.info(f"Executing spotdl command: {' '.join(command)}")
+            # Redact sensitive values in logs
+            safe_command = list(command)
+            try:
+                if '--client-secret' in safe_command:
+                    idx = safe_command.index('--client-secret')
+                    if idx + 1 < len(safe_command):
+                        safe_command[idx + 1] = '***REDACTED***'
+            except Exception:
+                # Never fail just because of logging sanitation
+                pass
+
+            logger.info(f"Executing spotdl command: {' '.join(safe_command)}")
             process = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
             logger.info(f"Spotdl stdout: {process.stdout}")
             if process.stderr:

@@ -55,6 +55,8 @@ SPOTIPY_CLIENT_SECRET=your_spotify_client_secret
 # spotDL (optional)
 SPOTDL_AUDIO_SOURCE=youtube-music
 SPOTDL_FORMAT=mp3
+# Limit spotDL concurrency (helps avoid provider rate limits)
+SPOTDL_THREADS=1
 ```
 
 3) Frontend (development or production)
@@ -134,7 +136,7 @@ On first run, the SQLite DB and tables are created automatically.
 
 ## Configuration Tips
 
-- spotDL format/source: Defaults are `mp3` and `youtube-music`. Configure via env vars `SPOTDL_FORMAT` and `SPOTDL_AUDIO_SOURCE` or change defaults in `src/download_service.py`.
+- spotDL format/source/threads: Defaults are `mp3`, `youtube-music`, and `1` thread. Configure via env vars `SPOTDL_FORMAT`, `SPOTDL_AUDIO_SOURCE`, and `SPOTDL_THREADS`, or change defaults in `src/download_service.py`.
 - DB file: Default is `database/instance/cd_collector.db` (configured in `config.py`). Created on startup.
 - Static build: Flask serves `frontend/build` when present. During dev, use CRA dev server with the proxy.
 
@@ -145,7 +147,7 @@ On first run, the SQLite DB and tables are created automatically.
 - `ffmpeg` not found: Install and ensure it’s on `PATH`
 - `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed
 - No burner detected: Verify `cdrecord`/`wodim` is installed and accessible; try running with admin/root if required
-- Rate limits or spotDL failures: Check logs; retry later or change audio source in `src/download_service.py`
+- Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
 
 ## Development
 
