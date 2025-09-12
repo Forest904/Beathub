@@ -40,7 +40,7 @@ def configure_logging(log_dir: str) -> str:
     os.makedirs(log_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    log_filename = f"LOG-{timestamp}"
+    log_filename = f"log-{timestamp}"
     log_path = os.path.join(log_dir, log_filename)
 
     root = logging.getLogger()

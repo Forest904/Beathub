@@ -27,3 +27,6 @@ class Config:
     # spotDL configuration (optional)
     SPOTDL_AUDIO_SOURCE = os.getenv('SPOTDL_AUDIO_SOURCE', 'youtube-music')
     SPOTDL_FORMAT = os.getenv('SPOTDL_FORMAT', 'mp3')
+
+    # Lyrics fetching window size (for sliding-window processing)
+    LYRICS_WINDOW_SIZE = int(os.getenv('LYRICS_WINDOW_SIZE', '5'))

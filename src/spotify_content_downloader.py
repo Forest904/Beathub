@@ -1,4 +1,5 @@
 import logging
+import threading
 import spotipy # Import spotipy here
 from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
 from config import Config
@@ -92,34 +93,50 @@ class SpotifyContentDownloader:
         )
         # --- End download and save album cover ---
 
-        # --- Download audio ---
-        audio_download_success = self.audio_cover_download_service.download_audio(
-            spotify_link,
-            item_specific_output_dir,
-            title_name # Pass item_title for output formatting
-        )
-        if not audio_download_success:
-            return {"status": "error", "message": f"Audio download failed for {title_name}."}
-        # --- End download audio ---
+        # --- Start audio download in background ---
+        audio_result = {'ok': None}
 
-        # --- Get detailed track list and download lyrics ---
+        def _audio_job():
+            audio_result['ok'] = self.audio_cover_download_service.download_audio(
+                spotify_link,
+                item_specific_output_dir,
+                title_name
+            )
+
+        audio_thread = threading.Thread(target=_audio_job, name='audio-download', daemon=True)
+        audio_thread.start()
+        # --- End start audio download ---
+
+        # --- Get detailed track list ---
         detailed_tracks_list = self.metadata_service.get_tracks_details(
-            spotify_id, # Use spotify_id here
+            spotify_id,
             item_type,
             image_url_from_metadata
         )
 
-        # Enrich tracks with lyrics paths
-        for track_detail in detailed_tracks_list:
-            track_title = track_detail.get('title', 'Unknown Title')
-            track_artist = track_detail.get('artists', ['Unknown Artist'])[0] # Use first artist
-            lyrics_path = self.lyrics_service.download_lyrics(
-                track_title,
-                track_artist,
-                item_specific_output_dir
-            )
-            track_detail['local_lyrics_path'] = lyrics_path
-        # --- End get detailed track list and download lyrics ---
+        # --- Sliding window lyrics fetching ---
+        window = Config.LYRICS_WINDOW_SIZE
+        total = len(detailed_tracks_list)
+        if total:
+            for i in range(0, total, window):
+                batch = detailed_tracks_list[i:i + window]
+                logger.info(f"Fetching lyrics for tracks {i + 1}-{i + len(batch)} of {total}")
+                for track_detail in batch:
+                    track_title = track_detail.get('title', 'Unknown Title')
+                    track_artist = track_detail.get('artists', ['Unknown Artist'])[0]
+                    lyrics_path = self.lyrics_service.download_lyrics(
+                        track_title,
+                        track_artist,
+                        item_specific_output_dir
+                    )
+                    track_detail['local_lyrics_path'] = lyrics_path
+        # --- End sliding window lyrics fetching ---
+
+        # --- Wait for audio completion and check result ---
+        audio_thread.join()
+        if audio_result['ok'] is False:
+            return {"status": "error", "message": f"Audio download failed for {title_name}."}
+        # --- End wait for audio ---
 
         # --- Save comprehensive metadata JSON ---
         # The comprehensive metadata should now include all details
