@@ -194,6 +194,7 @@ class SpotifyContentDownloader:
         audio_failed = False
         used_spotdl_download = False
         error_result = None
+        audio_thread = None
         if Config.USE_SPOTDL_PIPELINE and spotdl_client and songs:
             # Drive downloads via SpotDL API (progress published via broker)
             try:
@@ -223,6 +224,17 @@ class SpotifyContentDownloader:
                 else:
                     error_result = {"status": "error", "error_code": "internal_error", "message": f"SpotDL API download failed: {e}"}
                 audio_failed = True
+                used_spotdl_download = False
+                # Fallback to legacy CLI path to keep user flow
+                audio_result = {'ok': None}
+                def _audio_job_cli():
+                    audio_result['ok'] = self.audio_cover_download_service.download_audio(
+                        spotify_link,
+                        item_specific_output_dir,
+                        title_name
+                    )
+                audio_thread = threading.Thread(target=_audio_job_cli, name='audio-download', daemon=True)
+                audio_thread.start()
         else:
             # Legacy CLI path in background thread
             audio_result = {'ok': None}
@@ -274,9 +286,13 @@ class SpotifyContentDownloader:
             for t in track_dtos:
                 t.local_path = results_map.get(t.spotify_url)
         else:
-            audio_thread.join()
-            if audio_result['ok'] is False:
-                return {"status": "error", "message": f"Audio download failed for {title_name}."}
+            if audio_thread is not None:
+                audio_thread.join()
+                if audio_result['ok'] is False:
+                    # Prefer SpotDL-specific error if we had one
+                    return error_result or {"status": "error", "message": f"Audio download failed for {title_name}."}
+            else:
+                return error_result or {"status": "error", "message": "Audio download did not start."}
 
         # Persist track rows (without local audio path for now; phase 6 will fill paths)
         try:

@@ -17,6 +17,7 @@ import logging
 import threading
 from typing import Any, Callable, List, Optional, Tuple
 from pathlib import Path
+import asyncio
 
 from .settings import load_app_settings, build_spotdl_downloader_options
 
@@ -131,7 +132,22 @@ class SpotdlClient:
         return self._spotdl.search(queries)
 
     def download_songs(self, songs) -> List[Tuple[Any, Optional[Path]]]:
-        return self._spotdl.download_songs(songs)
+        # Always use a fresh event loop in this worker thread
+        with self._lock:
+            created_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(created_loop)
+            prev_loop = getattr(self._spotdl.downloader, "loop", None)
+            self._spotdl.downloader.loop = created_loop
+            try:
+                return self._spotdl.download_songs(songs)
+            finally:
+                # Restore previous loop and close the worker loop
+                if prev_loop is not None:
+                    self._spotdl.downloader.loop = prev_loop
+                try:
+                    created_loop.close()
+                except Exception:
+                    pass
 
     def download_link(
         self,
@@ -149,8 +165,9 @@ class SpotdlClient:
             self.set_output_template(output_template)
             self.set_progress_callback(progress_callback)
 
+        # We still call search in current thread (no async needed)
         songs = self._spotdl.search([spotify_link])
-        return self._spotdl.download_songs(songs)
+        return self.download_songs(songs)
 
 
 def build_default_client(app_logger: Optional[logging.Logger] = None) -> SpotdlClient:
@@ -175,4 +192,3 @@ __all__ = [
     "SpotdlClient",
     "build_default_client",
 ]
-
