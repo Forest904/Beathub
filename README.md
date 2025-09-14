@@ -149,6 +149,22 @@ On first run, the SQLite DB and tables are created automatically.
 - No burner detected: Verify `cdrecord`/`wodim` is installed and accessible; try running with admin/root if required
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
 
+## Refactor: SpotDL Service Architecture (branch: `refactor/spotdl-service`)
+
+We are migrating from invoking the spotDL CLI via subprocess to using the SpotDL Python API directly in the backend service (no CLI). The goals are:
+- Use SpotDL’s `Song` data model end-to-end for richer, consistent metadata.
+- Full configurability via `config.py` defaults and `.env` overrides; per-request options where sensible.
+- Keep the current API framework (Flask) and the existing React frontend.
+- Switch lyrics to SpotDL providers, but still save a final `.txt` per track alongside audio.
+- Keep local filesystem storage; no cloud dependencies.
+
+Safety and scope:
+- All work occurs on branch `refactor/spotdl-service`. Main remains stable until parity tests pass.
+- A feature flag will guard the new pipeline so existing behavior is not broken during the transition.
+- Requirements for the refactor path: Python 3.10–3.13, `ffmpeg` on PATH, and `spotdl>=4.4.2`.
+
+Tracking: See `TODO.md` for the phased roadmap and acceptance criteria.
+
 ## Development
 
 - Lint/format: not configured; follow existing style
