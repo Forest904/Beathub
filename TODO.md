@@ -36,9 +36,9 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
   - AC: Idempotent handling of duplicate links; error mapping to API responses
 
 ## Phase 6 — Migration (Non‑breaking)
-- [ ] Replace subprocess use in `src/download_service.py` with SpotDL API calls
-- [ ] Refactor `src/spotify_content_downloader.py` to use `search()` + `download_songs()`
-- [ ] Retire Spotipy usage where redundant (SpotDL provides metadata)
+- [x] Replace subprocess use in `src/download_service.py` with SpotDL API calls
+- [x] Refactor `src/spotify_content_downloader.py` to use `search()` + `download_songs()`
+- [x] Retire Spotipy usage where redundant (SpotDL provides metadata)
   - AC: Feature flag OFF → legacy behavior; ON → SpotDL service path; parity on happy paths
 
 ## Phase 7 — Lyrics Output

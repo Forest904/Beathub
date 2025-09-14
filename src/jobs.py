@@ -32,10 +32,11 @@ class Job:
 
 
 class JobQueue:
-    def __init__(self, downloader, logger, workers: int = Config.DOWNLOAD_QUEUE_WORKERS):
+    def __init__(self, downloader, logger, workers: int = Config.DOWNLOAD_QUEUE_WORKERS, flask_app=None):
         self.downloader = downloader
         self.logger = logger
         self.workers = workers
+        self.flask_app = flask_app
         self._lock = threading.RLock()
         self._queue: Queue[Job] = Queue()
         self._jobs: Dict[str, Job] = {}
@@ -82,7 +83,12 @@ class JobQueue:
                 continue
 
             try:
-                self._run_job(job)
+                if self.flask_app is not None:
+                    # Ensure Flask application context for DB/session and current_app
+                    with self.flask_app.app_context():
+                        self._run_job(job)
+                else:
+                    self._run_job(job)
             finally:
                 self._queue.task_done()
 
@@ -124,4 +130,3 @@ class JobQueue:
 
 
 __all__ = ["Job", "JobQueue"]
-

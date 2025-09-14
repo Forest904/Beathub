@@ -128,7 +128,7 @@ def create_app():
 
     # Initialize job queue orchestrator
     try:
-        job_queue = JobQueue(downloader=spotify_downloader, logger=app.logger)
+        job_queue = JobQueue(downloader=spotify_downloader, logger=app.logger, flask_app=app)
         app.extensions['download_jobs'] = job_queue
         app.logger.info("Download job queue initialized with %s workers", job_queue.workers)
     except Exception as e:
