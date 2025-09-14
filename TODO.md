@@ -26,8 +26,8 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
   - AC: No custom ad‑hoc dicts; conversions covered by tests
 
 ## Phase 4 — Service API (Flask)
-- [ ] Keep existing endpoints but drive them via the new pipeline when feature flag is enabled
-- [ ] Add progress stream endpoint (SSE/WebSocket) if needed by frontend
+- [x] Keep existing endpoints but drive them via the new pipeline when feature flag is enabled
+- [x] Add progress stream endpoint (SSE/WebSocket) if needed by frontend
   - AC: `POST /api/download` supports track/album/playlist/compilations; progress visible
 
 ## Phase 5 — Orchestrator & Storage

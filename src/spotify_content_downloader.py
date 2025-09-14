@@ -192,6 +192,7 @@ class SpotifyContentDownloader:
         results_map = {}
         audio_failed = False
         used_spotdl_download = False
+        error_result = None
         if Config.USE_SPOTDL_PIPELINE and spotdl_client and songs:
             # Drive downloads via SpotDL API (progress published via broker)
             try:
@@ -205,7 +206,21 @@ class SpotifyContentDownloader:
                         audio_failed = True
                 used_spotdl_download = True
             except Exception as e:
+                # Map specific SpotDL errors when possible
+                try:
+                    from spotdl.download.downloader import DownloaderError  # type: ignore
+                    from spotdl.providers.audio.base import AudioProviderError  # type: ignore
+                except Exception:
+                    DownloaderError = Exception  # type: ignore
+                    AudioProviderError = Exception  # type: ignore
+
                 logger.exception("SpotDL API download failed: %s", e)
+                if isinstance(e, AudioProviderError):
+                    error_result = {"status": "error", "error_code": "provider_error", "message": str(e)}
+                elif isinstance(e, DownloaderError):
+                    error_result = {"status": "error", "error_code": "downloader_error", "message": str(e)}
+                else:
+                    error_result = {"status": "error", "error_code": "internal_error", "message": f"SpotDL API download failed: {e}"}
                 audio_failed = True
         else:
             # Legacy CLI path in background thread
@@ -253,7 +268,7 @@ class SpotifyContentDownloader:
         # --- Wait/check audio completion ---
         if used_spotdl_download:
             if audio_failed:
-                return {"status": "error", "message": f"Audio download failed for {title_name}."}
+                return error_result or {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
             # Fill local_path from results_map
             for t in track_dtos:
                 t.local_path = results_map.get(t.spotify_url)

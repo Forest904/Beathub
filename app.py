@@ -26,6 +26,7 @@ from src.routes.album_details_routes import album_details_bp
 from src.routes.cd_burning_routes import cd_burning_bp
 from src.routes.progress_routes import progress_bp
 from src.progress import ProgressBroker
+from src.jobs import JobQueue
 
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,7 @@ def create_app():
     app.extensions['spotify_downloader'] = spotify_downloader
 
     # Initialize a single SpotDL client instance and expose it for reuse
-    # Also wire a progress broker for SSE streaming
+    # Also wire a progress broker for SSE streaming and a job queue
     app.extensions['progress_broker'] = ProgressBroker()
     try:
         spotdl_client = build_default_client(app_logger=app.logger)
@@ -124,6 +125,14 @@ def create_app():
     except Exception as e:
         # Keep the app running; the legacy pipeline will still work when feature flag is off
         app.logger.warning("SpotDL client not initialized: %s", e)
+
+    # Initialize job queue orchestrator
+    try:
+        job_queue = JobQueue(downloader=spotify_downloader, logger=app.logger)
+        app.extensions['download_jobs'] = job_queue
+        app.logger.info("Download job queue initialized with %s workers", job_queue.workers)
+    except Exception as e:
+        app.logger.warning("Job queue not initialized: %s", e)
 
     # Initialize the CD Burning Service
     # This will log its initialization at app startup
