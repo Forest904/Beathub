@@ -260,23 +260,27 @@ class SpotifyContentDownloader:
             # Keep compatibility: if we don't have songs (legacy metadata path), no tracks
             track_dtos = []
 
-        # --- Sliding window lyrics fetching ---
-        window = Config.LYRICS_WINDOW_SIZE
-        total = len(track_dtos)
-        if total:
-            for i in range(0, total, window):
-                batch = track_dtos[i:i + window]
-                logger.info(f"Fetching lyrics for tracks {i + 1}-{i + len(batch)} of {total}")
-                for track_dto in batch:
-                    track_title = track_dto.title
-                    track_artist = track_dto.artists[0] if track_dto.artists else "Unknown Artist"
-                    lyrics_path = self.lyrics_service.download_lyrics(
-                        track_title,
-                        track_artist,
-                        item_specific_output_dir
-                    )
-                    track_dto.local_lyrics_path = lyrics_path
-        # --- End sliding window lyrics fetching ---
+        # --- Lyrics handling ---
+        # SpotDL pipeline: we will export embedded lyrics after audio paths are known.
+        # Legacy pipeline: fetch via Genius in a sliding window to reduce API pressure.
+        do_legacy_lyrics = not (Config.USE_SPOTDL_PIPELINE and spotdl_client and songs)
+        if do_legacy_lyrics:
+            window = Config.LYRICS_WINDOW_SIZE
+            total = len(track_dtos)
+            if total:
+                for i in range(0, total, window):
+                    batch = track_dtos[i:i + window]
+                    logger.info(f"Fetching lyrics for tracks {i + 1}-{i + len(batch)} of {total}")
+                    for track_dto in batch:
+                        track_title = track_dto.title
+                        track_artist = track_dto.artists[0] if track_dto.artists else "Unknown Artist"
+                        lyrics_path = self.lyrics_service.download_lyrics(
+                            track_title,
+                            track_artist,
+                            item_specific_output_dir
+                        )
+                        track_dto.local_lyrics_path = lyrics_path
+        # --- End lyrics handling ---
 
         # --- Wait/check audio completion ---
         if used_spotdl_download:
@@ -294,7 +298,17 @@ class SpotifyContentDownloader:
             else:
                 return error_result or {"status": "error", "message": "Audio download did not start."}
 
-        # Persist track rows (without local audio path for now; phase 6 will fill paths)
+        # For SpotDL pipeline: export embedded lyrics alongside audio files (graceful if missing)
+        if used_spotdl_download:
+            for t in track_dtos:
+                if t.local_path and not t.local_lyrics_path:
+                    try:
+                        exported = self.lyrics_service.export_embedded_lyrics(t.local_path)
+                    except Exception:
+                        exported = None
+                    t.local_lyrics_path = exported
+
+        # Persist track rows (now including local audio path and lyrics path)
         try:
             for t in track_dtos:
                 existing = DownloadedTrack.query.filter_by(spotify_id=t.spotify_id).first()
