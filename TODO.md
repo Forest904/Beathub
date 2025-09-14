@@ -4,20 +4,20 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
 
 ## Phase 0 — Branch & Safety
 - [x] Create branch `refactor/spotdl-service`
-- [ ] Add feature flag `USE_SPOTDL_PIPELINE` (default: false) in `config.py`
-- [ ] Pin `spotdl>=4.4.2` in `requirements.txt` and enforce Python 3.10–3.13
+- [x] Add feature flag `USE_SPOTDL_PIPELINE` (default: false) in `config.py`
+- [x] Pin `spotdl>=4.4.2` in `requirements.txt` and enforce Python 3.10–3.13
   - AC: App installs with pinned spotDL; CI/check warns on Python <3.10
 
 ## Phase 1 — Config & Settings
-- [ ] Centralize SpotDL settings mapping in one place
+- [x] Centralize SpotDL settings mapping in one place
   - Defaults in `config.py`; override via `.env`; allow per-request overrides
   - Map: `SPOTDL_AUDIO_SOURCE`, `SPOTDL_FORMAT`, `SPOTDL_THREADS`, `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET`, optional `GENIUS_ACCESS_TOKEN`
   - AC: Loader unit-tested; type-validated; produces `DownloaderOptionalOptions`
 
 ## Phase 2 — SpotDL Client
-- [ ] Instantiate a single `Spotdl` client (reuse across requests)
-- [ ] Before each job, set `spotdl.downloader.settings.output` to per-item template
-- [ ] Enable lyrics via SpotDL providers (Genius) and hook `progress_handler`
+- [x] Instantiate a single `Spotdl` client (reuse across requests)
+- [x] Before each job, set `spotdl.downloader.settings.output` to per-item template
+- [x] Enable lyrics via SpotDL providers (Genius) and hook `progress_handler`
   - AC: Concurrent downloads work; progress events available; lyrics embedded
 
 ## Phase 3 — Data Models

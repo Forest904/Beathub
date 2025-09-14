@@ -13,6 +13,7 @@ from flask_cors import CORS
 # --- Import our new configuration and the main orchestrator ---
 from config import Config
 from src.spotify_content_downloader import SpotifyContentDownloader
+from src.spotdl_client import build_default_client
 from src.cd_burning_service import CDBurningService, CD_BURN_STATUS_MANAGER # Make sure this import is there
 
 # --- Import db, DownloadedItem model, and the initialization function ---
@@ -97,6 +98,26 @@ def create_app():
     # Store the spotify_downloader instance in app.extensions
     # This allows blueprints to access it via current_app.extensions['spotify_downloader']
     app.extensions['spotify_downloader'] = spotify_downloader
+
+    # Initialize a single SpotDL client instance and expose it for reuse
+    try:
+        spotdl_client = build_default_client(app_logger=app.logger)
+        # Basic progress logging hook; can be replaced by SSE/WebSocket later
+        def _spotdl_progress(ev: dict):
+            try:
+                app.logger.info("SpotDL: %s - %s (%s%%)",
+                                ev.get('song_display_name'), ev.get('status'), ev.get('progress'))
+            except Exception:
+                pass
+        spotdl_client.set_progress_callback(_spotdl_progress)
+        app.extensions['spotdl_client'] = spotdl_client
+        app.logger.info("SpotDL client ready: threads=%s, format=%s, providers=%s",
+                        spotdl_client.spotdl.downloader.settings.get('threads'),
+                        spotdl_client.spotdl.downloader.settings.get('format'),
+                        spotdl_client.spotdl.downloader.settings.get('audio_providers'))
+    except Exception as e:
+        # Keep the app running; the legacy pipeline will still work when feature flag is off
+        app.logger.warning("SpotDL client not initialized: %s", e)
 
     # Initialize the CD Burning Service
     # This will log its initialization at app startup
