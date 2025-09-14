@@ -1,14 +1,24 @@
 import logging
 import threading
-import spotipy # Import spotipy here
-from spotipy.oauth2 import SpotifyClientCredentials # Import SpotifyClientCredentials here
+from typing import List, Optional
+
+import spotipy  # Legacy spotipy kept for fallback
+from spotipy.oauth2 import SpotifyClientCredentials
 from config import Config
 
-# Import the decoupled services using relative imports
+# Services
 from .metadata_service import MetadataService
 from .download_service import AudioCoverDownloadService
 from .lyrics_service import LyricsService
 from .file_manager import FileManager
+
+# SpotDL client wrapper and DTO mapping (Phase 2/3)
+from .spotdl_client import build_default_client, SpotdlClient
+from .models.dto import TrackDTO, ItemDTO
+from .models.spotdl_mapping import song_to_track_dto, songs_to_item_dto
+
+# DB
+from .database.db_manager import db, DownloadedTrack
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +55,7 @@ class SpotifyContentDownloader:
         self.lyrics_service = LyricsService(genius_access_token=self._genius_access_token)
         self.file_manager = FileManager(base_output_dir=self.base_output_dir)
 
-        # Initialize Spotipy directly within the downloader for artist search access
+        # Initialize Spotipy directly within the downloader for artist search access (legacy)
         # This uses the same credentials passed to MetadataService
         self.sp = None # Initialize to None
         if self._spotify_client_id and self._spotify_client_secret:
@@ -60,26 +70,110 @@ class SpotifyContentDownloader:
         else:
             logger.warning("Spotify client ID or secret missing. Spotipy instance for direct searches will not be available.")
 
+        # SpotDL client is resolved lazily per call to avoid startup hard-failure
+        self._spotdl_client: Optional[SpotdlClient] = None
+
         logger.info("SpotifyContentDownloader initialized with decoupled services and configuration passed.")
 
     def get_spotipy_instance(self):
         """ Provides access to the initialized Spotipy instance. """
         return self.sp
 
+    def _resolve_spotdl_client(self) -> Optional[SpotdlClient]:
+        """Return a SpotdlClient from Flask app context or build a default one."""
+        if self._spotdl_client is not None:
+            return self._spotdl_client
+        try:
+            from flask import current_app
+            cli = current_app.extensions.get('spotdl_client')  # type: ignore[attr-defined]
+            if isinstance(cli, SpotdlClient):
+                self._spotdl_client = cli
+                return self._spotdl_client
+        except Exception:
+            pass
+        try:
+            self._spotdl_client = build_default_client(app_logger=logger)
+            return self._spotdl_client
+        except Exception as e:
+            logger.warning("SpotDL client unavailable, falling back to legacy metadata: %s", e)
+            return None
+
+    def _parse_item_type(self, link: str) -> str:
+        lower = link.lower()
+        if "playlist" in lower:
+            return "playlist"
+        if "album" in lower:
+            return "album"
+        if "track" in lower:
+            return "track"
+        return "unknown"
+
+    def _extract_spotify_id(self, link: str) -> str:
+        try:
+            from urllib.parse import urlparse
+            path = urlparse(link).path
+            segs = [s for s in path.split('/') if s]
+            return segs[-1] if segs else ""
+        except Exception:
+            return ""
+
     def download_spotify_content(self, spotify_link):
-        """ Orchestrates the download of Spotify content (audio, cover, lyrics, metadata). """
-        initial_metadata = self.metadata_service.get_metadata_from_link(spotify_link)
+        """Orchestrates the download using SpotDL Song as canonical metadata source."""
+        # Prefer SpotDL for metadata
+        spotdl_client = self._resolve_spotdl_client()
+        songs = []
+        item_dto: Optional[ItemDTO] = None
+        if spotdl_client:
+            try:
+                songs = spotdl_client.search([spotify_link])
+                if songs:
+                    item_dto = songs_to_item_dto(songs, spotify_link=spotify_link)
+            except Exception as e:
+                logger.exception("SpotDL search failed: %s", e)
 
-        if not initial_metadata:
-            return {"status": "error", "message": "Could not retrieve initial metadata for the given Spotify link."}
+        # Fallback to legacy metadata if SpotDL unavailable
+        if item_dto is None:
+            initial_metadata = self.metadata_service.get_metadata_from_link(spotify_link)
+            if not initial_metadata:
+                return {"status": "error", "message": "Could not retrieve metadata for the given Spotify link."}
+            artist_name = initial_metadata.get('artist', 'Unknown Artist')
+            title_name = initial_metadata.get('title', 'Unknown Title')
+            cover_url = initial_metadata.get('image_url')
+            item_type = initial_metadata.get('item_type', 'unknown')
+            # Build minimal ItemDTO for downstream compatibility
+            item_dto = ItemDTO(
+                item_type=item_type,
+                artist=artist_name,
+                title=title_name,
+                cover_url=cover_url,
+                spotify_link=spotify_link,
+                tracks=[],
+            )
 
-        # Extract relevant info from initial_metadata for clearer variable names
-        artist_name = initial_metadata.get('artist', 'Unknown Artist')
-        title_name = initial_metadata.get('title', 'Unknown Title')
-        item_type = initial_metadata.get('item_type', 'unknown')
-        spotify_id = initial_metadata.get('spotify_id')
-        image_url_from_metadata = initial_metadata.get('image_url')
-        spotify_url = initial_metadata.get('spotify_url')
+        # Derive resolved item type (playlist/album/track)
+        resolved_item_type = self._parse_item_type(spotify_link)
+        if resolved_item_type != "unknown":
+            item_type = resolved_item_type
+        else:
+            item_type = item_dto.item_type
+
+        # Determine spotify_id for the container
+        spotify_id = ""
+        if songs:
+            first = songs[0]
+            if item_type == "track":
+                spotify_id = first.song_id
+            elif item_type == "album":
+                spotify_id = first.album_id or self._extract_spotify_id(spotify_link)
+            elif item_type == "playlist":
+                spotify_id = self._extract_spotify_id(spotify_link)
+        else:
+            spotify_id = self._extract_spotify_id(spotify_link)
+
+        artist_name = item_dto.artist
+        title_name = item_dto.title
+        image_url_from_metadata = item_dto.cover_url
+        spotify_url = spotify_link  # Use input link as canonical container URL
 
         # Create specific output directory
         item_specific_output_dir = self.file_manager.create_item_output_directory(artist_name, title_name)
@@ -93,7 +187,7 @@ class SpotifyContentDownloader:
         )
         # --- End download and save album cover ---
 
-        # --- Start audio download in background ---
+        # --- Start audio download in background (legacy CLI path; phase 6 will switch) ---
         audio_result = {'ok': None}
 
         def _audio_job():
@@ -107,29 +201,32 @@ class SpotifyContentDownloader:
         audio_thread.start()
         # --- End start audio download ---
 
-        # --- Get detailed track list ---
-        detailed_tracks_list = self.metadata_service.get_tracks_details(
-            spotify_id,
-            item_type,
-            image_url_from_metadata
-        )
+        # --- Build track DTOs from SpotDL songs (canonical) ---
+        track_dtos: List[TrackDTO] = []
+        if songs:
+            for s in songs:
+                dto = song_to_track_dto(s)
+                track_dtos.append(dto)
+        else:
+            # Keep compatibility: if we don't have songs (legacy metadata path), no tracks
+            track_dtos = []
 
         # --- Sliding window lyrics fetching ---
         window = Config.LYRICS_WINDOW_SIZE
-        total = len(detailed_tracks_list)
+        total = len(track_dtos)
         if total:
             for i in range(0, total, window):
-                batch = detailed_tracks_list[i:i + window]
+                batch = track_dtos[i:i + window]
                 logger.info(f"Fetching lyrics for tracks {i + 1}-{i + len(batch)} of {total}")
-                for track_detail in batch:
-                    track_title = track_detail.get('title', 'Unknown Title')
-                    track_artist = track_detail.get('artists', ['Unknown Artist'])[0]
+                for track_dto in batch:
+                    track_title = track_dto.title
+                    track_artist = track_dto.artists[0] if track_dto.artists else "Unknown Artist"
                     lyrics_path = self.lyrics_service.download_lyrics(
                         track_title,
                         track_artist,
                         item_specific_output_dir
                     )
-                    track_detail['local_lyrics_path'] = lyrics_path
+                    track_dto.local_lyrics_path = lyrics_path
         # --- End sliding window lyrics fetching ---
 
         # --- Wait for audio completion and check result ---
@@ -138,8 +235,46 @@ class SpotifyContentDownloader:
             return {"status": "error", "message": f"Audio download failed for {title_name}."}
         # --- End wait for audio ---
 
+        # Persist track rows (without local audio path for now; phase 6 will fill paths)
+        try:
+            for t in track_dtos:
+                existing = DownloadedTrack.query.filter_by(spotify_id=t.spotify_id).first()
+                if existing:
+                    # Update a subset likely to change (lyrics path)
+                    existing.local_lyrics_path = t.local_lyrics_path
+                else:
+                    row = DownloadedTrack(
+                        spotify_id=t.spotify_id,
+                        spotify_url=t.spotify_url,
+                        isrc=t.isrc,
+                        title=t.title,
+                        artists=t.artists,
+                        album_name=t.album_name,
+                        album_id=t.album_id,
+                        album_artist=t.album_artist,
+                        track_number=t.track_number,
+                        disc_number=t.disc_number,
+                        disc_count=t.disc_count,
+                        tracks_count=t.tracks_count,
+                        duration_ms=t.duration_ms,
+                        explicit=t.explicit,
+                        popularity=t.popularity,
+                        publisher=t.publisher,
+                        year=t.year,
+                        date=t.date,
+                        genres=t.genres,
+                        cover_url=t.cover_url,
+                        local_path=t.local_path,
+                        local_lyrics_path=t.local_lyrics_path,
+                    )
+                    db.session.add(row)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error("Failed to persist DownloadedTrack rows: %s", e, exc_info=True)
+
         # --- Save comprehensive metadata JSON ---
-        # The comprehensive metadata should now include all details
+        meta_tracks = [t.model_dump() for t in track_dtos]
         comprehensive_metadata_to_save = {
             'spotify_id': spotify_id,
             'title': title_name,
@@ -147,9 +282,9 @@ class SpotifyContentDownloader:
             'image_url': image_url_from_metadata,
             'spotify_url': spotify_url,
             'item_type': item_type,
-            'local_output_directory': item_specific_output_dir, # Add the actual local path here
+            'local_output_directory': item_specific_output_dir,
             'local_cover_image_path': local_cover_image_path,
-            'tracks_details': detailed_tracks_list
+            'tracks': meta_tracks,
         }
 
         metadata_json_path = self.file_manager.save_metadata_json(
@@ -159,13 +294,13 @@ class SpotifyContentDownloader:
         # --- End save comprehensive metadata JSON ---
 
         simplified_tracks_info_for_return = []
-        if detailed_tracks_list:
-            for t_detail in detailed_tracks_list:
+        if track_dtos:
+            for t in track_dtos:
                 simplified_tracks_info_for_return.append({
-                    'title': t_detail.get('title'),
-                    'artists': t_detail.get('artists'),
-                    'cover_url': t_detail.get('album_image_url', image_url_from_metadata),
-                    'local_lyrics_path': t_detail.get('local_lyrics_path')
+                    'title': t.title,
+                    'artists': t.artists,
+                    'cover_url': t.cover_url or image_url_from_metadata,
+                    'local_lyrics_path': t.local_lyrics_path,
                 })
 
         return {
@@ -173,9 +308,9 @@ class SpotifyContentDownloader:
             "message": f"Successfully processed {item_type}: {title_name}",
             "item_name": title_name,
             "item_type": item_type,
-            "spotify_id": spotify_id, # Include spotify_id in return
-            "artist": artist_name, # Include artist in return
-            "spotify_url": spotify_url, # Include spotify_url in return
+            "spotify_id": spotify_id,
+            "artist": artist_name,
+            "spotify_url": spotify_url,
             "output_directory": item_specific_output_dir,
             "cover_art_url": image_url_from_metadata,
             "local_cover_image_path": local_cover_image_path,

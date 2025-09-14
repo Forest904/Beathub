@@ -21,8 +21,8 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
   - AC: Concurrent downloads work; progress events available; lyrics embedded
 
 ## Phase 3 — Data Models
-- [ ] Use SpotDL `Song` metadata as canonical source
-- [ ] Convert `Song.json` to API DTOs and DB rows (include ISRC, explicit, popularity, track/disc, year)
+- [x] Use SpotDL `Song` metadata as canonical source
+- [x] Convert `Song.json` to API DTOs and DB rows (include ISRC, explicit, popularity, track/disc, year)
   - AC: No custom ad‑hoc dicts; conversions covered by tests
 
 ## Phase 4 — Service API (Flask)

@@ -1,8 +1,10 @@
 # database/db_manager.py
 
 from flask_sqlalchemy import SQLAlchemy
-import os # Import os for path handling
+import os  # Import os for path handling
 import logging
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
 
 # Initialize the SQLAlchemy object
 db = SQLAlchemy()
@@ -38,6 +40,80 @@ class DownloadedItem(db.Model):
             'local_path': self.local_path,
             'is_favorite': self.is_favorite,
             'item_type': self.item_type
+        }
+
+
+class DownloadedTrack(db.Model):
+    __tablename__ = 'downloaded_tracks'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Parent item (album/playlist/track container)
+    item_id = db.Column(db.Integer, ForeignKey('downloaded_items.id', ondelete='CASCADE'), nullable=True, index=True)
+
+    # Core identifiers
+    spotify_id = db.Column(db.String(50), nullable=False, index=True)
+    spotify_url = db.Column(db.String(500), nullable=True)
+    isrc = db.Column(db.String(32), nullable=True)
+
+    # Names & artists
+    title = db.Column(db.String(255), nullable=False)
+    artists = db.Column(db.JSON, nullable=False)  # list[str]
+    album_name = db.Column(db.String(255), nullable=True)
+    album_id = db.Column(db.String(64), nullable=True)
+    album_artist = db.Column(db.String(255), nullable=True)
+
+    # Positioning
+    track_number = db.Column(db.Integer, nullable=True)
+    disc_number = db.Column(db.Integer, nullable=True)
+    disc_count = db.Column(db.Integer, nullable=True)
+    tracks_count = db.Column(db.Integer, nullable=True)
+
+    # Misc metadata
+    duration_ms = db.Column(db.Integer, nullable=True)
+    explicit = db.Column(db.Boolean, default=False, nullable=False)
+    popularity = db.Column(db.Integer, nullable=True)
+    publisher = db.Column(db.String(255), nullable=True)
+    year = db.Column(db.Integer, nullable=True)
+    date = db.Column(db.String(32), nullable=True)
+    genres = db.Column(db.JSON, nullable=True)  # list[str]
+
+    # Artwork
+    cover_url = db.Column(db.String(500), nullable=True)
+
+    # Local paths
+    local_path = db.Column(db.String(500), nullable=True)
+    local_lyrics_path = db.Column(db.String(500), nullable=True)
+
+    # Relationship back to container item
+    item = relationship('DownloadedItem', backref=db.backref('tracks', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'item_id': self.item_id,
+            'spotify_id': self.spotify_id,
+            'spotify_url': self.spotify_url,
+            'isrc': self.isrc,
+            'title': self.title,
+            'artists': self.artists,
+            'album_name': self.album_name,
+            'album_id': self.album_id,
+            'album_artist': self.album_artist,
+            'track_number': self.track_number,
+            'disc_number': self.disc_number,
+            'disc_count': self.disc_count,
+            'tracks_count': self.tracks_count,
+            'duration_ms': self.duration_ms,
+            'explicit': self.explicit,
+            'popularity': self.popularity,
+            'publisher': self.publisher,
+            'year': self.year,
+            'date': self.date,
+            'genres': self.genres,
+            'cover_url': self.cover_url,
+            'local_path': self.local_path,
+            'local_lyrics_path': self.local_lyrics_path,
         }
 
 def initialize_database(app):
