@@ -2,6 +2,7 @@
 .env
 /downloads
 src/log
+src/database/instance
 
 # Python bytecode
 __pycache__/
