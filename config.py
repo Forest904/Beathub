@@ -30,5 +30,10 @@ class Config:
     # Limit spotDL concurrency to reduce provider rate limits
     SPOTDL_THREADS = int(os.getenv('SPOTDL_THREADS', '1'))
 
+    # Feature flag: toggle the new SpotDL-based pipeline (default: off)
+    USE_SPOTDL_PIPELINE = os.getenv('USE_SPOTDL_PIPELINE', '0').strip().lower() in (
+        '1', 'true', 'yes', 'on'
+    )
+
     # Lyrics fetching window size (for sliding-window processing)
     LYRICS_WINDOW_SIZE = int(os.getenv('LYRICS_WINDOW_SIZE', '5'))
