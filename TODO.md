@@ -31,8 +31,8 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
   - AC: `POST /api/download` supports track/album/playlist/compilations; progress visible
 
 ## Phase 5 — Orchestrator & Storage
-- [ ] In‑process job queue for parallel jobs; retries on SpotDL errors
-- [ ] Output layout unchanged; sanitize base filename; metadata JSON saved
+- [x] In‑process job queue for parallel jobs; retries on SpotDL errors
+- [x] Output layout unchanged; sanitize base filename; metadata JSON saved
   - AC: Idempotent handling of duplicate links; error mapping to API responses
 
 ## Phase 6 — Migration (Non‑breaking)

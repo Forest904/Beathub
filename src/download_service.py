@@ -1,4 +1,10 @@
-# src/download_service.py
+"""src/download_service.py
+
+AudioCoverDownloadService now supports both legacy CLI and SpotDL API
+paths. Under the feature flag USE_SPOTDL_PIPELINE, we use the SpotDL
+Python API via the shared SpotdlClient; otherwise, we fall back to the
+CLI subprocess for non-breaking behavior.
+"""
 
 import subprocess
 import logging
@@ -10,6 +16,7 @@ import sys
 from config import Config
 
 logger = logging.getLogger(__name__)
+
 
 class AudioCoverDownloadService:
     def __init__(self, base_output_dir=None,
@@ -35,18 +42,48 @@ class AudioCoverDownloadService:
         name = re.sub(r'_{2,}', '_', name)
         return name
 
+    def _download_via_spotdl_api(self, spotify_link: str, output_directory: str, item_title: str) -> bool:
+        """Download using the SpotDL Python API via SpotdlClient."""
+        try:
+            try:
+                from flask import current_app
+                spotdl_client = current_app.extensions.get('spotdl_client')
+            except Exception:
+                spotdl_client = None
+            if spotdl_client is None:
+                # Fallback: build a default client
+                from .spotdl_client import build_default_client
+                spotdl_client = build_default_client(app_logger=logger)
+
+            sanitized_title = self._sanitize_filename(item_title)
+            output_template = os.path.join(output_directory, f"{sanitized_title}")
+            spotdl_client.set_output_template(output_template)
+
+            songs = spotdl_client.search([spotify_link])
+            results = spotdl_client.download_songs(songs)
+
+            ok = True
+            for song, path in results:
+                if path is None:
+                    logger.error("Failed to download %s", getattr(song, 'display_name', song))
+                    ok = False
+            return ok
+        except Exception as e:
+            logger.exception("SpotDL API download failed for %s: %s", spotify_link, e)
+            return False
+
     def download_audio(self, spotify_link, output_directory, item_title):
         """
-        Downloads audio content using spotdl.
-        :param spotify_link: The Spotify URL to download.
-        :param output_directory: The directory where the audio will be saved.
-        :param item_title: The title of the item (album/track/playlist) for output path formatting.
+        Downloads audio content. Uses SpotDL API when feature flag is ON,
+        otherwise falls back to the legacy subprocess CLI.
         :return: True on success, False on failure.
         """
+        if Config.USE_SPOTDL_PIPELINE:
+            return self._download_via_spotdl_api(spotify_link, output_directory, item_title)
+
         sanitized_item_title = self._sanitize_filename(item_title)
         # Build the output template using the sanitized title to avoid invalid
-        # characters in the generated filename. SpotDL will still replace
-        # ``{ext}`` with the appropriate file extension.
+        # characters in the generated filename. spotDL CLI expects extension placeholder.
         output_template = os.path.join(
             output_directory,
             f"{sanitized_item_title}.{{ext}}",
@@ -56,14 +93,12 @@ class AudioCoverDownloadService:
             sys.executable, '-m', 'spotdl',
             spotify_link,
             '--output', output_template,
-            '--overwrite', 'skip', # Prevent re-downloading existing files
-            '--format', self.spotdl_format, # <--- ADD THIS LINE: Explicitly set the output format
-            '--audio', self.spotdl_audio_source, # <--- ADD THIS LINE: Ensure audio source is used
+            '--overwrite', 'skip',
+            '--format', self.spotdl_format,
+            '--audio', self.spotdl_audio_source,
             '--threads', str(Config.SPOTDL_THREADS),
         ]
 
-        # If Spotify credentials are available, pass them to spotDL to avoid
-        # falling back to shared/default creds that hit rate limits quickly.
         if Config.SPOTIPY_CLIENT_ID and Config.SPOTIPY_CLIENT_SECRET:
             command.extend([
                 '--client-id', Config.SPOTIPY_CLIENT_ID,
@@ -79,7 +114,6 @@ class AudioCoverDownloadService:
                     if idx + 1 < len(safe_command):
                         safe_command[idx + 1] = '***REDACTED***'
             except Exception:
-                # Never fail just because of logging sanitation
                 pass
 
             logger.info(f"Executing spotdl command: {' '.join(safe_command)}")
@@ -90,7 +124,6 @@ class AudioCoverDownloadService:
             return True
         except subprocess.CalledProcessError as e:
             logger.error(f"Spotdl failed with exit code {e.returncode}. stdout: {e.stdout.strip() if e.stdout else ''}, stderr: {e.stderr.strip() if e.stderr else 'No stderr'}")
-            # Check for rate limit specific error messages here if you want to provide user feedback
             if "rate/request limit" in (e.stderr or ""):
                 logger.error("Spotdl hit a rate limit. Please wait and try again.")
             return False

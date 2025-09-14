@@ -57,19 +57,20 @@ class SpotifyContentDownloader:
         self.file_manager = FileManager(base_output_dir=self.base_output_dir)
 
         # Initialize Spotipy directly within the downloader for artist search access (legacy)
-        # This uses the same credentials passed to MetadataService
-        self.sp = None # Initialize to None
-        if self._spotify_client_id and self._spotify_client_secret:
-            try:
-                self.sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-                    client_id=self._spotify_client_id,
-                    client_secret=self._spotify_client_secret
-                ))
-                logger.info("Spotipy instance initialized within SpotifyContentDownloader.")
-            except Exception as e:
-                logger.error(f"Failed to initialize Spotipy in SpotifyContentDownloader: {e}", exc_info=True)
-        else:
-            logger.warning("Spotify client ID or secret missing. Spotipy instance for direct searches will not be available.")
+        # Only when not using the new SpotDL pipeline.
+        self.sp = None  # Initialize to None
+        if not Config.USE_SPOTDL_PIPELINE:
+            if self._spotify_client_id and self._spotify_client_secret:
+                try:
+                    self.sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+                        client_id=self._spotify_client_id,
+                        client_secret=self._spotify_client_secret
+                    ))
+                    logger.info("Spotipy instance initialized within SpotifyContentDownloader.")
+                except Exception as e:
+                    logger.error(f"Failed to initialize Spotipy in SpotifyContentDownloader: {e}", exc_info=True)
+            else:
+                logger.warning("Spotify client ID or secret missing. Spotipy instance for direct searches will not be available.")
 
         # SpotDL client is resolved lazily per call to avoid startup hard-failure
         self._spotdl_client: Optional[SpotdlClient] = None
