@@ -24,6 +24,8 @@ from src.routes.download_routes import download_bp
 from src.routes.artist_routes import artist_bp
 from src.routes.album_details_routes import album_details_bp
 from src.routes.cd_burning_routes import cd_burning_bp
+from src.routes.progress_routes import progress_bp
+from src.progress import ProgressBroker
 
 
 logger = logging.getLogger(__name__)
@@ -100,16 +102,20 @@ def create_app():
     app.extensions['spotify_downloader'] = spotify_downloader
 
     # Initialize a single SpotDL client instance and expose it for reuse
+    # Also wire a progress broker for SSE streaming
+    app.extensions['progress_broker'] = ProgressBroker()
     try:
         spotdl_client = build_default_client(app_logger=app.logger)
-        # Basic progress logging hook; can be replaced by SSE/WebSocket later
+        broker = app.extensions['progress_broker']
+        # Progress hook publishes to broker for SSE
         def _spotdl_progress(ev: dict):
             try:
                 app.logger.info("SpotDL: %s - %s (%s%%)",
                                 ev.get('song_display_name'), ev.get('status'), ev.get('progress'))
+                broker.publish(ev)
             except Exception:
                 pass
-        spotdl_client.set_progress_callback(_spotdl_progress)
+        spotdl_client.set_progress_callback(_spotdl_progress, web_ui=True)
         app.extensions['spotdl_client'] = spotdl_client
         app.logger.info("SpotDL client ready: threads=%s, format=%s, providers=%s",
                         spotdl_client.spotdl.downloader.settings.get('threads'),
@@ -129,6 +135,7 @@ def create_app():
     app.register_blueprint(download_bp)
     app.register_blueprint(artist_bp)
     app.register_blueprint(album_details_bp)
+    app.register_blueprint(progress_bp)
     # --- NEW: Register the CD Burning Blueprint ---
     app.register_blueprint(cd_burning_bp)
 

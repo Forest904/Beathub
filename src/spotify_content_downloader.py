@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from typing import List, Optional
 
@@ -187,19 +188,39 @@ class SpotifyContentDownloader:
         )
         # --- End download and save album cover ---
 
-        # --- Start audio download in background (legacy CLI path; phase 6 will switch) ---
-        audio_result = {'ok': None}
+        # --- Audio download ---
+        results_map = {}
+        audio_failed = False
+        used_spotdl_download = False
+        if Config.USE_SPOTDL_PIPELINE and spotdl_client and songs:
+            # Drive downloads via SpotDL API (progress published via broker)
+            try:
+                sanitized_title = self.file_manager.sanitize_filename(title_name)
+                output_template = os.path.join(item_specific_output_dir, f"{sanitized_title}")
+                spotdl_client.set_output_template(output_template)
+                results = spotdl_client.download_songs(songs)
+                for song, p in results:
+                    results_map[song.url] = str(p) if p else None
+                    if p is None:
+                        audio_failed = True
+                used_spotdl_download = True
+            except Exception as e:
+                logger.exception("SpotDL API download failed: %s", e)
+                audio_failed = True
+        else:
+            # Legacy CLI path in background thread
+            audio_result = {'ok': None}
 
-        def _audio_job():
-            audio_result['ok'] = self.audio_cover_download_service.download_audio(
-                spotify_link,
-                item_specific_output_dir,
-                title_name
-            )
+            def _audio_job():
+                audio_result['ok'] = self.audio_cover_download_service.download_audio(
+                    spotify_link,
+                    item_specific_output_dir,
+                    title_name
+                )
 
-        audio_thread = threading.Thread(target=_audio_job, name='audio-download', daemon=True)
-        audio_thread.start()
-        # --- End start audio download ---
+            audio_thread = threading.Thread(target=_audio_job, name='audio-download', daemon=True)
+            audio_thread.start()
+            # We'll join later to preserve legacy concurrent lyrics fetching
 
         # --- Build track DTOs from SpotDL songs (canonical) ---
         track_dtos: List[TrackDTO] = []
@@ -229,11 +250,17 @@ class SpotifyContentDownloader:
                     track_dto.local_lyrics_path = lyrics_path
         # --- End sliding window lyrics fetching ---
 
-        # --- Wait for audio completion and check result ---
-        audio_thread.join()
-        if audio_result['ok'] is False:
-            return {"status": "error", "message": f"Audio download failed for {title_name}."}
-        # --- End wait for audio ---
+        # --- Wait/check audio completion ---
+        if used_spotdl_download:
+            if audio_failed:
+                return {"status": "error", "message": f"Audio download failed for {title_name}."}
+            # Fill local_path from results_map
+            for t in track_dtos:
+                t.local_path = results_map.get(t.spotify_url)
+        else:
+            audio_thread.join()
+            if audio_result['ok'] is False:
+                return {"status": "error", "message": f"Audio download failed for {title_name}."}
 
         # Persist track rows (without local audio path for now; phase 6 will fill paths)
         try:
