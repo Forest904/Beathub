@@ -29,32 +29,32 @@ Acceptance criteria
 - Implemented in `tests/test_settings_block1.py`. Tests are independent of real spotdl runtime.
 
 Block 2 — SpotDL Client Wrapper (src/spotdl_client.py)
-- Expand tests to cover: engine thread init failure path; `set_output_template`; `set_progress_callback` mapping; `clear_progress_callback`.
-- Verify progress wrapper tolerates callback exceptions without breaking downloads.
-- Ensure `download_songs` silences stdout/stderr (simulate with a fake downloader that prints and assert nothing escapes via `capsys`).
-- Test `download_link` orchestration with stubbed `.search()` and `.download_songs()`.
+- [x] Expand tests to cover: engine thread init failure path; `set_output_template`; `set_progress_callback` mapping; `clear_progress_callback`.
+- [x] Verify progress wrapper tolerates callback exceptions without breaking downloads.
+- [x] Ensure `download_songs` silences stdout/stderr (simulate prints and assert nothing escapes via `capsys`).
+- [x] Test `download_link` orchestration with stubbed `.search()` and `.download_songs()`.
 Acceptance criteria
-- High-confidence unit tests using module-level stubs; no real spotdl usage.
+- Implemented in `tests/test_spotdl_client_block2.py`; uses stubs only, no real spotdl.
 
 Block 3 — DTO Mapping (src/models/spotdl_mapping.py, src/models/dto.py)
-- Create minimal stub for `spotdl.types.song.Song` with `.json` shape and validate `song_to_track_dto` conversions and types.
-- Test `songs_to_item_dto` for single vs multi-track (track vs album), cover override behavior, and error on empty list.
-- Test `trackdto_to_db_kwargs` exact field mapping.
+- [x] Create minimal stub for `spotdl.types.song.Song` with `.json` shape and validate `song_to_track_dto` conversions and types.
+- [x] Test `songs_to_item_dto` for single vs multi-track (track vs album), cover override behavior, and error on empty list.
+- [x] Test `trackdto_to_db_kwargs` exact field mapping.
 Acceptance criteria
-- 100% coverage for mapping functions; strict field assertions.
+- Implemented in `tests/test_spotdl_mapping_block3.py` with strict assertions.
 
 Block 4 — File and Download Helpers (src/file_manager.py, src/download_service.py)
-- Test filename sanitization edge cases and directory creation with tmp paths.
-- Test metadata JSON save success and error handling (simulate permissions error).
-- Mock `requests.get` to test cover image download success, timeout, and generic failure; assert return paths and logging behavior.
+- [x] Test filename sanitization edge cases and directory creation with tmp paths.
+- [x] Test metadata JSON save success and error handling (simulate write error).
+- [x] Mock `requests.get` to test cover image download success, timeout, generic failure, and write error; assert outputs.
 Acceptance criteria
-- No network; all branches covered; no residue on disk beyond tmp dirs.
+- Implemented in `tests/test_file_manager_block4.py` and `tests/test_download_service_block4.py` with no network and tmp-only I/O.
 
 Block 5 — Lyrics Service (src/lyrics_service.py)
-- Monkeypatch minimal mutagen-like stubs to unit test branches: MP3 (ID3/USLT), MP4 (lyr atom), FLAC/OGG (Vorbis comments), and “no tags”.
-- Test `export_embedded_lyrics` happy path and failure to write.
+- [x] Monkeypatch minimal mutagen-like stubs to unit test branches: MP3 (ID3/USLT), MP4 (lyr atom), FLAC/OGG (Vorbis comments), and missing file handling.
+- [x] Test `export_embedded_lyrics` happy path and failure to write.
 Acceptance criteria
-- Full branch coverage without real audio files or mutagen I/O.
+- Implemented in `tests/test_lyrics_service_block5.py` without real mutagen or audio files.
 
 Block 6 — Database Layer (src/database/db_manager.py)
 - Extend DB init tests: in-memory DB does not attempt directory creation; file-backed DB creates nested dirs.
