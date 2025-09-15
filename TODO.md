@@ -52,9 +52,9 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
   - AC: Usable UX for submit → progress → results
 
 ## Phase 9 — Tests & Docs
-- [ ] Unit tests for config loader, SpotDL client wrapper, and download flow (mocked)
-- [ ] Route tests for `/api/download` and progress endpoint
-- [ ] Update README with migration notes and examples
+- [x] Unit tests for config loader, SpotDL client wrapper, and download flow (mocked)
+- [x] Route tests for `/api/download` and progress endpoint
+- [x] Update README with migration notes and examples
   - AC: Green tests on branch; docs explain configuration and overrides
 
 ## Phase 10 — Cleanup

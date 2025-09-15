@@ -1,6 +1,6 @@
-# CD-Collector
+﻿# CD-Collector
 
-CD-Collector is a full‑stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, fetch lyrics from Genius, organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
+CD-Collector is a fullâ€‘stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, fetch lyrics from Genius, organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
 
 ## Features
 
@@ -144,7 +144,7 @@ On first run, the SQLite DB and tables are created automatically.
 
 - Missing Spotify credentials: Set `SPOTIPY_CLIENT_ID` and `SPOTIPY_CLIENT_SECRET` in `.env`
 - Lyrics not downloading: Ensure `GENIUS_ACCESS_TOKEN` is set
-- `ffmpeg` not found: Install and ensure it’s on `PATH`
+- `ffmpeg` not found: Install and ensure itâ€™s on `PATH`
 - `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed
 - No burner detected: Verify `cdrecord`/`wodim` is installed and accessible; try running with admin/root if required
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
@@ -152,7 +152,7 @@ On first run, the SQLite DB and tables are created automatically.
 ## Refactor: SpotDL Service Architecture (branch: `refactor/spotdl-service`)
 
 We are migrating from invoking the spotDL CLI via subprocess to using the SpotDL Python API directly in the backend service (no CLI). The goals are:
-- Use SpotDL’s `Song` data model end-to-end for richer, consistent metadata.
+- Use SpotDLâ€™s `Song` data model end-to-end for richer, consistent metadata.
 - Full configurability via `config.py` defaults and `.env` overrides; per-request options where sensible.
 - Keep the current API framework (Flask) and the existing React frontend.
 - Switch lyrics to SpotDL providers, but still save a final `.txt` per track alongside audio.
@@ -161,7 +161,7 @@ We are migrating from invoking the spotDL CLI via subprocess to using the SpotDL
 Safety and scope:
 - All work occurs on branch `refactor/spotdl-service`. Main remains stable until parity tests pass.
 - A feature flag will guard the new pipeline so existing behavior is not broken during the transition.
-- Requirements for the refactor path: Python 3.10–3.13, `ffmpeg` on PATH, and `spotdl>=4.4.2`.
+- Requirements for the refactor path: Python 3.10â€“3.13, `ffmpeg` on PATH, and `spotdl>=4.4.2`.
 
 Tracking: See `TODO.md` for the phased roadmap and acceptance criteria.
 
@@ -174,3 +174,28 @@ Tracking: See `TODO.md` for the phased roadmap and acceptance criteria.
 ## License
 
 No license specified. Add one if you plan to distribute.
+
+## Tests
+
+- Install test dependencies (in your virtualenv):
+  - `pip install pytest`
+- Run tests from the repo root:
+  - `pytest -q`
+
+Notes:
+- Tests use an in-memory SQLite DB via `DATABASE_URL=sqlite:///:memory:`.
+- The SpotDL client tests use stubs; no network or audio downloads.
+
+## Migration Notes (SpotDL Service)
+
+- New SpotDL-based pipeline is feature-flagged by `USE_SPOTDL_PIPELINE`.
+- Configuration sources:
+  - Defaults live in `config.py`.
+  - Environment variables override defaults (see `.env`).
+- Important overrides:
+  - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET` (required for SpotDL API usage)
+  - `SPOTDL_AUDIO_SOURCE` (e.g., `youtube-music` or `youtube`)
+  - `SPOTDL_FORMAT` (e.g., `mp3`, `flac`), `SPOTDL_THREADS`
+  - `BASE_OUTPUT_DIR` for downloads root
+- Progress SSE: endpoint `/api/progress/stream` streams JSON events published by the downloader.
+- Backwards-compatibility: legacy flow remains available when the flag is off.
