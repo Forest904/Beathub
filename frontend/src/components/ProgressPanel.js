@@ -1,4 +1,4 @@
-﻿// frontend/src/components/ProgressPanel.js
+// frontend/src/components/ProgressPanel.js
 import React, { useEffect, useRef, useState } from 'react';
 
 function ProgressPanel({ visible, onClose, baseUrl, onComplete, onActiveChange }) {
@@ -111,7 +111,7 @@ function ProgressPanel({ visible, onClose, baseUrl, onComplete, onActiveChange }
 
       <div className="mt-3">
         <div className="text-sm text-gray-300">{status || 'Waiting...'}</div>
-        <div className="text-sm text-gray-400 truncate">{song_display_name || 'â€”'}</div>
+        <div className="text-sm text-gray-400 truncate">{song_display_name || 'Unknown'}</div>
         <div className="w-full bg-gray-700 rounded h-2 mt-1">
           <div className="bg-green-500 h-2 rounded" style={{ width: `${progress || 0}%` }}></div>
         </div>

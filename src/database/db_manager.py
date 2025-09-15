@@ -5,6 +5,12 @@ import os  # Import os for path handling
 import logging
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
+try:
+    # SQLAlchemy 2.x
+    from sqlalchemy.engine import make_url
+except Exception:  # pragma: no cover
+    # Fallback for older SQLAlchemy
+    from sqlalchemy.engine.url import make_url
 
 # Initialize the SQLAlchemy object
 db = SQLAlchemy()
@@ -127,6 +133,21 @@ def initialize_database(app):
     if not os.path.exists(instance_path):
         os.makedirs(instance_path)
         logger.info("Created instance folder: %s", instance_path)
+
+    # Ensure the directory for the configured SQLite file exists
+    try:
+        uri = app.config.get('SQLALCHEMY_DATABASE_URI')
+        if uri:
+            url = make_url(uri)
+            # Only handle file-based SQLite (not :memory:)
+            if url.get_backend_name() == 'sqlite' and url.database and url.database != ':memory:':
+                db_dir = os.path.dirname(url.database)
+                if db_dir and not os.path.exists(db_dir):
+                    os.makedirs(db_dir, exist_ok=True)
+                    logger.info("Created SQLite DB directory: %s", db_dir)
+    except Exception as e:
+        # Don't block app startup on path parsing issues; log and continue
+        logger.warning("Could not ensure SQLite directory exists: %s", e)
 
     # Create database tables within the application context
     with app.app_context():
