@@ -1,12 +1,12 @@
 ﻿# CD-Collector
 
-CD-Collector is a fullâ€‘stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, fetch lyrics from Genius, organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
+CD-Collector is a full‑stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
 
 ## Features
 
 - Search Spotify artists and view album details
 - Download albums/tracks/playlists using `spotdl` (default format `mp3`)
-- Fetch and save lyrics via Genius API
+- Extract and save embedded lyrics via SpotDL (Genius token optional)
 - Store downloaded items in SQLite with metadata and paths
 - Burn audio CDs from downloaded content via `cdrecord`/`wodim` + `ffmpeg`
 - React UI (Create React App) with API proxy to the Flask server
@@ -14,7 +14,7 @@ CD-Collector is a fullâ€‘stack app to search artists and albums on Spotify,
 ## Tech Stack
 
 - Backend: `Python 3.11+`, `Flask`, `Flask-SQLAlchemy`, `flask-cors`
-- Integrations: `spotipy` (Spotify Web API), `spotdl`, `lyricsgenius`, `pydub`/`ffmpeg`
+- Integrations: `spotipy` (Spotify Web API), `spotdl`, `pydub`/`ffmpeg`
 - DB: SQLite (file at `database/instance/cd_collector.db`)
 - Frontend: React (CRA), `axios`, Tailwind (optional)
 
@@ -24,7 +24,7 @@ CD-Collector is a fullâ€‘stack app to search artists and albums on Spotify,
 - Node.js `18+` and npm (for the frontend)
 - `ffmpeg` available on `PATH` (required by `pydub`)
 - `cdrecord`/`wodim` available on `PATH` for CD burning (Linux/macOS). On Windows, you may need compatible cdrtools or adapt the burning command.
-- Spotify and Genius API credentials
+- Spotify API credentials (optional: Genius token for SpotDL lyrics)
 
 ## Quick Start
 
@@ -49,8 +49,8 @@ BASE_OUTPUT_DIR=downloads
 SPOTIPY_CLIENT_ID=your_spotify_client_id
 SPOTIPY_CLIENT_SECRET=your_spotify_client_secret
 
-# Genius (https://genius.com/api-clients)
-  GENIUS_ACCESS_TOKEN=your_genius_token
+# Optional: Genius token (used by SpotDL for lyrics)
+GENIUS_ACCESS_TOKEN=your_genius_token
 
 # spotDL (optional)
 SPOTDL_AUDIO_SOURCE=youtube-music
@@ -89,9 +89,9 @@ On first run, the SQLite DB and tables are created automatically.
 - `config.py`: Configuration (DB URI, API keys, base output dir)
 - `database/db_manager.py`: SQLAlchemy setup and `DownloadedItem` model
 - `src/spotify_content_downloader.py`: Orchestrates metadata, audio, cover, lyrics, files
-- `src/download_service.py`: spotDL invocation and cover download
+- `src/download_service.py`: Cover download helpers (SpotDL API is used directly elsewhere)
 - `src/metadata_service.py`: Spotify metadata via `spotipy`
-- `src/lyrics_service.py`: Lyrics via `lyricsgenius`
+- `src/lyrics_service.py`: Embedded lyrics extraction and export
 - `src/file_manager.py`: File/dir creation and JSON metadata saving
 - `src/routes/*.py`: API routes (downloads, artists, album details, CD burner)
 - `frontend/`: React app (CRA). Built assets at `frontend/build`
@@ -143,27 +143,19 @@ On first run, the SQLite DB and tables are created automatically.
 ## Troubleshooting
 
 - Missing Spotify credentials: Set `SPOTIPY_CLIENT_ID` and `SPOTIPY_CLIENT_SECRET` in `.env`
-- Lyrics not downloading: Ensure `GENIUS_ACCESS_TOKEN` is set
+- Missing lyrics: Not all sources embed lyrics. Setting `GENIUS_ACCESS_TOKEN` may help SpotDL fetch and embed lyrics.
 - `ffmpeg` not found: Install and ensure itâ€™s on `PATH`
 - `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed
 - No burner detected: Verify `cdrecord`/`wodim` is installed and accessible; try running with admin/root if required
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
 
-## Refactor: SpotDL Service Architecture (branch: `refactor/spotdl-service`)
+## SpotDL API Pipeline
 
-We are migrating from invoking the spotDL CLI via subprocess to using the SpotDL Python API directly in the backend service (no CLI). The goals are:
-- Use SpotDLâ€™s `Song` data model end-to-end for richer, consistent metadata.
-- Full configurability via `config.py` defaults and `.env` overrides; per-request options where sensible.
-- Keep the current API framework (Flask) and the existing React frontend.
-- Switch lyrics to SpotDL providers, but still save a final `.txt` per track alongside audio.
-- Keep local filesystem storage; no cloud dependencies.
-
-Safety and scope:
-- All work occurs on branch `refactor/spotdl-service`. Main remains stable until parity tests pass.
-- A feature flag will guard the new pipeline so existing behavior is not broken during the transition.
-- Requirements for the refactor path: Python 3.10â€“3.13, `ffmpeg` on PATH, and `spotdl>=4.4.2`.
-
-Tracking: See `TODO.md` for the phased roadmap and acceptance criteria.
+The app now uses the SpotDL Python API directly (no CLI subprocesses). Goals achieved:
+- Use SpotDL’s `Song` model for richer, consistent metadata.
+- Configure via `config.py` defaults and `.env` overrides.
+- Lyrics come via SpotDL providers and are exported to `.txt` when embedded.
+- Local filesystem storage remains the same.
 
 ## Development
 
@@ -188,14 +180,13 @@ Notes:
 
 ## Migration Notes (SpotDL Service)
 
-- New SpotDL-based pipeline is feature-flagged by `USE_SPOTDL_PIPELINE`.
+- The SpotDL API pipeline is the default. The legacy CLI subprocess flow has been removed.
 - Configuration sources:
   - Defaults live in `config.py`.
   - Environment variables override defaults (see `.env`).
 - Important overrides:
-  - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET` (required for SpotDL API usage)
+  - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET` (used for metadata and SpotDL)
   - `SPOTDL_AUDIO_SOURCE` (e.g., `youtube-music` or `youtube`)
   - `SPOTDL_FORMAT` (e.g., `mp3`, `flac`), `SPOTDL_THREADS`
   - `BASE_OUTPUT_DIR` for downloads root
 - Progress SSE: endpoint `/api/progress/stream` streams JSON events published by the downloader.
-- Backwards-compatibility: legacy flow remains available when the flag is off.

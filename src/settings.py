@@ -3,9 +3,7 @@
 Centralized configuration schema and SpotDL settings loader.
 
 Merges defaults from config.Config with environment variables and
-provides helpers to build SpotDL downloader options. This does not
-change existing behavior; it prepares the refactor while remaining
-opt-in via the feature flag in config.py.
+provides helpers to build SpotDL downloader options.
 """
 
 from __future__ import annotations
@@ -30,7 +28,6 @@ class AppSettings(BaseModel):
 
     # App
     base_output_dir: str = Field(default=Config.BASE_OUTPUT_DIR)
-    use_spotdl_pipeline: bool = Field(default=Config.USE_SPOTDL_PIPELINE)
 
     # Spotify credentials
     spotify_client_id: Optional[str] = Field(default=Config.SPOTIPY_CLIENT_ID)
@@ -91,4 +88,3 @@ __all__ = [
     "load_app_settings",
     "build_spotdl_downloader_options",
 ]
-

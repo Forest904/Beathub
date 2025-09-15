@@ -131,8 +131,8 @@ def create_app():
                         spotdl_client.spotdl.downloader.settings.get('format'),
                         spotdl_client.spotdl.downloader.settings.get('audio_providers'))
     except Exception as e:
-        # Keep the app running; the legacy pipeline will still work when feature flag is off
-        app.logger.warning("SpotDL client not initialized: %s", e)
+        # Keep the app running for metadata/browse endpoints; downloads will be unavailable
+        app.logger.warning("SpotDL client not initialized; download features unavailable: %s", e)
 
     # Initialize job queue orchestrator
     try:
@@ -190,8 +190,7 @@ if __name__ == '__main__':
     if not Config.SPOTIPY_CLIENT_ID or not Config.SPOTIPY_CLIENT_SECRET:
         logger.warning("Spotify API client ID or client secret not found in environment variables.")
         logger.warning("Please set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET for full functionality.")
-    if not Config.GENIUS_ACCESS_TOKEN:
-        logger.warning("Genius API access token not found. Lyrics fetching will be unavailable.")
+    # Optional: SpotDL can use a GENIUS_ACCESS_TOKEN to improve embedded lyrics
 
     # Create the app instance here
     app = create_app()

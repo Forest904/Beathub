@@ -1,9 +1,8 @@
 import logging
 import os
-import threading
 from typing import List, Optional
 
-import spotipy  # Legacy spotipy kept for fallback
+import spotipy  # Spotipy remains for browse/metadata endpoints
 from spotipy.oauth2 import SpotifyClientCredentials
 from config import Config
 
@@ -95,7 +94,7 @@ class SpotifyContentDownloader:
             self._spotdl_client = build_default_client(app_logger=logger)
             return self._spotdl_client
         except Exception as e:
-            logger.warning("SpotDL client unavailable, falling back to legacy metadata: %s", e)
+            logger.warning("SpotDL client unavailable; metadata-only features may still work: %s", e)
             return None
 
     def _parse_item_type(self, link: str) -> str:
@@ -137,7 +136,7 @@ class SpotifyContentDownloader:
             except Exception as e:
                 logger.exception("SpotDL search failed: %s", e)
 
-        # Fallback to legacy metadata if SpotDL unavailable
+        # Fallback to metadata if SpotDL search unavailable
         if item_dto is None:
             initial_metadata = self.metadata_service.get_metadata_from_link(spotify_link)
             if not initial_metadata:
@@ -196,10 +195,8 @@ class SpotifyContentDownloader:
         # --- Audio download ---
         results_map = {}
         audio_failed = False
-        used_spotdl_download = False
         error_result = None
-        audio_thread = None
-        if Config.USE_SPOTDL_PIPELINE and spotdl_client and songs:
+        if spotdl_client and songs:
             # Drive downloads via SpotDL API (progress published via broker)
             try:
                 # Inform UI that we are starting a multi-track job
@@ -223,7 +220,6 @@ class SpotifyContentDownloader:
                     results_map[song.url] = str(p) if p else None
                     if p is None:
                         audio_failed = True
-                used_spotdl_download = True
             except Exception as e:
                 # Map specific SpotDL errors when possible
                 try:
@@ -241,31 +237,9 @@ class SpotifyContentDownloader:
                 else:
                     error_result = {"status": "error", "error_code": "internal_error", "message": f"SpotDL API download failed: {e}"}
                 audio_failed = True
-                used_spotdl_download = False
-                # Fallback to legacy CLI path to keep user flow
-                audio_result = {'ok': None}
-                def _audio_job_cli():
-                    audio_result['ok'] = self.audio_cover_download_service.download_audio(
-                        spotify_link,
-                        item_specific_output_dir,
-                        title_name
-                    )
-                audio_thread = threading.Thread(target=_audio_job_cli, name='audio-download', daemon=True)
-                audio_thread.start()
         else:
-            # Legacy CLI path in background thread
-            audio_result = {'ok': None}
-
-            def _audio_job():
-                audio_result['ok'] = self.audio_cover_download_service.download_audio(
-                    spotify_link,
-                    item_specific_output_dir,
-                    title_name
-                )
-
-            audio_thread = threading.Thread(target=_audio_job, name='audio-download', daemon=True)
-            audio_thread.start()
-            # We'll join later to preserve legacy concurrent lyrics fetching
+            # Without SpotDL search results we cannot download audio
+            return {"status": "error", "error_code": "search_unavailable", "message": "SpotDL search did not return results or client unavailable."}
 
         # --- Build track DTOs from SpotDL songs (canonical) ---
         track_dtos: List[TrackDTO] = []
@@ -279,44 +253,16 @@ class SpotifyContentDownloader:
 
         # --- Lyrics handling ---
         # SpotDL pipeline: we will export embedded lyrics after audio paths are known.
-        # Legacy pipeline: fetch via Genius in a sliding window to reduce API pressure.
-        do_legacy_lyrics = not (Config.USE_SPOTDL_PIPELINE and spotdl_client and songs)
-        if do_legacy_lyrics:
-            window = Config.LYRICS_WINDOW_SIZE
-            total = len(track_dtos)
-            if total:
-                for i in range(0, total, window):
-                    batch = track_dtos[i:i + window]
-                    logger.info(f"Fetching lyrics for tracks {i + 1}-{i + len(batch)} of {total}")
-                    for track_dto in batch:
-                        track_title = track_dto.title
-                        track_artist = track_dto.artists[0] if track_dto.artists else "Unknown Artist"
-                        lyrics_path = self.lyrics_service.download_lyrics(
-                            track_title,
-                            track_artist,
-                            item_specific_output_dir
-                        )
-                        track_dto.local_lyrics_path = lyrics_path
-        # --- End lyrics handling ---
 
         # --- Wait/check audio completion ---
-        if used_spotdl_download:
-            if audio_failed:
-                return error_result or {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
-            # Fill local_path from results_map
-            for t in track_dtos:
-                t.local_path = results_map.get(t.spotify_url)
-        else:
-            if audio_thread is not None:
-                audio_thread.join()
-                if audio_result['ok'] is False:
-                    # Prefer SpotDL-specific error if we had one
-                    return error_result or {"status": "error", "message": f"Audio download failed for {title_name}."}
-            else:
-                return error_result or {"status": "error", "message": "Audio download did not start."}
+        if audio_failed:
+            return error_result or {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
+        # Fill local_path from results_map
+        for t in track_dtos:
+            t.local_path = results_map.get(t.spotify_url)
 
         # For SpotDL pipeline: export embedded lyrics alongside audio files (graceful if missing)
-        if used_spotdl_download:
+        if True:
             total_tracks = len(track_dtos)
             exported_count = 0
             for t in track_dtos:

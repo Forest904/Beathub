@@ -8,7 +8,6 @@ def test_load_app_settings_uses_current_config(monkeypatch):
     monkeypatch.setenv("SPOTDL_AUDIO_SOURCE", "youtube")
     monkeypatch.setenv("SPOTDL_FORMAT", "flac")
     monkeypatch.setenv("SPOTDL_THREADS", "3")
-    monkeypatch.setenv("USE_SPOTDL_PIPELINE", "1")
     monkeypatch.setenv("SPOTIPY_CLIENT_ID", "abc")
     monkeypatch.setenv("SPOTIPY_CLIENT_SECRET", "def")
     monkeypatch.setenv("GENIUS_ACCESS_TOKEN", "tok")
@@ -24,7 +23,6 @@ def test_load_app_settings_uses_current_config(monkeypatch):
 
     # Core checks (reflect Config defaults after env)
     assert s.base_output_dir == _config.Config.BASE_OUTPUT_DIR
-    assert s.use_spotdl_pipeline == _config.Config.USE_SPOTDL_PIPELINE
     assert s.spotify_client_id == _config.Config.SPOTIPY_CLIENT_ID
     assert s.spotify_client_secret == _config.Config.SPOTIPY_CLIENT_SECRET
 

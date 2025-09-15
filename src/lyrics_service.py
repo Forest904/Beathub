@@ -1,4 +1,3 @@
-import lyricsgenius
 import logging
 import re
 import os
@@ -23,22 +22,16 @@ except Exception:  # pragma: no cover - mutagen is in requirements; defensive im
 
 class LyricsService:
     def __init__(self, genius_access_token=None):
-        """Initializes the LyricsService using token from Config by default.
+        """Lyrics utilities for the SpotDL pipeline.
 
-        In the SpotDL pipeline we rely on SpotDL's embedded lyrics and only
-        use the Genius client as a legacy fallback (feature flag OFF).
+        Note: External lyrics fetching via Genius API is removed. SpotDL can
+        embed lyrics using its own providers (optionally using a Genius token)
+        during download; this service focuses on extracting and exporting
+        embedded lyrics from audio files.
         """
-        # Fallback to Config if not explicitly provided
-        genius_access_token = genius_access_token or Config.GENIUS_ACCESS_TOKEN
-        self.genius_client = None
-        if genius_access_token:
-            try:
-                self.genius_client = lyricsgenius.Genius(genius_access_token, verbose=False, retries=3)
-                logger.info("LyricsGenius client initialized successfully.")
-            except Exception as e:
-                logger.error(f"Failed to initialize LyricsGenius client: {e}")
-        else:
-            logger.info("GENIUS_ACCESS_TOKEN not set. Skipping Genius client initialization.")
+        # Keep compatibility for callers that passed a token; handled by SpotDL
+        # at download time via settings. This class does not use the token.
+        _ = genius_access_token or Config.GENIUS_ACCESS_TOKEN
 
     def _sanitize_filename(self, name):
         """Sanitizes a string to be used as a filename."""
@@ -46,36 +39,6 @@ class LyricsService:
         name = name.strip()
         name = re.sub(r'_{2,}', '_', name)
         return name
-
-    # --- Legacy path: fetch from Genius API ---
-    def download_lyrics(self, track_title, track_artist, output_dir):
-        """Downloads lyrics via Genius and saves them to a file.
-
-        Used only in the legacy pipeline; SpotDL path uses embedded lyrics.
-        """
-        if not self.genius_client:
-            logger.debug("LyricsGenius client not initialized. Skipping external lyrics fetch.")
-            return None
-
-        sanitized_track_title = self._sanitize_filename(track_title)
-        sanitized_track_artist = self._sanitize_filename(track_artist)
-        lyrics_filename = f"{sanitized_track_title} - {sanitized_track_artist}.txt"
-        local_lyrics_path = os.path.join(output_dir, lyrics_filename)
-
-        try:
-            logger.info(f"Attempting to download lyrics for '{track_title}' by '{track_artist}'")
-            song = self.genius_client.search_song(track_title, track_artist)
-            if song and song.lyrics:
-                with open(local_lyrics_path, 'w', encoding='utf-8') as f:
-                    f.write(song.lyrics)
-                logger.info(f"Successfully downloaded lyrics to {local_lyrics_path}")
-                return local_lyrics_path
-            else:
-                logger.info(f"No lyrics found for '{track_title}' by '{track_artist}' on Genius.")
-                return None
-        except Exception as e:
-            logger.error(f"Failed to download lyrics for '{track_title}' by '{track_artist}': {e}")
-            return None
 
     # --- SpotDL pipeline path: extract embedded lyrics from audio files ---
     def extract_lyrics_from_audio(self, audio_path: str) -> Optional[str]:

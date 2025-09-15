@@ -58,7 +58,7 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
   - AC: Green tests on branch; docs explain configuration and overrides
 
 ## Phase 10 — Cleanup
-- [ ] Remove CLI subprocess code and `lyricsgenius` dependency
-- [ ] Remove Spotipy‑only metadata paths (if fully redundant)
+- [x] Remove CLI subprocess code and `lyricsgenius` dependency; use SpotDL API pipeline only
+- [x] Keep Spotipy use for metadata decoupled to serve the browser pipeline
   - AC: No references to legacy flow; release notes prepared
 

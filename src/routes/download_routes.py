@@ -37,7 +37,7 @@ def download_spotify_item_api():
         # Synchronous path: wait for completion
         result = jobs.wait(job.id)
     else:
-        # Fallback: direct call (legacy behavior)
+        # Direct call when no job queue is configured
         result = spotify_downloader.download_spotify_content(spotify_link)
 
     if not isinstance(result, dict):
