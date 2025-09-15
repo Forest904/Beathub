@@ -23,6 +23,21 @@ def _isolate_env(monkeypatch):
 
 @pytest.fixture
 def app(monkeypatch):
+    # Install minimal stubs for spotdl types to satisfy imports during app/module load
+    # This avoids requiring the real spotdl package for route tests.
+    m_spotdl = types.ModuleType("spotdl")
+    m_types = types.ModuleType("spotdl.types")
+    m_song = types.ModuleType("spotdl.types.song")
+
+    class _DummySong:
+        def __init__(self):
+            self.json = {}
+
+    m_song.Song = _DummySong
+    sys.modules["spotdl"] = m_spotdl
+    sys.modules["spotdl.types"] = m_types
+    sys.modules["spotdl.types.song"] = m_song
+
     # Import module, then patch SpotDL builder to avoid spinning real engine threads
     import app as app_module
     def _skip_spotdl(*args, **kwargs):
