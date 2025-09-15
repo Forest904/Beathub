@@ -42,13 +42,13 @@ This document tracks the migration from spotDL CLI subprocess calls to the SpotD
   - AC: Feature flag OFF → legacy behavior; ON → SpotDL service path; parity on happy paths
 
 ## Phase 7 — Lyrics Output
-- [ ] Fully switch to SpotDL lyrics providers (e.g., Genius)
-- [ ] After download, export embedded lyrics to `*.txt` per track alongside audio
+- [x] Fully switch to SpotDL lyrics providers (e.g., Genius)
+- [x] After download, export embedded lyrics to `*.txt` per track alongside audio
   - AC: A `.txt` exists for each track with lyrics; graceful when lyrics missing
 
 ## Phase 8 — Frontend (React)
-- [ ] Show richer metadata (ISRC, explicit, duration, etc.)
-- [ ] Display multi‑track progress for albums/playlists; error messages from backend
+- [x] Show richer metadata (ISRC, explicit, duration, etc.)
+- [x] Display multi‑track progress for albums/playlists; error messages from backend
   - AC: Usable UX for submit → progress → results
 
 ## Phase 9 — Tests & Docs

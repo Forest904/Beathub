@@ -2,6 +2,7 @@ import os
 import shutil
 import logging
 from flask import Blueprint, request, jsonify
+import json
 from src.database.db_manager import db, DownloadedItem
 
 logger = logging.getLogger(__name__)
@@ -118,3 +119,45 @@ def delete_downloaded_item(item_id):
     db.session.commit()
     logger.info(f"Successfully deleted {item.item_type} '{item.title}' from DB.")
     return jsonify({'success': True, 'message': 'Item deleted successfully.'}), 200
+
+
+@download_bp.route('/items/<int:item_id>/metadata', methods=['GET'])
+def get_item_metadata_by_id(item_id: int):
+    """Return the saved spotify_metadata.json for a downloaded item by DB id."""
+    item = DownloadedItem.query.get(item_id)
+    if not item:
+        return jsonify({'error': 'Item not found'}), 404
+    if not item.local_path:
+        return jsonify({'error': 'Local path not available for this item'}), 404
+
+    metadata_path = os.path.join(item.local_path, 'spotify_metadata.json')
+    if not os.path.exists(metadata_path):
+        return jsonify({'error': 'Metadata not found'}), 404
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error("Failed to read metadata for item %s: %s", item_id, e, exc_info=True)
+        return jsonify({'error': 'Failed to read metadata'}), 500
+
+
+@download_bp.route('/items/by-spotify/<string:spotify_id>/metadata', methods=['GET'])
+def get_item_metadata_by_spotify(spotify_id: str):
+    """Return the saved spotify_metadata.json for a downloaded item by Spotify id."""
+    item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
+    if not item:
+        return jsonify({'error': 'Item not found'}), 404
+    if not item.local_path:
+        return jsonify({'error': 'Local path not available for this item'}), 404
+
+    metadata_path = os.path.join(item.local_path, 'spotify_metadata.json')
+    if not os.path.exists(metadata_path):
+        return jsonify({'error': 'Metadata not found'}), 404
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error("Failed to read metadata for spotify %s: %s", spotify_id, e, exc_info=True)
+        return jsonify({'error': 'Failed to read metadata'}), 500

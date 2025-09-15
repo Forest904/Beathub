@@ -187,4 +187,5 @@ if __name__ == '__main__':
     app.logger.setLevel(logging.INFO)
     app.logger.propagate = True
     logger.info("Starting Flask application...")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Enable threaded mode so SSE can stream while downloads run in parallel requests
+    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)

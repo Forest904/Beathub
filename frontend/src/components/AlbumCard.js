@@ -38,11 +38,14 @@ function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType, isSelected })
                 onAlbumClick(album.id);
             }
         } else if (pageType === 'history') {
-            // Original behavior for downloaded history page
-            if (album.spotify_url) {
+            // On history page: if a selection handler is provided, use it to select
+            // and show metadata; otherwise, fall back to opening the Spotify link.
+            if (onAlbumClick) {
+                onAlbumClick(album);
+            } else if (album.spotify_url) {
                 window.open(album.spotify_url, '_blank', 'noopener,noreferrer');
             } else {
-                alert('Spotify URL not available for this album.');
+                // no-op when link not available
             }
         } else if (pageType === 'burn-selection') {
             // Behavior for the CD Burner Page

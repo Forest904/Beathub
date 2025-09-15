@@ -51,9 +51,8 @@ class AudioCoverDownloadService:
             except Exception:
                 spotdl_client = None
             if spotdl_client is None:
-                # Fallback: build a default client
-                from .spotdl_client import build_default_client
-                spotdl_client = build_default_client(app_logger=logger)
+                logger.error("SpotDL client not available in app context; cannot use SpotDL API path.")
+                return False
 
             sanitized_title = self._sanitize_filename(item_title)
             output_template = os.path.join(output_directory, f"{sanitized_title}")

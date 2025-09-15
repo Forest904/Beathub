@@ -18,6 +18,10 @@ import threading
 from typing import Any, Callable, List, Optional, Tuple
 from pathlib import Path
 import asyncio
+from queue import Queue
+import contextlib
+import io
+import os
 
 from .settings import load_app_settings, build_spotdl_downloader_options
 
@@ -41,27 +45,65 @@ class SpotdlClient:
         downloader_options: Optional[dict] = None,
         app_logger: Optional[logging.Logger] = None,
     ) -> None:
-        # Import locally to avoid import side effects at module import time
-        from spotdl import Spotdl  # type: ignore
+        """Initialize Spotdl in a dedicated engine thread with its own loop.
 
+        This avoids cross-thread asyncio loop/semaphore errors by ensuring that
+        SpotDL's downloader and its event loop are created and used on the same
+        thread for all operations.
+        """
         self.logger = app_logger or logger
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._downloader_options = downloader_options
         self._lock = threading.RLock()
 
-        # Construct Spotdl instance
-        self._spotdl = Spotdl(
-            client_id=client_id,
-            client_secret=client_secret,
-            downloader_settings=downloader_options,
-        )
+        self._spotdl = None  # created in engine
+        self._engine_queue: "Queue[tuple]" = Queue()
+        self._engine_ready = threading.Event()
 
-        # Prefer quieter console progress output; we surface updates via callback
-        try:
-            self._spotdl.downloader.settings["simple_tui"] = True
-        except Exception:  # pragma: no cover - defensive only
-            pass
+        def _engine():
+            # Create and bind a dedicated asyncio loop for the engine thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                from spotdl import Spotdl  # type: ignore
+                self._spotdl = Spotdl(
+                    client_id=self._client_id,
+                    client_secret=self._client_secret,
+                    downloader_settings=self._downloader_options,
+                )
+                try:
+                    self._spotdl.downloader.settings["simple_tui"] = True
+                except Exception:
+                    pass
+                self.logger.info(
+                    "Spotdl client initialized on engine thread (providers: %s)",
+                    self._spotdl.downloader.settings.get("lyrics_providers"),
+                )
+            finally:
+                self._engine_ready.set()
 
-        self.logger.info("Spotdl client initialized (lyrics providers: %s)",
-                         self._spotdl.downloader.settings.get("lyrics_providers"))
+            # Process callable tasks marshaled from other threads
+            while True:
+                item = self._engine_queue.get()
+                if item is None:
+                    break
+                fn, args, kwargs, done = item
+                try:
+                    res = fn(*args, **kwargs)
+                    done["result"] = res
+                except Exception as e:  # pragma: no cover
+                    done["error"] = e
+                finally:
+                    ev = done.get("event")
+                    if ev:
+                        ev.set()
+
+        self._engine_thread = threading.Thread(target=_engine, name="spotdl-engine", daemon=True)
+        self._engine_thread.start()
+        self._engine_ready.wait(timeout=10)
+        if self._spotdl is None:
+            raise RuntimeError("Failed to initialize SpotDL engine thread")
 
     # --- Core accessors ---
     @property
@@ -69,14 +111,24 @@ class SpotdlClient:
         return self._spotdl
 
     # --- Configuration helpers (per job) ---
+    def _call_engine(self, fn, *args, **kwargs):
+        done = {"event": threading.Event(), "result": None, "error": None}
+        self._engine_queue.put((fn, args, kwargs, done))
+        done["event"].wait()
+        if done["error"] is not None:
+            raise done["error"]
+        return done["result"]
+
     def set_output_template(self, output_template: str) -> str:
         """Set SpotDL output template for the next download job.
 
         Returns the effective template set on the SpotDL downloader settings.
         """
-        with self._lock:
+        def _fn():
             self._spotdl.downloader.settings["output"] = output_template
             return self._spotdl.downloader.settings["output"]
+        with self._lock:
+            return self._call_engine(_fn)
 
     # --- Progress callback ---
     def set_progress_callback(
@@ -96,18 +148,21 @@ class SpotdlClient:
           'overall_progress': int      # aggregate progress (0..100*tracks)
         }
         """
-        with self._lock:
+        def _fn():
             ph = self._spotdl.downloader.progress_handler
-            # Wrap SpotDL's SongTracker callback signature (tracker, message) -> None
             ph.update_callback = None if callback is None else self._wrap_progress_callback(callback)
             try:
                 ph.web_ui = bool(web_ui)
-            except Exception:  # pragma: no cover
+            except Exception:
                 pass
+        with self._lock:
+            self._call_engine(_fn)
 
     def clear_progress_callback(self) -> None:
-        with self._lock:
+        def _fn():
             self._spotdl.downloader.progress_handler.update_callback = None
+        with self._lock:
+            self._call_engine(_fn)
 
     def _wrap_progress_callback(self, cb: Callable[[dict], None]):
         def _inner(tracker: Any, message: str) -> None:
@@ -129,25 +184,35 @@ class SpotdlClient:
 
     # --- Thin API pass-throughs ---
     def search(self, queries: List[str]):
-        return self._spotdl.search(queries)
+        def _fn():
+            return self._spotdl.search(queries)
+        with self._lock:
+            return self._call_engine(_fn)
 
     def download_songs(self, songs) -> List[Tuple[Any, Optional[Path]]]:
-        # Always use a fresh event loop in this worker thread
-        with self._lock:
-            created_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(created_loop)
-            prev_loop = getattr(self._spotdl.downloader, "loop", None)
-            self._spotdl.downloader.loop = created_loop
+        """Download songs by executing inside the engine thread.
+
+        Ensures SpotDL's event loop and semaphore remain on the same thread.
+        """
+        def _fn():
+            # Silence console TUI/progress that SpotDL prints via stdout/stderr
             try:
-                return self._spotdl.download_songs(songs)
-            finally:
-                # Restore previous loop and close the worker loop
-                if prev_loop is not None:
-                    self._spotdl.downloader.loop = prev_loop
+                devnull = open(os.devnull, 'w')
+            except Exception:
+                devnull = None
+            cm_out = contextlib.redirect_stdout(devnull) if devnull else contextlib.nullcontext()
+            cm_err = contextlib.redirect_stderr(devnull) if devnull else contextlib.nullcontext()
+            with cm_out, cm_err:
                 try:
-                    created_loop.close()
-                except Exception:
-                    pass
+                    return self._spotdl.download_songs(songs)
+                finally:
+                    if devnull:
+                        try:
+                            devnull.close()
+                        except Exception:
+                            pass
+        with self._lock:
+            return self._call_engine(_fn)
 
     def download_link(
         self,
@@ -164,9 +229,7 @@ class SpotdlClient:
         with self._lock:
             self.set_output_template(output_template)
             self.set_progress_callback(progress_callback)
-
-        # We still call search in current thread (no async needed)
-        songs = self._spotdl.search([spotify_link])
+        songs = self.search([spotify_link])
         return self.download_songs(songs)
 
 

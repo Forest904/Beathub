@@ -121,6 +121,12 @@ class SpotifyContentDownloader:
 
     def download_spotify_content(self, spotify_link):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""
+        # Progress broker for SSE updates
+        try:
+            from flask import current_app
+            broker = current_app.extensions.get('progress_broker')
+        except Exception:
+            broker = None
         # Prefer SpotDL for metadata
         spotdl_client = self._resolve_spotdl_client()
         songs = []
@@ -198,6 +204,19 @@ class SpotifyContentDownloader:
         if Config.USE_SPOTDL_PIPELINE and spotdl_client and songs:
             # Drive downloads via SpotDL API (progress published via broker)
             try:
+                # Inform UI that we are starting a multi-track job
+                if broker is not None:
+                    try:
+                        broker.publish({
+                            'song_display_name': title_name,
+                            'status': 'Starting download',
+                            'progress': 0,
+                            'overall_completed': 0,
+                            'overall_total': len(songs),
+                            'overall_progress': 0,
+                        })
+                    except Exception:
+                        pass
                 sanitized_title = self.file_manager.sanitize_filename(title_name)
                 output_template = os.path.join(item_specific_output_dir, f"{sanitized_title}")
                 spotdl_client.set_output_template(output_template)
@@ -300,6 +319,8 @@ class SpotifyContentDownloader:
 
         # For SpotDL pipeline: export embedded lyrics alongside audio files (graceful if missing)
         if used_spotdl_download:
+            total_tracks = len(track_dtos)
+            exported_count = 0
             for t in track_dtos:
                 if t.local_path and not t.local_lyrics_path:
                     try:
@@ -307,6 +328,33 @@ class SpotifyContentDownloader:
                     except Exception:
                         exported = None
                     t.local_lyrics_path = exported
+                exported_count += 1
+                # Progress update for lyrics export phase
+                if broker is not None:
+                    try:
+                        broker.publish({
+                            'song_display_name': t.title,
+                            'status': f'Exporting lyrics ({exported_count}/{total_tracks})',
+                            'progress': 100 if t.local_lyrics_path else 0,
+                            'overall_completed': exported_count,
+                            'overall_total': total_tracks,
+                            'overall_progress': int((exported_count / max(1, total_tracks)) * 100),
+                        })
+                    except Exception:
+                        pass
+            # Final completion event after lyrics export and persistence
+            if broker is not None:
+                try:
+                    broker.publish({
+                        'song_display_name': title_name,
+                        'status': 'Complete',
+                        'progress': 100,
+                        'overall_completed': total_tracks,
+                        'overall_total': total_tracks,
+                        'overall_progress': 100,
+                    })
+                except Exception:
+                    pass
 
         # Persist track rows (now including local audio path and lyrics path)
         try:
