@@ -41,3 +41,13 @@ class Config:
     # Download orchestration
     DOWNLOAD_QUEUE_WORKERS = int(os.getenv('DOWNLOAD_QUEUE_WORKERS', '2'))
     DOWNLOAD_MAX_RETRIES = int(os.getenv('DOWNLOAD_MAX_RETRIES', '2'))
+
+    # Runtime behavior
+    # Turn Flask debug on/off from env; default off to avoid noisy console
+    DEBUG = os.getenv('DEBUG', '0').strip().lower() in (
+        '1', 'true', 'yes', 'on'
+    )
+    # Control console logging; when disabled, logs go only to file
+    ENABLE_CONSOLE_LOGS = os.getenv('ENABLE_CONSOLE_LOGS', '0').strip().lower() in (
+        '1', 'true', 'yes', 'on'
+    )

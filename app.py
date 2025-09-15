@@ -64,11 +64,19 @@ def configure_logging(log_dir: str) -> str:
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
 
-    # Console: WARNING and above
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.WARNING)
-    console_handler.setFormatter(formatter)
-    root.addHandler(console_handler)
+    # Console handler optional: keep backend console quiet unless explicitly enabled
+    try:
+        from config import Config as _Cfg
+        enable_console = bool(_Cfg.ENABLE_CONSOLE_LOGS)
+    except Exception:
+        # Fallback to env if Config import fails here
+        enable_console = os.getenv('ENABLE_CONSOLE_LOGS', '0').strip().lower() in ('1', 'true', 'yes', 'on')
+    if enable_console:
+        console_handler = logging.StreamHandler()
+        # If console logging is enabled, keep it concise: warnings and above
+        console_handler.setLevel(logging.WARNING)
+        console_handler.setFormatter(formatter)
+        root.addHandler(console_handler)
 
     # Quiet Flask/Werkzeug own console handlers; let them propagate to root
     for name in ("werkzeug", "flask.app"):
@@ -165,11 +173,16 @@ if __name__ == '__main__':
     # Ensure the base downloads directory exists when the app starts
     os.makedirs(Config.BASE_OUTPUT_DIR, exist_ok=True)
 
-    # Configure logging only in the reloader child (avoids duplicate files)
-    # When not using the reloader, this condition is false and we still configure.
-    reloader_child = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
-    if reloader_child:
-        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'log')
+    # Configure logging:
+    # - In debug with reloader: only in the child process to avoid duplicate files
+    # - In non-debug: always configure here
+    debug_mode = bool(Config.DEBUG)
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'log')
+    if debug_mode:
+        if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            log_file_path = configure_logging(log_dir)
+            logger.info("File logging initialized at %s", log_file_path)
+    else:
         log_file_path = configure_logging(log_dir)
         logger.info("File logging initialized at %s", log_file_path)
 
@@ -188,4 +201,4 @@ if __name__ == '__main__':
     app.logger.propagate = True
     logger.info("Starting Flask application...")
     # Enable threaded mode so SSE can stream while downloads run in parallel requests
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+    app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
