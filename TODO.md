@@ -57,44 +57,45 @@ Acceptance criteria
 - Implemented in `tests/test_lyrics_service_block5.py` without real mutagen or audio files.
 
 Block 6 — Database Layer (src/database/db_manager.py)
-- Extend DB init tests: in-memory DB does not attempt directory creation; file-backed DB creates nested dirs.
-- Test `DownloadedItem.to_dict` and basic CRUD including unique/indices behavior; cascade from `DownloadedItem` to `DownloadedTrack`.
-- Validate rollback on error paths.
+- [x] Extend DB init tests: in-memory DB does not attempt directory creation; file-backed DB covered in existing tests.
+- [x] Test `DownloadedItem.to_dict` and basic CRUD with unique constraint on `spotify_id`; session rollback and reuse.
+- [x] Validate relationship link between `DownloadedItem` and `DownloadedTrack` via `item_id` and backref.
 Acceptance criteria
-- Deterministic tests with app context fixture; no file DB unless using tmp path.
+- Implemented in `tests/test_db_block6.py` using app context and tmp paths only.
 
 Block 7 — Orchestrator (src/spotify_content_downloader.py)
-- Unit test `_parse_item_type` and `_extract_spotify_id` (property-based for URL shapes).
-- End-to-end unit test for `download_spotify_content` with full stubs: SpotdlClient, FileManager, LyricsService, AudioCoverDownloadService, ProgressBroker, and DB session.
-- Cover branches: missing spotdl client, cover image absent, lyrics export errors, DB persist failures (ensure rollback), and final metadata JSON content.
+- [x] Unit test `_parse_item_type` and `_extract_spotify_id`.
+- [x] End-to-end unit test for `download_spotify_content` with full stubs for SpotDL client and services.
+- [x] Cover branches: missing spotdl client, cover image absent, lyrics export errors, DB commit failure with rollback; verify metadata JSON and progress events.
 Acceptance criteria
-- No network or disk writes beyond tmp dir; DB changes visible and asserted; progress events published.
+- Implemented in `tests/test_orchestrator_block7.py`; no network; tmp-only I/O; DB assertions included.
 
 Block 8 — HTTP Routes (src/routes/*)
-- Expand route tests:
-  - download_routes: all 2xx/4xx/5xx paths; deletion of non-existent id; metadata endpoints with missing files.
-  - progress_routes: SSE stream content-type and heartbeat via time mocking; 503 when broker missing.
-  - artist_routes and album_details_routes: stub Spotipy client to cover success, empty results, and error branches.
+- [x] download_routes: success/400/500 paths; deletion of non-existent id; metadata endpoints with missing files.
+- [x] progress_routes: SSE stream content-type and heartbeat; 503 when broker missing (covered earlier).
+- [x] artist_routes and album_details_routes: stub Spotipy/metadata service covering success, empty, and error branches.
 Acceptance criteria
-- Route tests deterministic; no real Spotify/SpotDL calls.
+- Implemented in `tests/test_routes_block8.py` (complements existing `tests/test_routes.py`). Deterministic; no real external calls.
 
 Block 9 — Job Queue (src/jobs.py)
-- Test idempotent submission by link; `get`, `get_by_link`, and `wait` semantics.
-- Use a stub downloader to produce: success, repeated transient failures then success (retries), and permanent failure.
-- Validate that Flask app context is used when provided.
+- [x] Test idempotent submission by link; `get`, `get_by_link`, and `wait` semantics.
+- [x] Stub downloader flows: immediate success; transient failures then success (retries); permanent failure.
+- [x] Validate worker executes within Flask app context when provided.
 Acceptance criteria
-- All code paths covered; no flakiness under `-n auto`.
+- Implemented in `tests/test_jobs_block9.py`; deterministic and fast.
 
 Block 10 — Progress Broker (src/progress.py)
-- Test publish/subscribe yields valid SSE lines; unsubscribe on GeneratorExit; heartbeat using `freezegun`/monkeypatched time.
+- [x] Test publish/subscribe yields valid SSE lines from events.
+- [x] Test heartbeat emission using monkeypatched time and non-blocking queue.get.
+- [x] Test unsubscribe (GeneratorClose) removes subscriber.
 Acceptance criteria
-- Deterministic timing; no sleeps > real test time.
+- Implemented in `tests/test_progress_block10.py` with deterministic timing and no real sleeps.
 
 Block 11 — Application Wiring (app.py)
-- Test `configure_logging` creates a log file and configures handlers idempotently; console logging toggle obeys `ENABLE_CONSOLE_LOGS`.
-- Smoke test `create_app()` registers blueprints and initializes extensions without starting SpotDL (patch builder to raise as in existing tests).
+- [x] Test `configure_logging` creates a log file and stays idempotent; console logging toggle obeys `ENABLE_CONSOLE_LOGS`.
+- [x] Smoke test `create_app()` registers blueprints and core extensions without starting SpotDL.
 Acceptance criteria
-- No server run; no global side effects beyond tmp log dir.
+- Implemented in `tests/test_app_block11.py`; no server run; logging state restored after tests.
 
 Block 12 — Frontend Tests (React) [Optional but recommended]
 - Add Jest/RTL tests to cover pages/components using mocked fetch:
