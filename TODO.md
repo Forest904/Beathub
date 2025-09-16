@@ -15,7 +15,7 @@
   - `src/lyrics_service.py`: Embedded lyrics extraction/export via mutagen.
   - `src/jobs.py`: In-memory job queue for download requests (uses Flask app context for DB).
   - `src/progress.py`: SSE-friendly in-memory publish/subscribe broker.
-  - `src/cd_burning_service.py`: CD burning logic (ffmpeg/cdrecord) + global status manager.
+  - `src/cd_burning_service.py`: CD burning logic (IMAPI2/ffmpeg on Windows) + per-session status manager.
   - `src/database/db_manager.py`: SQLAlchemy setup, models (`DownloadedItem`, `DownloadedTrack`), and initializer.
   - `src/routes/*`: Flask blueprints for artists, album details, downloads, progress SSE, CD burning.
 

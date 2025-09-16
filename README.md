@@ -8,7 +8,7 @@ CD-Collector is a full-stack app to search artists and albums on Spotify, downlo
 - Download albums/tracks/playlists using `spotdl` (default format `mp3`)
 - Extract and save embedded lyrics via SpotDL (Genius token optional)
 - Store downloaded items in SQLite with metadata and paths
-- Burn audio CDs from downloaded content via `cdrecord`/`wodim` + `ffmpeg`
+- Burn Audio CDs on Windows via IMAPI v2 (COM) with `pydub`/`ffmpeg` for audio prep
 - React UI (Create React App) with API proxy to the Flask server
 
 ## Tech Stack
@@ -23,7 +23,8 @@ CD-Collector is a full-stack app to search artists and albums on Spotify, downlo
 - Python `3.11+`
 - Node.js `18+` and npm (for the frontend)
 - `ffmpeg` available on `PATH` (required by `pydub`)
-- `cdrecord`/`wodim` available on `PATH` for CD burning (Linux/macOS). On Windows, you may need compatible cdrtools or adapt the burning command.
+- Windows: Uses built-in IMAPI v2 via COM (`comtypes`). No external burner CLI required.
+- Non‑Windows: CD burning is currently focused on Windows; data paths on Linux/macOS are not supported in this build.
 - Spotify API credentials (optional: Genius token for SpotDL lyrics)
 
 ## Quick Start
@@ -96,7 +97,7 @@ On first run, the SQLite DB and tables are created automatically.
 - Missing lyrics: Not all sources embed lyrics. Setting `GENIUS_ACCESS_TOKEN` may help SpotDL fetch and embed lyrics.
 - `ffmpeg` not found: Install and ensure it’s on `PATH`
 - `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed
-- No burner detected: Verify `cdrecord`/`wodim` is installed and accessible; try running with admin/root if required
+- No burner detected (Windows): Ensure you have an optical recorder and run the app with sufficient privileges. IMAPI v2 is built into modern Windows.
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
 
 
@@ -133,3 +134,4 @@ Tests automatically isolate their database storage and stub external SpotDL/Spot
 
 - Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` → returns `202 Accepted` with `{ "session_id": "..." }`.
 - Poll status: `GET /api/cd-burner/status?session_id=<id>` → returns per-session state (`is_burning`, `progress_percentage`, etc.). If `session_id` omitted, returns the most recent session.
+

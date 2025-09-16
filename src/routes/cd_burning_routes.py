@@ -113,3 +113,85 @@ def start_cd_burn():
         except Exception:
             pass
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
+
+@cd_burning_bp.route('/devices', methods=['GET'])
+def list_devices():
+    """List optical recorders with dynamic media status (Windows/IMAPI2)."""
+    try:
+        cd_burner = current_app.extensions.get('cd_burning_service')
+        mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
+        if not cd_burner:
+            return jsonify({"devices": [], "error": "CD Burning Service not available"}), 503
+        devices = cd_burner.list_devices_with_status()
+        # augment with global busy flag if anything burning
+        is_busy = bool(mgr and mgr.is_any_burning())
+        for d in devices:
+            # if any burn active, mark active device as busy
+            if is_busy and d.get('selected'):
+                d['active'] = True
+        return jsonify({"devices": devices}), 200
+    except Exception as e:
+        logger.exception("Failed to list devices")
+        return jsonify({"devices": [], "error": str(e)}), 500
+
+
+@cd_burning_bp.route('/cancel', methods=['POST'])
+def cancel_burn():
+    """Request cancellation of an in-progress burn by session_id."""
+    try:
+        data = request.get_json(silent=True) or {}
+        session_id = data.get('session_id') or request.args.get('session_id')
+        if not session_id:
+            return jsonify({"error": "Missing session_id"}), 400
+
+        mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
+        cd_burner = current_app.extensions.get('cd_burning_service')
+        if not mgr or not cd_burner:
+            return jsonify({"error": "CD Burning Service not available"}), 503
+        sess = mgr.get(session_id)
+        if not sess:
+            return jsonify({"error": "Session not found"}), 404
+        if not sess.is_burning:
+            return jsonify({"error": "Session not burning"}), 409
+
+        ok = cd_burner.request_cancel(session_id)
+        if not ok:
+            return jsonify({"error": "Cancel signal not accepted"}), 409
+        try:
+            sess.update_status("Cancelling...")
+        except Exception:
+            pass
+        return jsonify({"status": "accepted", "message": "Cancellation requested"}), 202
+    except Exception as e:
+        logger.exception("Error handling cancel request")
+        return jsonify({"error": str(e)}), 500
+
+
+@cd_burning_bp.route('/select-device', methods=['POST'])
+def select_device():
+    """Select the active recorder by device_id (Windows/IMAPI2)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        device_id = data.get('device_id') or request.args.get('device_id')
+        if not device_id:
+            return jsonify({"error": "Missing device_id"}), 400
+
+        mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
+        cd_burner = current_app.extensions.get('cd_burning_service')
+        if not cd_burner:
+            return jsonify({"error": "CD Burning Service not available"}), 503
+
+        # Do not allow selection while burning
+        if mgr and mgr.is_any_burning():
+            return jsonify({"error": "Cannot change device while burning"}), 409
+
+        ok = cd_burner.select_device(device_id)
+        if not ok:
+            return jsonify({"error": "Failed to select device"}), 400
+        # Return updated list
+        devices = cd_burner.list_devices_with_status()
+        return jsonify({"devices": devices, "selected": device_id}), 200
+    except Exception as e:
+        logger.exception("Error selecting device")
+        return jsonify({"error": str(e)}), 500

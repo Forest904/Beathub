@@ -79,7 +79,7 @@ sequenceDiagram
     participant BurnRoutes as /api/cd-burner
     participant Sessions as BurnSessionManager
     participant Service as CDBurningService
-    participant Disc as cdrecord/ffmpeg
+    participant Disc as IMAPI2/ffmpeg
     participant SSE as ProgressBroker
 
     UI->>BurnRoutes: POST /burn {download_item_id}
@@ -87,7 +87,7 @@ sequenceDiagram
     Sessions-->>BurnRoutes: BurnSession(session_id)
     BurnRoutes->>Service: burn_cd(..., session, publisher)
     BurnRoutes-->>UI: 202 {session_id}
-    Service->>Disc: scan/check/convert/burn
+    Service->>Disc: scan/check/convert/burn (IMAPI2)
     Service-->>Sessions: update_status/progress
     Service-->>SSE: publish progress (optional)
     UI->>BurnRoutes: GET /status?session_id=...
@@ -124,4 +124,3 @@ Future Improvements
 - Replace in‑process `JobQueue` with a durable queue if needed
 - Introduce `Storage` abstraction for filesystem operations
 - Split DB models into a dedicated module (separate from initializer)
-

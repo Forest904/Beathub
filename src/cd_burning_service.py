@@ -6,7 +6,7 @@ import re
 import tempfile
 import shutil
 import threading
-from typing import Optional
+from typing import Optional, Dict, List
 
 from config import Config
 from .burn_sessions import BurnSession
@@ -14,6 +14,14 @@ from .progress import ProgressPublisher
 
 # Ensure pydub and its dependencies (like ffmpeg) are installed
 from pydub import AudioSegment
+import sys
+
+# Windows IMAPI v2 adapter
+try:
+    from .burners.imapi2_audio import IMAPI2AudioBurner, IMAPIUnavailableError
+except Exception:  # pragma: no cover - adapter optional at import time
+    IMAPI2AudioBurner = None  # type: ignore
+    IMAPIUnavailableError = RuntimeError  # type: ignore
 
 # Initialize logger for this service module.
 # Instance-specific loggers will be used within CDBurningService.
@@ -25,11 +33,15 @@ class CDBurningService:
         # Use the provided app_logger or create a new one for this instance
         self.logger = app_logger if app_logger else logging.getLogger(self.__class__.__name__)
         self.base_output_dir = base_output_dir or Config.BASE_OUTPUT_DIR
-        # Ensure cdrecord/wodim and ffmpeg are in PATH or provide full path
-        self.cdrecord_path = "cdrecord" # Or "wodim" on some Linux systems
-        self.ffmpeg_path = "ffmpeg"    # pydub typically handles this, but good to note
-        self.current_burner_device = None
-        self.logger.info("CDBurningService initialized with cdrecord path: {}".format(self.cdrecord_path))
+        # ffmpeg is used indirectly by pydub
+        self.ffmpeg_path = "ffmpeg"
+        # IMAPI2 burner (Windows only)
+        self._imapi: Optional[IMAPI2AudioBurner] = None
+        self._imapi_recorder = None
+        self._imapi_recorder_id: Optional[str] = None
+        self._active_session_id: Optional[str] = None
+        self._cancel_flags: Dict[str, threading.Event] = {}
+        self.logger.info("CDBurningService initialized (IMAPI2 backend on Windows)")
 
     def _run_command(self, command, description="", check=True):
         """Helper to run a subprocess command and log output, with improved error handling."""
@@ -78,88 +90,133 @@ class CDBurningService:
 
 
     def scan_for_burner(self, session: BurnSession):
-        """
-        Scans for available CD/DVD burners using 'cdrecord -scanbus'.
-        Updates the global status manager and sets self.current_burner_device.
-        Returns True if a burner is found, False otherwise.
-        """
-        self.logger.info("Scanning for CD/DVD burners...")
+        """Enumerate burners via IMAPI2 and select the first available recorder on Windows."""
+        self.logger.info("Scanning for CD/DVD burners (IMAPI2)...")
         session.update_status("Scanning Burner...")
         try:
-            # Using -scanbus to find devices. Output format can vary by OS/cdrecord version.
-            command = [self.cdrecord_path, '-scanbus']
-            # We set check=False because -scanbus might exit with a non-zero code if no burner is found
-            output = self._run_command(command, "scanning for burners", check=False)
-
-            # Regex to find burner device: 'bus,target,lun' format
-            # Example output: "scsibus0: 0,0,0   0) 'VENDOR' 'PRODUCT' 'REVISION' Removable CD-ROM"
-            # This regex is an improvement over the original by being more specific.
-            burner_match = re.search(r'^\s*(\d+,\d+,\d+)\s+\d+\)\s+\'(.+?)\'\s+\'(.+?)\'\s+\'(.+?)\'\s+Removable CD-ROM', output, re.MULTILINE)
-
-            if burner_match:
-                self.current_burner_device = burner_match.group(1)
-                self.logger.info(f"CD burner detected at device: {self.current_burner_device} ({burner_match.group(2)} {burner_match.group(3)})")
-                session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
-                return True
-            else:
-                self.logger.warning("No CD/DVD burner found on system or output format not recognized.")
+            if sys.platform != 'win32' or IMAPI2AudioBurner is None:
                 session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
+                self.logger.error("IMAPI2 is only supported on Windows. Platform: %s", sys.platform)
                 return False
-        except RuntimeError as e:
-            # Catch errors propagated from _run_command
-            self.logger.error(f"Runtime error during burner scan: {e}")
-            session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
-            session.set_error(f"Burner scan failed: {e}")
-            return False
+
+            if self._imapi is None:
+                try:
+                    self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="CD-Collector")
+                except IMAPIUnavailableError as e:
+                    session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
+                    session.set_error(str(e))
+                    return False
+
+            devices = self._imapi.list_recorders()
+            if not devices:
+                session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
+                self.logger.warning("No IMAPI2 recorders found.")
+                return False
+
+            # Use selected if set and still available; else first
+            chosen_id = None
+            ids = {d['unique_id'] for d in devices}
+            if self._imapi_recorder_id in ids:
+                chosen_id = self._imapi_recorder_id
+            else:
+                chosen_id = devices[0]['unique_id']
+
+            # Open the recorder
+            rec, rec_id = self._imapi.open_recorder(chosen_id)
+            self._imapi_recorder = rec
+            self._imapi_recorder_id = rec_id
+            self.logger.info("Selected recorder: %s (%s %s)", rec_id, devices[0].get('vendor_id', ''), devices[0].get('product_id', ''))
+            session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
+            return True
         except Exception as e:
-            self.logger.exception("An unexpected error occurred during burner scan.")
+            self.logger.exception("An unexpected error occurred during IMAPI2 burner scan.")
             session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
             session.set_error(f"Burner scan failed unexpectedly: {e}")
             return False
 
-    def check_disc_status(self, session: BurnSession):
-        """
-        Checks the status of the disc in the detected burner using 'cdrecord -checkmedia'.
-        Updates the global status manager.
-        Returns True if a blank/erasable disc is present, False otherwise.
-        """
-        if not self.current_burner_device:
-            self.logger.warning("No burner detected to check disc status. Please run scan_for_burner first.")
-            session.update_burner_state(detected=False, present=False, blank_or_erasable=False) # Ensure consistent state
+    def select_device(self, unique_id: str) -> bool:
+        """Select a specific recorder by unique ID (Windows/IMAPI2)."""
+        if sys.platform != 'win32' or IMAPI2AudioBurner is None:
+            return False
+        if self._imapi is None:
+            try:
+                self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="CD-Collector")
+            except Exception as e:
+                self.logger.error("IMAPI2 init failed for device select: %s", e)
+                return False
+        try:
+            rec, rec_id = self._imapi.open_recorder(unique_id)
+            self._imapi_recorder = rec
+            self._imapi_recorder_id = rec_id
+            self.logger.info("Recorder selected: %s", rec_id)
+            return True
+        except Exception as e:
+            self.logger.error("Failed to select recorder %s: %s", unique_id, e)
             return False
 
-        self.logger.info(f"Checking disc status in burner {self.current_burner_device}...")
+    def check_disc_status(self, session: BurnSession):
+        """Check disc presence/writability using IMAPI2 audio format."""
+        if not self._imapi or not self._imapi_recorder:
+            self.logger.warning("No recorder selected. Run scan_for_burner first.")
+            session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
+            return False
+
+    # --- Device/status helpers for routes ---
+    def list_devices_with_status(self) -> List[dict]:
+        """Return devices and dynamic media status. Windows/IMAPI only."""
+        if sys.platform != 'win32' or IMAPI2AudioBurner is None:
+            return []
+        if self._imapi is None:
+            try:
+                self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="CD-Collector")
+            except Exception:
+                return []
+
+        out: List[dict] = []
+        devices = self._imapi.list_recorders()
+        for dev in devices:
+            present = False
+            writable = False
+            try:
+                rec, _ = self._imapi.open_recorder(dev['unique_id'])
+                present, writable = self._imapi.check_audio_disc_ready(rec)
+            except Exception:
+                pass
+            display = f"{dev.get('vendor_id','').strip()} {dev.get('product_id','').strip()}".strip()
+            out.append({
+                'id': dev['unique_id'],
+                'display_name': display or dev['unique_id'],
+                'vendor_id': dev.get('vendor_id'),
+                'product_id': dev.get('product_id'),
+                'product_rev': dev.get('product_rev'),
+                'volume_paths': list(dev.get('volume_paths') or []),
+                'present': bool(present),
+                'writable': bool(writable),
+                'selected': dev['unique_id'] == self._imapi_recorder_id,
+                'active': (self._active_session_id is not None) and (dev['unique_id'] == self._imapi_recorder_id),
+            })
+        return out
+
+    def get_active_device_id(self) -> Optional[str]:
+        return self._imapi_recorder_id
+
+    def request_cancel(self, session_id: str) -> bool:
+        ev = self._cancel_flags.get(session_id)
+        if not ev:
+            return False
+        ev.set()
+        return True
+
+        self.logger.info("Checking disc status (IMAPI2)...")
         session.update_status("Checking Disc...")
         try:
-            command = [self.cdrecord_path, '-v', f'dev={self.current_burner_device}', '-checkmedia']
-            output = self._run_command(command, "checking disc status", check=False) # check=False as it might exit non-zero for empty tray
-
-            disc_present = "Disc present" in output or "Track 1" in output or "Media tag:" in output
-            # Look for indicators of blank/erasable media
-            blank_or_erasable = (
-                "Disc status: blank" in output or
-                "Disc status: empty" in output or
-                "appendable" in output or
-                "overwriteable" in output or
-                "CD-RW" in output # Implies erasable
-            )
-
-            session.update_burner_state(
-                detected=True,
-                present=disc_present,
-                blank_or_erasable=blank_or_erasable
-            )
-            return disc_present and blank_or_erasable
-
-        except RuntimeError as e:
-            self.logger.error(f"Runtime error checking disc status: {e}")
+            present, writable = self._imapi.check_audio_disc_ready(self._imapi_recorder)
+            session.update_burner_state(detected=True, present=present, blank_or_erasable=writable)
+            return present and writable
+        except Exception as e:
+            self.logger.exception("IMAPI2 disc status check failed: %s", e)
             session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
             session.set_error(f"Disc status check failed: {e}")
-            return False
-        except Exception as e:
-            self.logger.exception("An unexpected error occurred during disc status check.")
-            session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
-            session.set_error(f"Disc status check failed unexpectedly: {e}")
             return False
 
     def _parse_spotify_metadata(self, content_dir):
@@ -199,7 +256,7 @@ class CDBurningService:
         self.logger.info(f"Found {len(tracks_data)} tracks in metadata.")
         return tracks_data
 
-    def _convert_mp3_to_wav(self, content_dir, tracks_data, temp_wav_dir):
+    def _convert_mp3_to_wav(self, content_dir, tracks_data, temp_wav_dir, *, session: BurnSession, cancel_event: Optional[threading.Event] = None, publisher: Optional[ProgressPublisher] = None):
         """
         Converts MP3 files to WAV format in the specified temporary directory.
         Ensures 44.1 kHz, 16-bit, stereo for audio CD compatibility.
@@ -213,6 +270,8 @@ class CDBurningService:
         # pydub.AudioSegment.ffmpeg = self.ffmpeg_path # Can explicitly set if needed
 
         for i, track in enumerate(tracks_data):
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Burn canceled during audio conversion")
             # Sanitize track title for filename matching. This should mirror the download logic.
             # Replace invalid filename characters
             sanitized_title = re.sub(r'[\\/:*?"<>|]', '_', track['title'])
@@ -256,6 +315,17 @@ class CDBurningService:
                 # Conversion takes up 50% of overall progress (0-50%)
                 progress = int(((i + 1) / total_tracks) * 50)
                 session.update_status(f"Converting WAVs ({i+1}/{total_tracks})", progress)
+                if publisher is not None:
+                    try:
+                        publisher.publish({
+                            'event': 'cd_burn_progress',
+                            'status': 'preparing',
+                            'progress': progress,
+                            'message': f'Converting {i+1}/{total_tracks}',
+                            'session_id': session.id,
+                        })
+                    except Exception:
+                        pass
             except Exception as e:
                 self.logger.exception(f"Error converting MP3 '{found_mp3_path}' to WAV: {e}")
                 raise RuntimeError(f"Failed to convert '{track['title']}' to WAV: {e}")
@@ -263,103 +333,41 @@ class CDBurningService:
         self.logger.info(f"Finished converting {len(wav_file_paths)} MP3s to WAV.")
         return wav_file_paths
 
-    def _execute_burn(self, wav_file_paths, disc_title="Audio CD", *, session: BurnSession, publisher: Optional[ProgressPublisher] = None):
-        """
-        Executes the cdrecord command to burn the WAV files to an audio CD.
-        Monitors output for progress updates.
-        """
-        if not self.current_burner_device:
-            raise RuntimeError("No CD burner device selected or detected. Burn cannot proceed.")
+    def _execute_burn(self, wav_file_paths, disc_title="Audio CD", *, session: BurnSession, publisher: Optional[ProgressPublisher] = None, album_artist: Optional[str] = None, per_track_cdtext: Optional[list] = None, cancel_event: Optional[threading.Event] = None):
+        """Burn using IMAPI2 AudioCD format on Windows."""
+        if not self._imapi or not self._imapi_recorder:
+            raise RuntimeError("IMAPI2 recorder not selected. Cannot burn.")
         if not wav_file_paths:
             raise ValueError("No WAV files provided for burning. Burn cannot proceed.")
 
-        self.logger.info(f"Starting actual CD burning process to device {self.current_burner_device} with title '{disc_title}'...")
-        session.update_status("Burning Disc...", progress=50) # Burning progress (50-100%)
+        self.logger.info("Starting IMAPI2 Audio CD burn with title '%s'...", disc_title)
+        session.update_status("Burning Disc...", progress=50)
 
-        # Basic cdrecord command for audio CD
-        command = [
-            self.cdrecord_path,
-            '-v',              # Verbose output
-            f'dev={self.current_burner_device}', # Specify the burner device
-            'speed=16',        # Burning speed (adjust as needed or make configurable)
-            '-audio',          # Specify burning an audio CD
-            'driveropts=burnfree', # Helps prevent buffer underruns
-            '-dao',            # Disc At Once mode (recommended for audio CDs)
-            # Add -text or -text_us if you want CD-TEXT (requires more complex track info)
-            # Add -dummy for a dry run (useful for testing without wasting a disc)
-        ] + wav_file_paths # List of WAV files in order
+        # Best-effort CD-TEXT (album + per-track)
+        album_cdtext = {'title': disc_title}
+        if album_artist:
+            album_cdtext['artist'] = album_artist
+        # Try deriving artist from first track's metadata during parsing stage later if available
 
+        cancel_flag = cancel_event or threading.Event()
         try:
-            # Execute the command, capturing stdout/stderr for progress parsing
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, # Redirect stderr to stdout for easier parsing
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                bufsize=1 # Line-buffered output
+            self._imapi.burn_audio_cd(
+                recorder=self._imapi_recorder,
+                wav_paths=wav_file_paths,
+                album_cdtext=album_cdtext,
+                per_track_cdtext=per_track_cdtext,
+                session=session,
+                publisher=publisher,
+                cancel_flag=cancel_flag,
             )
-
-            # This loop attempts to parse progress from cdrecord output.
-            # Note: cdrecord's output format can vary greatly across versions and OS,
-            # so this parsing might need fine-tuning for your specific environment.
-            for line in process.stdout:
-                line = line.strip()
-                self.logger.debug(f"cdrecord output: {line}")
-
-                if "percent done" in line:
-                    try:
-                        # Example: "Track 1: 95.00% done"
-                        match = re.search(r'(\d+\.?\d*)%\s+done', line)
-                        if match:
-                            burn_progress = float(match.group(1))
-                            # Scale burn progress (0-100) to overall progress (50-100)
-                            total_progress = 50 + (burn_progress / 100) * 50
-                            session.update_status(f"Burning: {line}", int(total_progress))
-                            if publisher is not None:
-                                try:
-                                    publisher.publish({
-                                        'event': 'cd_burn_progress',
-                                        'status': 'burning',
-                                        'progress': int(total_progress),
-                                        'message': line,
-                                        'session_id': session.id,
-                                    })
-                                except Exception:
-                                    pass
-                    except ValueError:
-                        self.logger.warning(f"Could not parse progress percentage from line: {line}")
-                elif "writing" in line and "blocks" in line:
-                    # General writing status update
-                    session.update_status(f"Burning: {line}")
-                elif "fatal error" in line or "error" in line:
-                    # Catch critical errors reported in output
-                    raise RuntimeError(f"cdrecord reported error: {line}")
-
-            # Wait for the subprocess to complete and check its return code
-            process.wait()
-
-            if process.returncode != 0:
-                raise RuntimeError(f"CD record command failed with exit code {process.returncode}. Check logs for details.")
-
-            self.logger.info("CD burning command completed successfully.")
-            session.update_status("Burning Completed", progress=100)
             if publisher is not None:
                 try:
                     publisher.publish({'event': 'cd_burn_complete', 'status': 'completed', 'progress': 100, 'session_id': session.id})
                 except Exception:
                     pass
-
         except Exception as e:
-            self.logger.exception(f"Error during CD burning execution: {e}")
+            self.logger.exception("IMAPI2 burn failed: %s", e)
             raise RuntimeError(f"CD burning failed: {e}")
-        finally:
-            # Ensure process is truly terminated if an exception occurred during parsing
-            if process and process.poll() is None:
-                self.logger.warning(f"Terminating hanging cdrecord process.")
-                process.terminate()
-                process.wait(timeout=5)
 
 
     def _cleanup_temp_dir(self, temp_dir):
@@ -377,6 +385,10 @@ class CDBurningService:
         This method is designed to be called in a separate thread.
         """
         temp_wav_dir = None
+        # register cancel flag for this session
+        cancel_event = threading.Event()
+        self._cancel_flags[session.id] = cancel_event
+        self._active_session_id = session.id
         try:
             self.logger.info(f"Starting CD burn process for content from: {content_dir}")
             session.start(status=f"Preparing to burn '{item_title}'...", progress=0)
@@ -397,13 +409,23 @@ class CDBurningService:
 
             # 4. Convert MP3s to WAVs suitable for audio CD
             session.update_status("Converting MP3s to WAVs...", progress=0)
-            wav_file_paths = self._convert_mp3_to_wav(content_dir, tracks_data, temp_wav_dir)
+            wav_file_paths = self._convert_mp3_to_wav(content_dir, tracks_data, temp_wav_dir, session=session, cancel_event=cancel_event, publisher=publisher)
             if not wav_file_paths:
                 raise RuntimeError("No WAV files were successfully converted. Aborting burn.")
 
             # 5. Execute the actual CD burning command
             session.update_status("Initiating CD burn...", progress=50)
-            self._execute_burn(wav_file_paths, disc_title=item_title, session=session, publisher=publisher)
+            album_artist = tracks_data[0].get('artist') if tracks_data else None
+            per_track_cdtext = tracks_data
+            self._execute_burn(
+                wav_file_paths,
+                disc_title=item_title,
+                session=session,
+                publisher=publisher,
+                album_artist=album_artist,
+                per_track_cdtext=per_track_cdtext,
+                cancel_event=cancel_event,
+            )
 
             session.complete()
             self.logger.info(f"CD burn for '{item_title}' completed successfully.")
@@ -424,3 +446,9 @@ class CDBurningService:
             # Only reset if it's still marked as burning and not already set to error/completed
             if session.is_burning:
                 session.set_error("Burn process interrupted or failed unexpectedly.")
+            # cleanup cancel flag and active device
+            try:
+                self._cancel_flags.pop(session.id, None)
+            except Exception:
+                pass
+            self._active_session_id = None

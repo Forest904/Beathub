@@ -1,0 +1,6 @@
+
+
+- Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` → returns `202 Accepted` with `{ "session_id": "..." }`.
+- Poll status: `GET /api/cd-burner/status?session_id=<id>` → returns per-session state (`is_burning`, `progress_percentage`, etc.). If `session_id` omitted, returns the most recent session.
+
+

@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'; // Import useRef
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery'; // Assuming AlbumGallery.js is in components
+import DevicesPanel from '../components/DevicesPanel';
+import BurnProgress from '../components/BurnProgress';
 import Message from '../components/Message'; // Assuming Message.js is in components
 // You might need to import LoadingSpinner or similar if you have one
 // import LoadingSpinner from '../components/LoadingSpinner';
@@ -22,6 +24,10 @@ function CDBurnerPage() {
     const [message, setMessage] = useState(null); // For general page messages
     const [isLoadingItems, setIsLoadingItems] = useState(true);
     const [isBurningInitiating, setIsBurningInitiating] = useState(false); // For showing loading state on burn button
+    const [devices, setDevices] = useState([]);
+    const [loadingDevices, setLoadingDevices] = useState(false);
+    const [showBurnProgress, setShowBurnProgress] = useState(false);
+    const [activeSessionId, setActiveSessionId] = useState(null);
 
     const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000'; // Ensure this matches your backend Flask URL
 
@@ -69,6 +75,9 @@ function CDBurnerPage() {
         try {
             const response = await axios.get(`${API_BASE_URL}/api/cd-burner/status`);
             setBurnerStatus(response.data);
+            if (response.data && response.data.session_id) {
+                setActiveSessionId(response.data.session_id);
+            }
 
             // Access message via ref to avoid re-creating pollBurnerStatus on message change
             if (response.data.last_error && (!messageRef.current || messageRef.current.text !== `Burner Error: ${response.data.last_error}`)) {
@@ -97,21 +106,32 @@ function CDBurnerPage() {
         }
     }, [API_BASE_URL]); // Removed message from dependency array
 
-    // --- Effect for initial fetch and polling ---
+    const fetchDevices = useCallback(async () => {
+        try {
+            setLoadingDevices(true);
+            const resp = await axios.get(`${API_BASE_URL}/api/cd-burner/devices`);
+            setDevices(resp.data.devices || []);
+        } catch (err) {
+            console.error('Error fetching devices:', err);
+        } finally {
+            setLoadingDevices(false);
+        }
+    }, [API_BASE_URL]);
+
     useEffect(() => {
+        // initial loads
         fetchDownloadedItems();
-
-        // Initial status check
         pollBurnerStatus();
+        fetchDevices();
+        // simple polling for status and devices
+        const iv1 = setInterval(pollBurnerStatus, 4000);
+        const iv2 = setInterval(fetchDevices, 8000);
+        return () => {
+            clearInterval(iv1);
+            clearInterval(iv2);
+        };
+    }, [fetchDownloadedItems, pollBurnerStatus, fetchDevices]);
 
-        // Set up polling interval (e.g., every 3 seconds)
-        const statusInterval = setInterval(() => {
-            pollBurnerStatus();
-        }, 3000);
-
-        // Cleanup interval on component unmount
-        return () => clearInterval(statusInterval);
-    }, [fetchDownloadedItems, pollBurnerStatus]); // Dependencies for useEffect
 
 
     // --- Event Handlers ---
@@ -158,7 +178,11 @@ function CDBurnerPage() {
             if (!messageRef.current || messageRef.current.text !== (response.data.message || 'CD burn initiated!')) {
                 setMessage({ type: 'success', text: response.data.message || 'CD burn initiated!' });
             }
+            if (response.data && response.data.session_id) {
+                setActiveSessionId(response.data.session_id);
+            }
             // Polling will pick up the status change
+            setShowBurnProgress(true);
         } catch (error) {
             console.error('Error initiating CD burn:', error);
             let errorMessage = 'Failed to initiate CD burn.';
@@ -173,25 +197,54 @@ function CDBurnerPage() {
         }
     };
 
+    const handleCancelBurn = async () => {
+        if (!burnerStatus.is_burning || !activeSessionId) {
+            return;
+        }
+        try {
+            const resp = await axios.post(`${API_BASE_URL}/api/cd-burner/cancel`, { session_id: activeSessionId });
+            setMessage({ type: 'warning', text: 'Cancellation requested...' });
+            setShowBurnProgress(true);
+        } catch (err) {
+            console.error('Cancel error:', err);
+            setMessage({ type: 'error', text: 'Failed to request cancellation.' });
+        }
+    };
 
-    // --- Render Logic ---
-    const isBurnButtonDisabled =
-        !selectedItem ||
-        burnerStatus.is_burning ||
-        !burnerStatus.burner_detected ||
-        !burnerStatus.disc_present ||
-        !burnerStatus.disc_blank_or_erasable ||
-        isBurningInitiating;
-
-    const getBurnerStatusColor = () => {
-        if (burnerStatus.is_burning) return 'text-yellow-500';
-        if (burnerStatus.last_error) return 'text-red-500';
-        if (burnerStatus.current_status === 'Completed') return 'text-green-500';
-        if (burnerStatus.current_status === 'Burner Ready') return 'text-green-500';
-        return 'text-gray-400';
+    const handleSelectDevice = async (device) => {
+        try {
+            await axios.post(`${API_BASE_URL}/api/cd-burner/select-device`, { device_id: device.id });
+            setMessage({ type: 'info', text: `Selected device: ${device.display_name || device.id}` });
+            await fetchDevices();
+            await pollBurnerStatus();
+        } catch (err) {
+            console.error('Device select failed:', err);
+            setMessage({ type: 'error', text: 'Failed to select device.' });
+        }
     };
 
 
+    // --- Render Logic ---
+    const selectedDevice = devices.find(d => d.selected);
+    const deviceReady = !!(selectedDevice && selectedDevice.present && selectedDevice.writable);
+    const isBurnButtonDisabled =
+        !selectedItem ||
+        !selectedDevice ||
+        !deviceReady ||
+        burnerStatus.is_burning ||
+        isBurningInitiating;
+
+    const getDisableReason = () => {
+        if (!isBurnButtonDisabled) return null;
+        if (isBurningInitiating) return 'Starting burn…';
+        if (burnerStatus.is_burning) return 'A burn is already in progress.';
+        if (!selectedDevice) return 'Select a burner device above.';
+        if (!selectedItem) return 'Select a downloaded album below.';
+        if (selectedDevice && !selectedDevice.present) return 'Insert a disc in the selected device.';
+        if (selectedDevice && selectedDevice.present && !selectedDevice.writable) return 'Insert a blank or writable disc (CD-R/CD-RW).';
+        return 'Device not ready.';
+    };
+    
     return (
         <div className="min-h-screen bg-gray-900 text-white">
 
@@ -204,25 +257,12 @@ function CDBurnerPage() {
                     </div>
                 )}
 
-                <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8">
-                    <h2 className="text-xl font-semibold mb-4">CD Burner Status</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-300">
-                        <div>
-                            <p>Status: <span className={getBurnerStatusColor()}>{burnerStatus.current_status}</span></p>
-                            {burnerStatus.is_burning && (
-                                <p>Progress: <span className="text-blue-400">{burnerStatus.progress_percentage}%</span></p>
-                            )}
-                            {burnerStatus.last_error && (
-                                <p className="text-red-500">Error: {burnerStatus.last_error}</p>
-                            )}
-                        </div>
-                        <div>
-                            <p>Burner Detected: <span className={burnerStatus.burner_detected ? 'text-green-400' : 'text-red-400'}>{burnerStatus.burner_detected ? 'Yes' : 'No'}</span></p>
-                            <p>Disc Present: <span className={burnerStatus.disc_present ? 'text-green-400' : 'text-red-400'}>{burnerStatus.disc_present ? 'Yes' : 'No'}</span></p>
-                            <p>Disc Blank/Erasable: <span className={burnerStatus.disc_blank_or_erasable ? 'text-green-400' : 'text-red-400'}>{burnerStatus.disc_blank_or_erasable ? 'Yes' : 'No'}</span></p>
-                        </div>
-                    </div>
-                </div>
+                <DevicesPanel
+                    devices={devices}
+                    loading={loadingDevices}
+                    onSelect={handleSelectDevice}
+                    burnerStatus={burnerStatus}
+                />
 
                 <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8">
                     <h2 className="text-xl font-semibold mb-4">Select Item to Burn</h2>
@@ -245,21 +285,41 @@ function CDBurnerPage() {
                     )}
                 </div>
 
-                <div className="text-center">
-                    <button
-                        onClick={handleBurnCD}
-                        disabled={isBurnButtonDisabled}
-                        className={`py-3 px-8 rounded-lg text-lg font-bold transition duration-200
-                            ${isBurnButtonDisabled
-                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                                : 'bg-green-600 hover:bg-green-700 text-white'
-                            }`}
-                    >
-                        {isBurningInitiating ? 'Initiating Burn...' :
-                            burnerStatus.is_burning ? `Burning (${burnerStatus.progress_percentage}%)` :
-                            'Start CD Burn'}
-                    </button>
+                <div className="text-center flex flex-col items-center justify-center gap-4">
+                    <div className="flex items-center justify-center gap-4">
+                        <button
+                            onClick={handleBurnCD}
+                            disabled={isBurnButtonDisabled}
+                            className={`py-3 px-8 rounded-lg text-lg font-bold transition duration-200
+                                ${isBurnButtonDisabled
+                                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                    : 'bg-green-600 hover:bg-green-700 text-white'
+                                }`}
+                        >
+                            {isBurningInitiating ? 'Initiating Burn...' :
+                                burnerStatus.is_burning ? `Burning (${burnerStatus.progress_percentage}%)` :
+                                'Start CD Burn'}
+                        </button>
+                        {burnerStatus.is_burning && (
+                            <button
+                                onClick={handleCancelBurn}
+                                className="py-3 px-6 rounded-lg text-lg font-bold bg-red-700 hover:bg-red-800 text-white"
+                            >
+                                Cancel Burn
+                            </button>
+                        )}
+                    </div>
+                    {isBurnButtonDisabled && (
+                        <p className="mt-2 text-sm text-gray-400">{getDisableReason()}</p>
+                    )}
                 </div>
+
+                <BurnProgress
+                    visible={showBurnProgress || burnerStatus.is_burning}
+                    baseUrl={API_BASE_URL}
+                    sessionId={activeSessionId}
+                    onClose={() => setShowBurnProgress(false)}
+                />
             </main>
         </div>
     );
