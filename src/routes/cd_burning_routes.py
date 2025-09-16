@@ -6,9 +6,8 @@ from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.database.db_manager import db, DownloadedItem
-# CD_BURN_STATUS_MANAGER is still imported as it's a global singleton,
-# but CDBurningService itself will be accessed via current_app.extensions.
-from src.cd_burning_service import CD_BURN_STATUS_MANAGER
+from src.burn_sessions import BurnSessionManager
+from src.progress import BrokerPublisher
 
 
 # Initialize logger for this blueprint
@@ -26,18 +25,17 @@ def get_burner_status():
     """
     logger.info("Received request for CD burner status.")
     try:
-        current_status = CD_BURN_STATUS_MANAGER.get_status()
-        logger.debug(f"Current CD burner status: {current_status}")
-        return jsonify(current_status), 200
+        mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
+        if mgr is None:
+            return jsonify({"error": "BurnSessionManager not available"}), 503
+        session_id = request.args.get('session_id')
+        sess = mgr.get(session_id) if session_id else mgr.last()
+        if not sess:
+            return jsonify({"message": "No burn session"}), 200
+        return jsonify(sess.to_dict()), 200
     except Exception as e:
         logger.exception("Error checking CD burner status.")
-        # Provide a more robust error response structure
-        return jsonify({
-            'is_burning': False,
-            'current_status': 'Error',
-            'progress_percentage': 0,
-            'last_error': f"Failed to retrieve burner status: {str(e)}"
-        }), 500
+        return jsonify({"error": f"Failed to retrieve burner status: {str(e)}"}), 500
 
 
 @cd_burning_bp.route('/burn', methods=['POST'])
@@ -54,10 +52,13 @@ def start_cd_burn():
         logger.warning("Missing 'download_item_id' in burn request.")
         return jsonify({"error": "Missing 'download_item_id' in request payload."}), 400
 
-    # Prevent concurrent burns
-    if CD_BURN_STATUS_MANAGER.is_burning():
+    mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
+    if mgr is None:
+        return jsonify({"error": "BurnSessionManager not available"}), 503
+    # Prevent concurrent burns (single device policy)
+    if mgr.is_any_burning():
         logger.warning("Attempted to start burn while another is in progress.")
-        return jsonify({"error": "A CD burning process is already active. Please wait."}), 409 # Conflict
+        return jsonify({"error": "A CD burning process is already active. Please wait."}), 409
 
     try:
         # Fetch the DownloadedItem from the database
@@ -73,34 +74,42 @@ def start_cd_burn():
             logger.error(f"Content directory not found or invalid: {content_dir} for item ID {download_item_id}")
             return jsonify({"error": "Associated content directory not found or is invalid."}), 404
 
-        # Mark as burning and update initial status
-        CD_BURN_STATUS_MANAGER.start_burn(
-            status=f"Initiating burn for '{downloaded_item.title}'...",
-            progress=0
-        )
-
-        # Access the already initialized CDBurningService instance from app.extensions
-        # This assumes app.extensions['cd_burning_service'] is set in your create_app() function.
+        # Create a new session and publisher
+        import uuid
+        session = mgr.create(title=downloaded_item.title, session_id=str(uuid.uuid4()))
         cd_burner = current_app.extensions.get('cd_burning_service')
 
         if not cd_burner:
             error_msg = "CD Burning Service not initialized in app.extensions."
             logger.error(error_msg)
-            CD_BURN_STATUS_MANAGER.set_error(error_msg)
+            session.set_error(error_msg)
             return jsonify({"error": "Server error: CD Burning Service not available."}), 500
 
-        # Start the burning process in a new thread
-        # The thread will update CD_BURN_STATUS_MANAGER directly
-        threading.Thread(target=cd_burner.burn_cd, args=(content_dir, downloaded_item.title)).start()
-        logger.info(f"CD burning process initiated in background thread for '{downloaded_item.title}'.")
+        broker = current_app.extensions.get('progress_broker')
+        publisher = BrokerPublisher(broker) if broker else None
 
-        return jsonify({"status": "Burning started", "message": "CD burning initiated successfully."}), 202 # Accepted
+        # Start the burning process in a new thread, passing session + publisher
+        threading.Thread(
+            target=cd_burner.burn_cd,
+            args=(content_dir, downloaded_item.title),
+            kwargs={"session": session, "publisher": publisher},
+        ).start()
+        logger.info(f"CD burning process initiated in background thread for '{downloaded_item.title}' (session {session.id}).")
+
+        return jsonify({"status": "accepted", "session_id": session.id, "message": "CD burning initiated."}), 202
 
     except SQLAlchemyError as e:
         logger.exception(f"Database error when fetching DownloadedItem ID {download_item_id}.")
-        CD_BURN_STATUS_MANAGER.set_error(f"Database error: {str(e)}")
+        try:
+            # If session exists, mark error; otherwise ignore
+            session.set_error(f"Database error: {str(e)}")  # type: ignore[name-defined]
+        except Exception:
+            pass
         return jsonify({"error": "Database error during item lookup."}), 500
     except Exception as e:
         logger.exception(f"An unexpected error occurred while initiating CD burn for ID {download_item_id}.")
-        CD_BURN_STATUS_MANAGER.set_error(f"An unexpected error occurred: {str(e)}")
+        try:
+            session.set_error(f"An unexpected error occurred: {str(e)}")  # type: ignore[name-defined]
+        except Exception:
+            pass
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500

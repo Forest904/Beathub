@@ -46,6 +46,9 @@ class AppSettings(BaseModel):
     )
     genius_token: Optional[str] = Field(default=Config.GENIUS_ACCESS_TOKEN)
 
+    # Subprocess/console output suppression for SpotDL + children
+    suppress_subprocess_output: bool = Field(default=_env_bool("SPOTDL_SUPPRESS_OUTPUT", True))
+
     @field_validator("overwrite")
     @classmethod
     def _validate_overwrite(cls, v: str) -> str:

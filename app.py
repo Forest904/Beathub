@@ -14,7 +14,7 @@ from flask_cors import CORS
 from config import Config
 from src.spotify_content_downloader import SpotifyContentDownloader
 from src.spotdl_client import build_default_client
-from src.cd_burning_service import CDBurningService, CD_BURN_STATUS_MANAGER # Make sure this import is there
+from src.cd_burning_service import CDBurningService
 
 # --- Import db, DownloadedItem model, and the initialization function ---
 from src.database.db_manager import initialize_database
@@ -25,7 +25,9 @@ from src.routes.artist_routes import artist_bp
 from src.routes.album_details_routes import album_details_bp
 from src.routes.cd_burning_routes import cd_burning_bp
 from src.routes.progress_routes import progress_bp
-from src.progress import ProgressBroker
+from src.progress import ProgressBroker, BrokerPublisher
+from src.repository import DefaultDownloadRepository
+from src.burn_sessions import BurnSessionManager
 from src.jobs import JobQueue
 
 
@@ -96,7 +98,34 @@ def create_app():
     # Initialize database
     initialize_database(app)
 
-    # Initialize the main orchestrator (SpotifyContentDownloader)
+    # Prepare progress broker and SpotDL client first so we can inject
+    app.extensions['progress_broker'] = ProgressBroker()
+    progress_publisher = BrokerPublisher(app.extensions['progress_broker'])
+    spotdl_client = None
+    try:
+        spotdl_client = build_default_client(app_logger=app.logger)
+        # Progress hook publishes to broker for SSE
+        def _spotdl_progress(ev: dict):
+            try:
+                app.logger.info(
+                    "SpotDL: %s - %s (%s%%)",
+                    ev.get('song_display_name'), ev.get('status'), ev.get('progress')
+                )
+                app.extensions['progress_broker'].publish(ev)
+            except Exception:
+                pass
+        spotdl_client.set_progress_callback(_spotdl_progress, web_ui=True)
+        app.extensions['spotdl_client'] = spotdl_client
+        app.logger.info(
+            "SpotDL client ready: threads=%s, format=%s, providers=%s",
+            spotdl_client.spotdl.downloader.settings.get('threads'),
+            spotdl_client.spotdl.downloader.settings.get('format'),
+            spotdl_client.spotdl.downloader.settings.get('audio_providers'),
+        )
+    except Exception as e:
+        app.logger.warning("SpotDL client not initialized; download features unavailable: %s", e)
+
+    # Initialize the main orchestrator (SpotifyContentDownloader) with DI
     spotify_downloader = SpotifyContentDownloader(
         base_output_dir=app.config.get('BASE_OUTPUT_DIR'),
         spotify_client_id=app.config.get('SPOTIPY_CLIENT_ID'),
@@ -104,35 +133,13 @@ def create_app():
         genius_access_token=app.config.get('GENIUS_ACCESS_TOKEN'),
         spotdl_audio_source=app.config.get('SPOTDL_AUDIO_SOURCE'),
         spotdl_format=app.config.get('SPOTDL_FORMAT'),
+        progress_publisher=progress_publisher,
+        spotdl_client=spotdl_client,
+        download_repository=DefaultDownloadRepository(),
     )
-    
-    # Store the spotify_downloader instance in app.extensions
-    # This allows blueprints to access it via current_app.extensions['spotify_downloader']
-    app.extensions['spotify_downloader'] = spotify_downloader
 
-    # Initialize a single SpotDL client instance and expose it for reuse
-    # Also wire a progress broker for SSE streaming and a job queue
-    app.extensions['progress_broker'] = ProgressBroker()
-    try:
-        spotdl_client = build_default_client(app_logger=app.logger)
-        broker = app.extensions['progress_broker']
-        # Progress hook publishes to broker for SSE
-        def _spotdl_progress(ev: dict):
-            try:
-                app.logger.info("SpotDL: %s - %s (%s%%)",
-                                ev.get('song_display_name'), ev.get('status'), ev.get('progress'))
-                broker.publish(ev)
-            except Exception:
-                pass
-        spotdl_client.set_progress_callback(_spotdl_progress, web_ui=True)
-        app.extensions['spotdl_client'] = spotdl_client
-        app.logger.info("SpotDL client ready: threads=%s, format=%s, providers=%s",
-                        spotdl_client.spotdl.downloader.settings.get('threads'),
-                        spotdl_client.spotdl.downloader.settings.get('format'),
-                        spotdl_client.spotdl.downloader.settings.get('audio_providers'))
-    except Exception as e:
-        # Keep the app running for metadata/browse endpoints; downloads will be unavailable
-        app.logger.warning("SpotDL client not initialized; download features unavailable: %s", e)
+    # Expose orchestrator for routes
+    app.extensions['spotify_downloader'] = spotify_downloader
 
     # Initialize job queue orchestrator
     try:
@@ -147,6 +154,8 @@ def create_app():
     cd_burning_service_instance = CDBurningService(app_logger=app.logger, base_output_dir=app.config.get('BASE_OUTPUT_DIR'))
     # This allows blueprints to access it via current_app.extensions['cd_burning_service']
     app.extensions['cd_burning_service'] = cd_burning_service_instance
+    # Burn session manager for per-session state
+    app.extensions['burn_sessions'] = BurnSessionManager()
 
     # --- Register Blueprints ---
     app.register_blueprint(download_bp)

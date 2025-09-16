@@ -6,8 +6,11 @@ import re
 import tempfile
 import shutil
 import threading
+from typing import Optional
 
 from config import Config
+from .burn_sessions import BurnSession
+from .progress import ProgressPublisher
 
 # Ensure pydub and its dependencies (like ffmpeg) are installed
 from pydub import AudioSegment
@@ -15,104 +18,6 @@ from pydub import AudioSegment
 # Initialize logger for this service module.
 # Instance-specific loggers will be used within CDBurningService.
 module_logger = logging.getLogger(__name__)
-
-# --- Global CD Burning Status Manager (Singleton-like) ---
-# This class manages the state of the CD burning process,
-# allowing the Flask routes to poll for updates.
-class CDBurnStatusManager:
-    _instance = None
-    _status_lock = threading.Lock() # To ensure thread-safe updates
-
-    def __new__(cls):
-        """Ensures only one instance of the status manager exists."""
-        if cls._instance is None:
-            cls._instance = super(CDBurnStatusManager, cls).__new__(cls)
-            # Initialize state only once when the instance is first created
-            cls._instance._reset_status()
-        return cls._instance
-
-    def _reset_status(self):
-        """Resets the internal status variables of the manager."""
-        with self._status_lock:
-            self._is_burning = False
-            self._current_status = 'Idle' # States: 'Idle', 'Scanning Burner', 'Burner Ready', 'No Burner', 'Disc Check', 'Disc Ready', 'No Disc', 'Converting WAVs', 'Burning Disc', 'Completed', 'Error'
-            self._progress_percentage = 0 # 0-100
-            self._last_error = None
-            self._burner_detected = False
-            self._disc_present = False
-            self._disc_blank_or_erasable = False # True if disc is blank or can be overwritten
-
-    def get_status(self):
-        """Returns the current status of the CD burning process."""
-        with self._status_lock:
-            return {
-                'is_burning': self._is_burning,
-                'current_status': self._current_status,
-                'progress_percentage': self._progress_percentage,
-                'last_error': self._last_error,
-                'burner_detected': self._burner_detected,
-                'disc_present': self._disc_present,
-                'disc_blank_or_erasable': self._disc_blank_or_erasable
-            }
-
-    def start_burn(self, status="Starting...", progress=0):
-        """Sets the status manager to indicate a burn is starting."""
-        with self._status_lock:
-            self._is_burning = True
-            self._current_status = status
-            self._progress_percentage = progress
-            self._last_error = None
-            module_logger.info(f"CD Burn Process Initiated. Status: {status}")
-
-    def update_status(self, status, progress=None):
-        """Updates the current status and optionally progress of the burn."""
-        with self._status_lock:
-            self._current_status = status
-            if progress is not None:
-                self._progress_percentage = progress
-            module_logger.info(f"CD Burn Status: {self._current_status} (Progress: {self._progress_percentage}%)")
-
-    def set_error(self, message):
-        """Sets an error state for the burn process."""
-        with self._status_lock:
-            self._is_burning = False
-            self._current_status = 'Error'
-            self._last_error = message
-            module_logger.error(f"CD Burn Error: {message}")
-
-    def complete_burn(self):
-        """Marks the CD burn process as completed successfully."""
-        with self._status_lock:
-            self._is_burning = False
-            self._current_status = 'Completed'
-            self._progress_percentage = 100
-            self._last_error = None
-            module_logger.info("CD Burn Completed Successfully.")
-
-    def is_burning(self):
-        """Checks if a CD burning process is currently active."""
-        with self._status_lock:
-            return self._is_burning
-
-    def update_burner_state(self, detected=False, present=False, blank_or_erasable=False):
-        """Updates the detected state of the burner and disc."""
-        with self._status_lock:
-            self._burner_detected = detected
-            self._disc_present = present
-            self._disc_blank_or_erasable = blank_or_erasable
-            if detected and present and blank_or_erasable:
-                self._current_status = 'Burner Ready'
-            elif detected and present and not blank_or_erasable:
-                self._current_status = 'Disc Not Blank/Erasable'
-            elif detected and not present:
-                self._current_status = 'No Disc'
-            else:
-                self._current_status = 'No Burner Detected'
-            module_logger.info(f"Burner State Updated: Detected={detected}, Present={present}, Blank/Erasable={blank_or_erasable}, Status='{self._current_status}'")
-
-
-# Global instance of the status manager, initialized on import
-CD_BURN_STATUS_MANAGER = CDBurnStatusManager()
 
 
 class CDBurningService:
@@ -172,14 +77,14 @@ class CDBurningService:
                     process.kill()
 
 
-    def scan_for_burner(self):
+    def scan_for_burner(self, session: BurnSession):
         """
         Scans for available CD/DVD burners using 'cdrecord -scanbus'.
         Updates the global status manager and sets self.current_burner_device.
         Returns True if a burner is found, False otherwise.
         """
         self.logger.info("Scanning for CD/DVD burners...")
-        CD_BURN_STATUS_MANAGER.update_status("Scanning Burner...")
+        session.update_status("Scanning Burner...")
         try:
             # Using -scanbus to find devices. Output format can vary by OS/cdrecord version.
             command = [self.cdrecord_path, '-scanbus']
@@ -194,25 +99,25 @@ class CDBurningService:
             if burner_match:
                 self.current_burner_device = burner_match.group(1)
                 self.logger.info(f"CD burner detected at device: {self.current_burner_device} ({burner_match.group(2)} {burner_match.group(3)})")
-                CD_BURN_STATUS_MANAGER.update_burner_state(detected=True)
+                session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
                 return True
             else:
                 self.logger.warning("No CD/DVD burner found on system or output format not recognized.")
-                CD_BURN_STATUS_MANAGER.update_burner_state(detected=False)
+                session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
                 return False
         except RuntimeError as e:
             # Catch errors propagated from _run_command
             self.logger.error(f"Runtime error during burner scan: {e}")
-            CD_BURN_STATUS_MANAGER.update_burner_state(detected=False)
-            CD_BURN_STATUS_MANAGER.set_error(f"Burner scan failed: {e}")
+            session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
+            session.set_error(f"Burner scan failed: {e}")
             return False
         except Exception as e:
             self.logger.exception("An unexpected error occurred during burner scan.")
-            CD_BURN_STATUS_MANAGER.update_burner_state(detected=False)
-            CD_BURN_STATUS_MANAGER.set_error(f"Burner scan failed unexpectedly: {e}")
+            session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
+            session.set_error(f"Burner scan failed unexpectedly: {e}")
             return False
 
-    def check_disc_status(self):
+    def check_disc_status(self, session: BurnSession):
         """
         Checks the status of the disc in the detected burner using 'cdrecord -checkmedia'.
         Updates the global status manager.
@@ -220,11 +125,11 @@ class CDBurningService:
         """
         if not self.current_burner_device:
             self.logger.warning("No burner detected to check disc status. Please run scan_for_burner first.")
-            CD_BURN_STATUS_MANAGER.update_burner_state(detected=False) # Ensure consistent state
+            session.update_burner_state(detected=False, present=False, blank_or_erasable=False) # Ensure consistent state
             return False
 
         self.logger.info(f"Checking disc status in burner {self.current_burner_device}...")
-        CD_BURN_STATUS_MANAGER.update_status("Checking Disc...")
+        session.update_status("Checking Disc...")
         try:
             command = [self.cdrecord_path, '-v', f'dev={self.current_burner_device}', '-checkmedia']
             output = self._run_command(command, "checking disc status", check=False) # check=False as it might exit non-zero for empty tray
@@ -239,8 +144,8 @@ class CDBurningService:
                 "CD-RW" in output # Implies erasable
             )
 
-            CD_BURN_STATUS_MANAGER.update_burner_state(
-                detected=True, # Assumed to be True if we have a current_burner_device
+            session.update_burner_state(
+                detected=True,
                 present=disc_present,
                 blank_or_erasable=blank_or_erasable
             )
@@ -248,13 +153,13 @@ class CDBurningService:
 
         except RuntimeError as e:
             self.logger.error(f"Runtime error checking disc status: {e}")
-            CD_BURN_STATUS_MANAGER.update_burner_state(detected=True, present=False, blank_or_erasable=False)
-            CD_BURN_STATUS_MANAGER.set_error(f"Disc status check failed: {e}")
+            session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
+            session.set_error(f"Disc status check failed: {e}")
             return False
         except Exception as e:
             self.logger.exception("An unexpected error occurred during disc status check.")
-            CD_BURN_STATUS_MANAGER.update_burner_state(detected=True, present=False, blank_or_erasable=False)
-            CD_BURN_STATUS_MANAGER.set_error(f"Disc status check failed unexpectedly: {e}")
+            session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
+            session.set_error(f"Disc status check failed unexpectedly: {e}")
             return False
 
     def _parse_spotify_metadata(self, content_dir):
@@ -335,7 +240,7 @@ class CDBurningService:
             if not found_mp3_path:
                 error_msg = f"MP3 file not found for track: '{track['title']}' (expected: {sanitized_title}.mp3 or {track['artist']} - {sanitized_title}.mp3). Aborting conversion."
                 self.logger.error(error_msg)
-                CD_BURN_STATUS_MANAGER.set_error(error_msg)
+                session.set_error(error_msg)
                 raise FileNotFoundError(error_msg)
 
             # Prefix with number for correct burning order
@@ -350,7 +255,7 @@ class CDBurningService:
                 wav_file_paths.append(wav_output_path)
                 # Conversion takes up 50% of overall progress (0-50%)
                 progress = int(((i + 1) / total_tracks) * 50)
-                CD_BURN_STATUS_MANAGER.update_status(f"Converting WAVs ({i+1}/{total_tracks})", progress)
+                session.update_status(f"Converting WAVs ({i+1}/{total_tracks})", progress)
             except Exception as e:
                 self.logger.exception(f"Error converting MP3 '{found_mp3_path}' to WAV: {e}")
                 raise RuntimeError(f"Failed to convert '{track['title']}' to WAV: {e}")
@@ -358,7 +263,7 @@ class CDBurningService:
         self.logger.info(f"Finished converting {len(wav_file_paths)} MP3s to WAV.")
         return wav_file_paths
 
-    def _execute_burn(self, wav_file_paths, disc_title="Audio CD"):
+    def _execute_burn(self, wav_file_paths, disc_title="Audio CD", *, session: BurnSession, publisher: Optional[ProgressPublisher] = None):
         """
         Executes the cdrecord command to burn the WAV files to an audio CD.
         Monitors output for progress updates.
@@ -369,7 +274,7 @@ class CDBurningService:
             raise ValueError("No WAV files provided for burning. Burn cannot proceed.")
 
         self.logger.info(f"Starting actual CD burning process to device {self.current_burner_device} with title '{disc_title}'...")
-        CD_BURN_STATUS_MANAGER.update_status("Burning Disc...", progress=50) # Burning progress (50-100%)
+        session.update_status("Burning Disc...", progress=50) # Burning progress (50-100%)
 
         # Basic cdrecord command for audio CD
         command = [
@@ -411,12 +316,23 @@ class CDBurningService:
                             burn_progress = float(match.group(1))
                             # Scale burn progress (0-100) to overall progress (50-100)
                             total_progress = 50 + (burn_progress / 100) * 50
-                            CD_BURN_STATUS_MANAGER.update_status(f"Burning: {line}", int(total_progress))
+                            session.update_status(f"Burning: {line}", int(total_progress))
+                            if publisher is not None:
+                                try:
+                                    publisher.publish({
+                                        'event': 'cd_burn_progress',
+                                        'status': 'burning',
+                                        'progress': int(total_progress),
+                                        'message': line,
+                                        'session_id': session.id,
+                                    })
+                                except Exception:
+                                    pass
                     except ValueError:
                         self.logger.warning(f"Could not parse progress percentage from line: {line}")
                 elif "writing" in line and "blocks" in line:
                     # General writing status update
-                    CD_BURN_STATUS_MANAGER.update_status(f"Burning: {line}")
+                    session.update_status(f"Burning: {line}")
                 elif "fatal error" in line or "error" in line:
                     # Catch critical errors reported in output
                     raise RuntimeError(f"cdrecord reported error: {line}")
@@ -428,7 +344,12 @@ class CDBurningService:
                 raise RuntimeError(f"CD record command failed with exit code {process.returncode}. Check logs for details.")
 
             self.logger.info("CD burning command completed successfully.")
-            CD_BURN_STATUS_MANAGER.update_status("Burning Completed", progress=100)
+            session.update_status("Burning Completed", progress=100)
+            if publisher is not None:
+                try:
+                    publisher.publish({'event': 'cd_burn_complete', 'status': 'completed', 'progress': 100, 'session_id': session.id})
+                except Exception:
+                    pass
 
         except Exception as e:
             self.logger.exception(f"Error during CD burning execution: {e}")
@@ -450,7 +371,7 @@ class CDBurningService:
             except OSError as e:
                 self.logger.error(f"Error removing temporary directory {temp_dir}: {e}")
 
-    def burn_cd(self, content_dir, item_title):
+    def burn_cd(self, content_dir, item_title, *, session: BurnSession, publisher: Optional[ProgressPublisher] = None):
         """
         Orchestrates the entire CD burning process.
         This method is designed to be called in a separate thread.
@@ -458,12 +379,12 @@ class CDBurningService:
         temp_wav_dir = None
         try:
             self.logger.info(f"Starting CD burn process for content from: {content_dir}")
-            CD_BURN_STATUS_MANAGER.start_burn(status=f"Preparing to burn '{item_title}'...", progress=0)
+            session.start(status=f"Preparing to burn '{item_title}'...", progress=0)
 
             # 1. Scan for burner and check disc status
-            if not self.scan_for_burner():
+            if not self.scan_for_burner(session):
                 raise RuntimeError("No compatible CD burner found. Please ensure a burner is connected.")
-            if not self.check_disc_status():
+            if not self.check_disc_status(session):
                 raise RuntimeError("No blank or erasable disc found in the burner. Please insert a disc.")
 
             # 2. Parse Spotify metadata to get track order and details
@@ -475,31 +396,31 @@ class CDBurningService:
             self.logger.info(f"Created temporary WAV directory: {temp_wav_dir}")
 
             # 4. Convert MP3s to WAVs suitable for audio CD
-            CD_BURN_STATUS_MANAGER.update_status("Converting MP3s to WAVs...", progress=0)
+            session.update_status("Converting MP3s to WAVs...", progress=0)
             wav_file_paths = self._convert_mp3_to_wav(content_dir, tracks_data, temp_wav_dir)
             if not wav_file_paths:
                 raise RuntimeError("No WAV files were successfully converted. Aborting burn.")
 
             # 5. Execute the actual CD burning command
-            CD_BURN_STATUS_MANAGER.update_status("Initiating CD burn...", progress=50)
-            self._execute_burn(wav_file_paths, disc_title=item_title)
+            session.update_status("Initiating CD burn...", progress=50)
+            self._execute_burn(wav_file_paths, disc_title=item_title, session=session, publisher=publisher)
 
-            CD_BURN_STATUS_MANAGER.complete_burn()
+            session.complete()
             self.logger.info(f"CD burn for '{item_title}' completed successfully.")
 
         except (FileNotFoundError, ValueError, RuntimeError) as e:
             # Catch specific errors from internal methods
             self.logger.error(f"CD burning process failed due to: {e}")
-            CD_BURN_STATUS_MANAGER.set_error(f"Burning Failed: {e}")
+            session.set_error(f"Burning Failed: {e}")
         except Exception as e:
             # Catch any other unexpected errors
             self.logger.exception("An unhandled error occurred during CD burning process.")
-            CD_BURN_STATUS_MANAGER.set_error(f"Unexpected Error during burn: {str(e)}")
+            session.set_error(f"Unexpected Error during burn: {str(e)}")
         finally:
             # Always attempt to clean up temporary WAV directory
             if temp_wav_dir:
                 self._cleanup_temp_dir(temp_wav_dir)
             # Ensure is_burning is reset even if an exception occurs mid-process
             # Only reset if it's still marked as burning and not already set to error/completed
-            if CD_BURN_STATUS_MANAGER.is_burning():
-                CD_BURN_STATUS_MANAGER.set_error("Burn process interrupted or failed unexpectedly.")
+            if session.is_burning:
+                session.set_error("Burn process interrupted or failed unexpectedly.")

@@ -54,3 +54,19 @@ class ProgressBroker:
 
 __all__ = ["ProgressBroker"]
 
+# --- Simple publisher interface + adapter ---
+class ProgressPublisher:
+    def publish(self, event: dict) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+
+class BrokerPublisher(ProgressPublisher):
+    def __init__(self, broker: ProgressBroker) -> None:
+        self._broker = broker
+
+    def publish(self, event: dict) -> None:
+        self._broker.publish(event)
+
+
+__all__.extend(["ProgressPublisher", "BrokerPublisher"])
+

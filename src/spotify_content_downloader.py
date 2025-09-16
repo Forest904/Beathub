@@ -11,6 +11,7 @@ from .metadata_service import MetadataService
 from .download_service import AudioCoverDownloadService
 from .lyrics_service import LyricsService
 from .file_manager import FileManager
+from .repository import DownloadRepository, DefaultDownloadRepository
 
 # SpotDL client wrapper and DTO mapping (Phase 2/3)
 from .spotdl_client import build_default_client, SpotdlClient
@@ -19,6 +20,8 @@ from .models.spotdl_mapping import song_to_track_dto, songs_to_item_dto
 
 # DB
 from .database.db_manager import db, DownloadedTrack
+
+from .progress import ProgressPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,9 @@ class SpotifyContentDownloader:
         genius_access_token=None,
         spotdl_audio_source=None,
         spotdl_format=None,
+        progress_publisher: Optional[ProgressPublisher] = None,
+        spotdl_client: Optional[SpotdlClient] = None,
+        download_repository: Optional[DownloadRepository] = None,
     ):
         """Initializes the SpotifyContentDownloader with all necessary services."""
 
@@ -69,8 +75,14 @@ class SpotifyContentDownloader:
         else:
             logger.warning("Spotify client ID or secret missing. Spotipy instance for direct searches will not be available.")
 
-        # SpotDL client is resolved lazily per call to avoid startup hard-failure
-        self._spotdl_client: Optional[SpotdlClient] = None
+        # Progress publisher (optional)
+        self.progress_publisher: Optional[ProgressPublisher] = progress_publisher
+
+        # SpotDL client can be injected; if None, we create on-demand
+        self._spotdl_client: Optional[SpotdlClient] = spotdl_client
+
+        # Repository for persistence (optional); default to SQLAlchemy-based
+        self.repo: DownloadRepository = download_repository or DefaultDownloadRepository()
 
         logger.info("SpotifyContentDownloader initialized with decoupled services and configuration passed.")
 
@@ -79,17 +91,9 @@ class SpotifyContentDownloader:
         return self.sp
 
     def _resolve_spotdl_client(self) -> Optional[SpotdlClient]:
-        """Return a SpotdlClient from Flask app context or build a default one."""
+        """Return an injected SpotdlClient or build a default one."""
         if self._spotdl_client is not None:
             return self._spotdl_client
-        try:
-            from flask import current_app
-            cli = current_app.extensions.get('spotdl_client')  # type: ignore[attr-defined]
-            if isinstance(cli, SpotdlClient):
-                self._spotdl_client = cli
-                return self._spotdl_client
-        except Exception:
-            pass
         try:
             self._spotdl_client = build_default_client(app_logger=logger)
             return self._spotdl_client
@@ -118,12 +122,17 @@ class SpotifyContentDownloader:
 
     def download_spotify_content(self, spotify_link):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""
-        # Progress broker for SSE updates
-        try:
-            from flask import current_app
-            broker = current_app.extensions.get('progress_broker')
-        except Exception:
-            broker = None
+        # Progress publisher for SSE/clients (compat: fall back to broker in app context)
+        publisher = self.progress_publisher
+        if publisher is None:
+            try:
+                from flask import current_app  # type: ignore
+                broker = current_app.extensions.get('progress_broker')
+                if broker is not None:
+                    from .progress import BrokerPublisher
+                    publisher = BrokerPublisher(broker)
+            except Exception:
+                publisher = None
         # Prefer SpotDL for metadata
         spotdl_client = self._resolve_spotdl_client()
         songs = []
@@ -200,9 +209,9 @@ class SpotifyContentDownloader:
             # Drive downloads via SpotDL API (progress published via broker)
             try:
                 # Inform UI that we are starting a multi-track job
-                if broker is not None:
+                if publisher is not None:
                     try:
-                        broker.publish({
+                        publisher.publish({
                             'song_display_name': title_name,
                             'status': 'Starting download',
                             'progress': 0,
@@ -274,9 +283,9 @@ class SpotifyContentDownloader:
                     t.local_lyrics_path = exported
                 exported_count += 1
                 # Progress update for lyrics export phase
-                if broker is not None:
+                if publisher is not None:
                     try:
-                        broker.publish({
+                        publisher.publish({
                             'song_display_name': t.title,
                             'status': f'Exporting lyrics ({exported_count}/{total_tracks})',
                             'progress': 100 if t.local_lyrics_path else 0,
@@ -287,9 +296,9 @@ class SpotifyContentDownloader:
                     except Exception:
                         pass
             # Final completion event after lyrics export and persistence
-            if broker is not None:
+            if publisher is not None:
                 try:
-                    broker.publish({
+                    publisher.publish({
                         'song_display_name': title_name,
                         'status': 'Complete',
                         'progress': 100,
@@ -302,41 +311,10 @@ class SpotifyContentDownloader:
 
         # Persist track rows (now including local audio path and lyrics path)
         try:
-            for t in track_dtos:
-                existing = DownloadedTrack.query.filter_by(spotify_id=t.spotify_id).first()
-                if existing:
-                    # Update a subset likely to change (lyrics path)
-                    existing.local_lyrics_path = t.local_lyrics_path
-                else:
-                    row = DownloadedTrack(
-                        spotify_id=t.spotify_id,
-                        spotify_url=t.spotify_url,
-                        isrc=t.isrc,
-                        title=t.title,
-                        artists=t.artists,
-                        album_name=t.album_name,
-                        album_id=t.album_id,
-                        album_artist=t.album_artist,
-                        track_number=t.track_number,
-                        disc_number=t.disc_number,
-                        disc_count=t.disc_count,
-                        tracks_count=t.tracks_count,
-                        duration_ms=t.duration_ms,
-                        explicit=t.explicit,
-                        popularity=t.popularity,
-                        publisher=t.publisher,
-                        year=t.year,
-                        date=t.date,
-                        genres=t.genres,
-                        cover_url=t.cover_url,
-                        local_path=t.local_path,
-                        local_lyrics_path=t.local_lyrics_path,
-                    )
-                    db.session.add(row)
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            logger.error("Failed to persist DownloadedTrack rows: %s", e, exc_info=True)
+            self.repo.save_tracks(track_dtos)
+        except Exception:
+            # Repository implementations log their own errors
+            pass
 
         # --- Save comprehensive metadata JSON ---
         meta_tracks = [t.model_dump() for t in track_dtos]

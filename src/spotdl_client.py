@@ -44,6 +44,7 @@ class SpotdlClient:
         client_secret: str,
         downloader_options: Optional[dict] = None,
         app_logger: Optional[logging.Logger] = None,
+        suppress_output: Optional[bool] = None,
     ) -> None:
         """Initialize Spotdl in a dedicated engine thread with its own loop.
 
@@ -56,6 +57,9 @@ class SpotdlClient:
         self._client_secret = client_secret
         self._downloader_options = downloader_options
         self._lock = threading.RLock()
+        self._suppress_output = True if suppress_output is None else bool(suppress_output)
+        # Serialize OS-level fd redirection to avoid cross-thread interference
+        self._fd_semaphore = threading.Semaphore(1)
 
         self._spotdl = None  # created in engine
         self._engine_error: Optional[Exception] = None
@@ -205,64 +209,72 @@ class SpotdlClient:
         def _fn():
             # Silence console TUI/progress that SpotDL and its subprocesses print
             # Use both Python-level stdout/stderr redirection and OS-level fd redirection
-            try:
-                devnull_file = open(os.devnull, 'w')
-                devnull_fd = devnull_file.fileno()
-            except Exception:
-                devnull_file = None
-                devnull_fd = None
-
-            # Python-level redirection (affects print/rich in-process)
-            cm_out = contextlib.redirect_stdout(devnull_file) if devnull_file else contextlib.nullcontext()
-            cm_err = contextlib.redirect_stderr(devnull_file) if devnull_file else contextlib.nullcontext()
-
-            # OS-level fd redirection (affects child processes like ffmpeg/yt-dlp)
-            class _FdSilence:
-                def __enter__(self_inner):
-                    if devnull_fd is None:
-                        self_inner._active = False
-                        return self_inner
-                    self_inner._active = True
-                    try:
-                        import os as _os
-                        self_inner._stdout_save = _os.dup(1)
-                        self_inner._stderr_save = _os.dup(2)
-                        _os.dup2(devnull_fd, 1)
-                        _os.dup2(devnull_fd, 2)
-                    except Exception:
-                        self_inner._active = False
-                    return self_inner
-
-                def __exit__(self_inner, exc_type, exc, tb):
-                    if not getattr(self_inner, '_active', False):
-                        return False
-                    try:
-                        import os as _os
-                        try:
-                            _os.dup2(self_inner._stdout_save, 1)
-                            _os.dup2(self_inner._stderr_save, 2)
-                        finally:
-                            try:
-                                _os.close(self_inner._stdout_save)
-                            except Exception:
-                                pass
-                            try:
-                                _os.close(self_inner._stderr_save)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    return False
-
-            with cm_out, cm_err, _FdSilence():
+            if self._suppress_output:
                 try:
-                    return self._spotdl.download_songs(songs)
-                finally:
-                    if devnull_file:
+                    devnull_file = open(os.devnull, 'w')
+                    devnull_fd = devnull_file.fileno()
+                except Exception:
+                    devnull_file = None
+                    devnull_fd = None
+                cm_out = contextlib.redirect_stdout(devnull_file) if devnull_file else contextlib.nullcontext()
+                cm_err = contextlib.redirect_stderr(devnull_file) if devnull_file else contextlib.nullcontext()
+
+                class _FdSilence:
+                    def __enter__(self_inner):
+                        if devnull_fd is None:
+                            self_inner._active = False
+                            return self_inner
+                        self_inner._active = True
                         try:
-                            devnull_file.close()
+                            import os as _os
+                            self_inner._stdout_save = _os.dup(1)
+                            self_inner._stderr_save = _os.dup(2)
+                            _os.dup2(devnull_fd, 1)
+                            _os.dup2(devnull_fd, 2)
+                        except Exception:
+                            self_inner._active = False
+                        return self_inner
+
+                    def __exit__(self_inner, exc_type, exc, tb):
+                        if not getattr(self_inner, '_active', False):
+                            return False
+                        try:
+                            import os as _os
+                            try:
+                                _os.dup2(self_inner._stdout_save, 1)
+                                _os.dup2(self_inner._stderr_save, 2)
+                            finally:
+                                try:
+                                    _os.close(self_inner._stdout_save)
+                                except Exception:
+                                    pass
+                                try:
+                                    _os.close(self_inner._stderr_save)
+                                except Exception:
+                                    pass
                         except Exception:
                             pass
+                        return False
+
+                class _SemaphoreCtx:
+                    def __enter__(self_inner):
+                        self._fd_semaphore.acquire()
+                        return self_inner
+                    def __exit__(self_inner, exc_type, exc, tb):
+                        self._fd_semaphore.release()
+                        return False
+
+                with _SemaphoreCtx(), cm_out, cm_err, _FdSilence():
+                    try:
+                        return self._spotdl.download_songs(songs)
+                    finally:
+                        if devnull_file:
+                            try:
+                                devnull_file.close()
+                            except Exception:
+                                pass
+            else:
+                return self._spotdl.download_songs(songs)
         with self._lock:
             return self._call_engine(_fn)
 
@@ -300,6 +312,7 @@ def build_default_client(app_logger: Optional[logging.Logger] = None) -> SpotdlC
         client_secret=settings.spotify_client_secret,
         downloader_options=opts,
         app_logger=app_logger,
+        suppress_output=settings.suppress_subprocess_output,
     )
 
 

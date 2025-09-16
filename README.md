@@ -1,7 +1,5 @@
 # CD-Collector
 
-[![Tests](https://github.com/LucaForesti/CD-Collector/actions/workflows/tests.yml/badge.svg)](https://github.com/LucaForesti/CD-Collector/actions/workflows/tests.yml)
-
 CD-Collector is a full-stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
 
 ## Features
@@ -131,3 +129,7 @@ pip install -r requirements-dev.txt
 Tests automatically isolate their database storage and stub external SpotDL/Spotify calls, so the suite runs quickly without network access.
 
 
+## CD Burning API
+
+- Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` → returns `202 Accepted` with `{ "session_id": "..." }`.
+- Poll status: `GET /api/cd-burner/status?session_id=<id>` → returns per-session state (`is_burning`, `progress_percentage`, etc.). If `session_id` omitted, returns the most recent session.
