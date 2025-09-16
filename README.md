@@ -1,6 +1,8 @@
-﻿# CD-Collector
+# CD-Collector
 
-CD-Collector is a full‑stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
+[![Tests](https://github.com/LucaForesti/CD-Collector/actions/workflows/tests.yml/badge.svg)](https://github.com/LucaForesti/CD-Collector/actions/workflows/tests.yml)
+
+CD-Collector is a full-stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
 
 ## Features
 
@@ -144,7 +146,7 @@ On first run, the SQLite DB and tables are created automatically.
 
 - Missing Spotify credentials: Set `SPOTIPY_CLIENT_ID` and `SPOTIPY_CLIENT_SECRET` in `.env`
 - Missing lyrics: Not all sources embed lyrics. Setting `GENIUS_ACCESS_TOKEN` may help SpotDL fetch and embed lyrics.
-- `ffmpeg` not found: Install and ensure itâ€™s on `PATH`
+- `ffmpeg` not found: Install and ensure it’s on `PATH`
 - `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed
 - No burner detected: Verify `cdrecord`/`wodim` is installed and accessible; try running with admin/root if required
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
@@ -152,7 +154,7 @@ On first run, the SQLite DB and tables are created automatically.
 ## SpotDL API Pipeline
 
 The app now uses the SpotDL Python API directly (no CLI subprocesses). Goals achieved:
-- Use SpotDL’s `Song` model for richer, consistent metadata.
+- Use SpotDL�s `Song` model for richer, consistent metadata.
 - Configure via `config.py` defaults and `.env` overrides.
 - Lyrics come via SpotDL providers and are exported to `.txt` when embedded.
 - Local filesystem storage remains the same.
@@ -166,18 +168,23 @@ The app now uses the SpotDL Python API directly (no CLI subprocesses). Goals ach
 ## License
 
 No license specified. Add one if you plan to distribute.
-
+
 ## Tests
 
-- Install test dependencies (in your virtualenv):
-  - `pip install pytest`
-- Run tests from the repo root:
-  - `pytest -q`
+Run the backend test suite from the repository root:
 
-Notes:
-- Tests use an in-memory SQLite DB via `DATABASE_URL=sqlite:///:memory:`.
-- The SpotDL client tests use stubs; no network or audio downloads.
+```bash
+python -m pytest -q
+```
 
+Install dev dependencies first if you have not already:
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
+
+Tests automatically isolate their database storage and stub external SpotDL/Spotify calls, so the suite runs quickly without network access.
 ## Migration Notes (SpotDL Service)
 
 - The SpotDL API pipeline is the default. The legacy CLI subprocess flow has been removed.
@@ -190,3 +197,7 @@ Notes:
   - `SPOTDL_FORMAT` (e.g., `mp3`, `flac`), `SPOTDL_THREADS`
   - `BASE_OUTPUT_DIR` for downloads root
 - Progress SSE: endpoint `/api/progress/stream` streams JSON events published by the downloader.
+
+
+
+

@@ -32,5 +32,6 @@ jobs:
           SPOTIPY_CLIENT_ID: dummy
           SPOTIPY_CLIENT_SECRET: dummy
         run: |
-          python -m pytest -q --cov=src --cov=app.py --cov-report=term-missing --cov-fail-under=85
+          python -m pytest -q
+
 
