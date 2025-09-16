@@ -1,8 +1,9 @@
 import importlib
 import os
 import sys
-import types
 from unittest.mock import patch
+
+from tests.support.stubs import install_spotdl_options_stub
 
 import pytest
 from hypothesis import given, strategies as st
@@ -68,21 +69,13 @@ def test_settings_without_genius_token_has_no_lyrics_provider(monkeypatch):
 @pytest.mark.unit
 def test_build_spotdl_downloader_options_with_stub(monkeypatch):
     """Ensure mapping works without importing real spotdl."""
-    # Build stub module chain: spotdl.types.options.DownloaderOptionalOptions
-    m_spotdl = types.ModuleType("spotdl")
-    m_types = types.ModuleType("spotdl.types")
-    m_options = types.ModuleType("spotdl.types.options")
+    install_spotdl_options_stub(reset=True)
 
     class DummyDownloaderOptionalOptions:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
 
-    m_options.DownloaderOptionalOptions = DummyDownloaderOptionalOptions
-
-    sys.modules["spotdl"] = m_spotdl
-    sys.modules["spotdl.types"] = m_types
-    sys.modules["spotdl.types.options"] = m_options
-
+    sys.modules["spotdl.types.options"].DownloaderOptionalOptions = DummyDownloaderOptionalOptions
     # Ensure env values exist for mapping
     monkeypatch.setenv("SPOTDL_AUDIO_SOURCE", "youtube")
     monkeypatch.setenv("SPOTDL_FORMAT", "flac")
@@ -156,3 +149,5 @@ def test_env_bool_helper(value, expected, monkeypatch):
     else:
         monkeypatch.setenv(name, value)
     assert settings._env_bool(name, default=False) is expected
+
+

@@ -26,7 +26,7 @@ Block 1 — Config and Settings (src/settings.py, config.py)
 - [x] Test `build_spotdl_downloader_options` mapping without importing real spotdl types (stub `spotdl.types.options.DownloaderOptionalOptions`).
 - [x] Add property-based tests for env permutations that affect providers/threads/format.
 Acceptance criteria
-- Implemented in `tests/test_settings_block1.py`. Tests are independent of real spotdl runtime.
+- Implemented in `tests/unit/settings/test_settings.py`. Tests are independent of real spotdl runtime.
 
 Block 2 — SpotDL Client Wrapper (src/spotdl_client.py)
 - [x] Expand tests to cover: engine thread init failure path; `set_output_template`; `set_progress_callback` mapping; `clear_progress_callback`.
@@ -34,91 +34,76 @@ Block 2 — SpotDL Client Wrapper (src/spotdl_client.py)
 - [x] Ensure `download_songs` silences stdout/stderr (simulate prints and assert nothing escapes via `capsys`).
 - [x] Test `download_link` orchestration with stubbed `.search()` and `.download_songs()`.
 Acceptance criteria
-- Implemented in `tests/test_spotdl_client_block2.py`; uses stubs only, no real spotdl.
+- Implemented in `tests/unit/clients/test_spotdl_client_behaviour.py`; uses stubs only, no real spotdl.
 
 Block 3 — DTO Mapping (src/models/spotdl_mapping.py, src/models/dto.py)
 - [x] Create minimal stub for `spotdl.types.song.Song` with `.json` shape and validate `song_to_track_dto` conversions and types.
 - [x] Test `songs_to_item_dto` for single vs multi-track (track vs album), cover override behavior, and error on empty list.
 - [x] Test `trackdto_to_db_kwargs` exact field mapping.
 Acceptance criteria
-- Implemented in `tests/test_spotdl_mapping_block3.py` with strict assertions.
+- Implemented in `tests/unit/models/test_spotdl_mapping.py` with strict assertions.
 
 Block 4 — File and Download Helpers (src/file_manager.py, src/download_service.py)
 - [x] Test filename sanitization edge cases and directory creation with tmp paths.
 - [x] Test metadata JSON save success and error handling (simulate write error).
 - [x] Mock `requests.get` to test cover image download success, timeout, generic failure, and write error; assert outputs.
 Acceptance criteria
-- Implemented in `tests/test_file_manager_block4.py` and `tests/test_download_service_block4.py` with no network and tmp-only I/O.
+- Implemented in `tests/unit/downloads/test_file_manager.py` and `tests/unit/downloads/test_download_service.py` with no network and tmp-only I/O.
 
 Block 5 — Lyrics Service (src/lyrics_service.py)
 - [x] Monkeypatch minimal mutagen-like stubs to unit test branches: MP3 (ID3/USLT), MP4 (lyr atom), FLAC/OGG (Vorbis comments), and missing file handling.
 - [x] Test `export_embedded_lyrics` happy path and failure to write.
 Acceptance criteria
-- Implemented in `tests/test_lyrics_service_block5.py` without real mutagen or audio files.
+- Implemented in `tests/unit/lyrics/test_lyrics_service.py` without real mutagen or audio files.
 
 Block 6 — Database Layer (src/database/db_manager.py)
 - [x] Extend DB init tests: in-memory DB does not attempt directory creation; file-backed DB covered in existing tests.
 - [x] Test `DownloadedItem.to_dict` and basic CRUD with unique constraint on `spotify_id`; session rollback and reuse.
 - [x] Validate relationship link between `DownloadedItem` and `DownloadedTrack` via `item_id` and backref.
 Acceptance criteria
-- Implemented in `tests/test_db_block6.py` using app context and tmp paths only.
+- Implemented in `tests/unit/database/test_db_manager.py` using app context and tmp paths only.
 
 Block 7 — Orchestrator (src/spotify_content_downloader.py)
 - [x] Unit test `_parse_item_type` and `_extract_spotify_id`.
 - [x] End-to-end unit test for `download_spotify_content` with full stubs for SpotDL client and services.
 - [x] Cover branches: missing spotdl client, cover image absent, lyrics export errors, DB commit failure with rollback; verify metadata JSON and progress events.
 Acceptance criteria
-- Implemented in `tests/test_orchestrator_block7.py`; no network; tmp-only I/O; DB assertions included.
+- Implemented in `tests/unit/orchestrator/test_spotify_content_downloader.py`; no network; tmp-only I/O; DB assertions included.
 
 Block 8 — HTTP Routes (src/routes/*)
 - [x] download_routes: success/400/500 paths; deletion of non-existent id; metadata endpoints with missing files.
 - [x] progress_routes: SSE stream content-type and heartbeat; 503 when broker missing (covered earlier).
 - [x] artist_routes and album_details_routes: stub Spotipy/metadata service covering success, empty, and error branches.
 Acceptance criteria
-- Implemented in `tests/test_routes_block8.py` (complements existing `tests/test_routes.py`). Deterministic; no real external calls.
+- Implemented in `tests/unit/routes/test_routes_api.py` (complements existing `tests/unit/routes/test_routes_general.py`). Deterministic; no real external calls.
 
 Block 9 — Job Queue (src/jobs.py)
 - [x] Test idempotent submission by link; `get`, `get_by_link`, and `wait` semantics.
 - [x] Stub downloader flows: immediate success; transient failures then success (retries); permanent failure.
 - [x] Validate worker executes within Flask app context when provided.
 Acceptance criteria
-- Implemented in `tests/test_jobs_block9.py`; deterministic and fast.
+- Implemented in `tests/unit/jobs/test_jobs.py`; deterministic and fast.
 
 Block 10 — Progress Broker (src/progress.py)
 - [x] Test publish/subscribe yields valid SSE lines from events.
 - [x] Test heartbeat emission using monkeypatched time and non-blocking queue.get.
 - [x] Test unsubscribe (GeneratorClose) removes subscriber.
 Acceptance criteria
-- Implemented in `tests/test_progress_block10.py` with deterministic timing and no real sleeps.
+- Implemented in `tests/unit/progress/test_progress.py` with deterministic timing and no real sleeps.
 
 Block 11 — Application Wiring (app.py)
 - [x] Test `configure_logging` creates a log file and stays idempotent; console logging toggle obeys `ENABLE_CONSOLE_LOGS`.
 - [x] Smoke test `create_app()` registers blueprints and core extensions without starting SpotDL.
 Acceptance criteria
-- Implemented in `tests/test_app_block11.py`; no server run; logging state restored after tests.
+- Implemented in `tests/unit/app/test_app.py`; no server run; logging state restored after tests.
 
-Block 12 — Frontend Tests (React) [Optional but recommended]
-- Add Jest/RTL tests to cover pages/components using mocked fetch:
-  - Submit flow (download form) happy/error; progress panel basic render.
-  - Artist search and details: list rendering and error states.
-  - Metadata views (album/track listing) basic snapshot and interactions.
-- Add CI step for `npm ci && npm test -- --watch=false` in `frontend/`.
-Acceptance criteria
-- Stable component tests; no live backend required.
-
-Block 13 — Mutation Testing (critical paths)
-- Enable `mutmut` on `src/settings.py`, `src/spotdl_client.py`, `src/models/spotdl_mapping.py`, `src/routes/download_routes.py`.
-- Triage and fix surviving mutants or add focused tests.
-Acceptance criteria
-- No trivial survivors in critical paths; document any accepted risk.
-
-Block 14 — Test Data and Fixtures
+Block 12 — Test Data and Fixtures
 - Add factories (factory_boy) for `DownloadedItem`/`DownloadedTrack` and common fixtures for app+DB with ephemeral sqlite.
 - Centralize stubs for SpotDL and Spotipy to avoid duplication across tests.
 Acceptance criteria
 - Tests DRY, expressive, and faster to write.
 
-Block 15 — Documentation and Developer UX
+Block 13 — Documentation and Developer UX
 - Update README with: how to run tests, markers, coverage, mutation run, and CI badges.
 - Add `make test`, `make test-unit`, `make test-cov` helpers or simple scripts.
 Acceptance criteria

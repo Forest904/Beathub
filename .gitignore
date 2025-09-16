@@ -1,17 +1,31 @@
-/venv
+# Virtual environments and local secrets
+/.venv/
+/venv/
 .env
-/downloads
-src/log
-src/database/instance
 
-# Python bytecode
+# Application data generated locally
+/downloads/
+/downloads-test/
+/test_downloads/
+/t_out/
+src/log/
+src/database/instance/
+/instance/
+
+# Python bytecode and caches
 __pycache__/
 *.pyc
 *.pyo
 
-# MyPy cache
+# Tool caches
 .mypy_cache/
-
-# Pytest cache
 .pytest_cache/
-.cache
+.cache/
+.hypothesis/
+.tox/
+
+# Coverage outputs
+.coverage
+coverage.xml
+htmlcov/
+

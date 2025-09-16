@@ -58,6 +58,7 @@ class SpotdlClient:
         self._lock = threading.RLock()
 
         self._spotdl = None  # created in engine
+        self._engine_error: Optional[Exception] = None
         self._engine_queue: "Queue[tuple]" = Queue()
         self._engine_ready = threading.Event()
 
@@ -80,8 +81,13 @@ class SpotdlClient:
                     "Spotdl client initialized on engine thread (providers: %s)",
                     self._spotdl.downloader.settings.get("lyrics_providers"),
                 )
+            except Exception as exc:
+                self._engine_error = exc
             finally:
                 self._engine_ready.set()
+
+            if self._engine_error is not None:
+                return
 
             # Process callable tasks marshaled from other threads
             while True:
@@ -103,6 +109,8 @@ class SpotdlClient:
         self._engine_thread.start()
         self._engine_ready.wait(timeout=10)
         if self._spotdl is None:
+            if self._engine_error is not None:
+                raise RuntimeError("Failed to initialize SpotDL engine thread") from self._engine_error
             raise RuntimeError("Failed to initialize SpotDL engine thread")
 
     # --- Core accessors ---

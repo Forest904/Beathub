@@ -1,5 +1,6 @@
 import os
 import pytest
+from tests.support.stubs import SpotipySearchStub
 
 
 @pytest.mark.unit
@@ -63,24 +64,22 @@ def test_download_route_unexpected_response_500(app, client):
 
 @pytest.mark.unit
 def test_artist_search_success(app, client, monkeypatch):
-    class FakeSpotify:
-        def search(self, q, type, limit):
-            return {
-                'artists': {
-                    'items': [
-                        {
-                            'id': 'a1',
-                            'name': 'Artist One',
-                            'genres': ['pop'],
-                            'followers': {'total': 100},
-                            'images': [{'url': 'http://img/a1.jpg'}],
-                            'external_urls': {'spotify': 'http://spotify/a1'}
-                        }
-                    ]
+    response = {
+        'artists': {
+            'items': [
+                {
+                    'id': 'a1',
+                    'name': 'Artist One',
+                    'genres': ['pop'],
+                    'followers': {'total': 100},
+                    'images': [{'url': 'http://img/a1.jpg'}],
+                    'external_urls': {'spotify': 'http://spotify/a1'}
                 }
-            }
+            ]
+        }
+    }
 
-    app.extensions['spotify_downloader'].get_spotipy_instance = lambda: FakeSpotify()
+    app.extensions['spotify_downloader'].get_spotipy_instance = lambda: SpotipySearchStub(response=response)
     r = client.get('/api/search_artists?q=queen')
     assert r.status_code == 200
     data = r.get_json()
@@ -96,11 +95,7 @@ def test_artist_search_no_query_returns_empty(client):
 
 @pytest.mark.unit
 def test_artist_search_error_returns_500(app, client):
-    class BadSpotify:
-        def search(self, *a, **kw):
-            raise RuntimeError('boom')
-
-    app.extensions['spotify_downloader'].get_spotipy_instance = lambda: BadSpotify()
+    app.extensions['spotify_downloader'].get_spotipy_instance = lambda: SpotipySearchStub(error=RuntimeError('boom'))
     r = client.get('/api/search_artists?q=x')
     assert r.status_code == 500
 
