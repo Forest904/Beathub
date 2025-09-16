@@ -1,6 +1,7 @@
 import os
 import threading
 import logging
+import time
 from typing import List, Dict, Optional, Tuple
 
 # We rely on comtypes to access IMAPI v2 COM interfaces
@@ -82,14 +83,16 @@ class _AudioBurnEvents:
                 pass
 
             if pct is not None:
-                # Map 50..100 overall (conversion handled by caller)
-                total = 50 + max(0, min(100, pct)) // 2
+                # Map 60..100 for the actual burning phase
+                pct_safe = max(0, min(100, int(pct)))
+                total = 60 + (pct_safe * 40) // 100
                 self._session.update_status("Burning Disc...", progress=total)
                 if self._publisher is not None:
                     try:
                         self._publisher.publish({
                             'event': 'cd_burn_progress',
                             'status': 'burning',
+                            'phase': 'burning',
                             'progress': total,
                             'action': int(action) if isinstance(action, (int,)) else None,
                             'session_id': self._session.id,
@@ -273,23 +276,45 @@ class IMAPI2AudioBurner:
         except Exception as e:
             self._logger.warning("IMAPI events not available: %s", e)
 
-        # Add tracks
+        # Add tracks (staging phase 50..60)
+        stage_start = time.perf_counter()
         for i, p in enumerate(wav_paths):
             if cancel_flag.is_set():
                 raise RuntimeError("Burn canceled")
             if not os.path.exists(p):
                 raise FileNotFoundError(p)
             try:
+                t0 = time.perf_counter()
                 stream = _create_stream_on_file(p)
                 fmt.AddAudioTrack(stream)
                 # Update conversion -> preparation progress: 50% + small step
                 prep_prog = 50 + int((i + 1) / max(1, len(wav_paths)) * 10)
                 session.update_status(f"Staging tracks ({i+1}/{len(wav_paths)})", progress=prep_prog)
+                if publisher is not None:
+                    try:
+                        publisher.publish({
+                            'event': 'cd_burn_progress',
+                            'status': 'staging',
+                            'phase': 'staging',
+                            'progress': prep_prog,
+                            'message': f'Staging {i+1}/{len(wav_paths)}',
+                            'track_index': i + 1,
+                            'track_total': len(wav_paths),
+                            'elapsed_sec': round(time.perf_counter() - t0, 2),
+                            'session_id': session.id,
+                        })
+                    except Exception:
+                        pass
             except Exception as e:
                 raise RuntimeError(f"Failed to stage track {i+1}: {e}")
 
         # Start burn
         session.update_status("Burning Disc...", progress=60)
+        try:
+            total_stage = time.perf_counter() - stage_start
+            self._logger.info("Staged %d tracks in %.2fs", len(wav_paths), total_stage)
+        except Exception:
+            pass
         try:
             # Some builds expose Write() with no args; others require Write(variant)
             write = getattr(fmt, 'Write')
@@ -316,4 +341,3 @@ __all__ = [
     'IMAPI2AudioBurner',
     'IMAPIUnavailableError',
 ]
-

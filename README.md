@@ -24,7 +24,7 @@ CD-Collector is a full-stack app to search artists and albums on Spotify, downlo
 - Node.js `18+` and npm (for the frontend)
 - `ffmpeg` available on `PATH` (required by `pydub`)
 - Windows: Uses built-in IMAPI v2 via COM (`comtypes`). No external burner CLI required.
-- Non‑Windows: CD burning is currently focused on Windows; data paths on Linux/macOS are not supported in this build.
+- Non-Windows: CD burning is currently supported only on Windows; Linux/macOS are not supported in this build.
 - Spotify API credentials (optional: Genius token for SpotDL lyrics)
 
 ## Quick Start
@@ -33,8 +33,9 @@ CD-Collector is a full-stack app to search artists and albums on Spotify, downlo
 
 ```bash
 python -m venv .venv
-. .venv/Scripts/activate  # Windows PowerShell: . .venv/Scripts/Activate.ps1
-pip install -r requirements.txt
+# PowerShell
+. .venv/Scripts/Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
 2) Create a `.env` at the repo root
@@ -90,16 +91,14 @@ On first run, the SQLite DB and tables are created automatically.
 - Legacy CLI helpers have been retired; interact via the Flask HTTP API and the React UI.
 - No external consumers depend on a CLI interface at this time.
 
-
 ## Troubleshooting
 
 - Missing Spotify credentials: Set `SPOTIPY_CLIENT_ID` and `SPOTIPY_CLIENT_SECRET` in `.env`
 - Missing lyrics: Not all sources embed lyrics. Setting `GENIUS_ACCESS_TOKEN` may help SpotDL fetch and embed lyrics.
-- `ffmpeg` not found: Install and ensure it’s on `PATH`
-- `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed
+- `ffmpeg` not found: Install and ensure it's on `PATH`.
+- `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed.
 - No burner detected (Windows): Ensure you have an optical recorder and run the app with sufficient privileges. IMAPI v2 is built into modern Windows.
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
-
 
 ## Development
 
@@ -110,7 +109,6 @@ On first run, the SQLite DB and tables are created automatically.
 ## License
 
 No license specified. Add one if you plan to distribute.
-
 
 ## Tests
 
@@ -123,15 +121,44 @@ python -m pytest -q
 Install dev dependencies first if you have not already:
 
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 ```
 
 Tests automatically isolate their database storage and stub external SpotDL/Spotify calls, so the suite runs quickly without network access.
 
-
 ## CD Burning API
 
-- Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` → returns `202 Accepted` with `{ "session_id": "..." }`.
-- Poll status: `GET /api/cd-burner/status?session_id=<id>` → returns per-session state (`is_burning`, `progress_percentage`, etc.). If `session_id` omitted, returns the most recent session.
+- Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` — returns `202 Accepted` with `{ "session_id": "..." }`.
+- Poll status: `GET /api/cd-burner/status?session_id=<id>` — returns per-session state (`is_burning`, `progress_percentage`, etc.). If `session_id` omitted, returns the most recent session.
+
+## CD Burning (Windows)
+
+CD burning is implemented on Windows using the built-in IMAPI v2 COM interfaces. Audio preparation (MP3 → WAV) uses `pydub`, which requires `ffmpeg` on your system `PATH`.
+
+Platform & Dependencies
+- Windows 10/11 only (IMAPI v2)
+- Python packages: `comtypes`, `pydub` (installed via `requirements.txt`)
+- `ffmpeg` on `PATH`
+
+Workflow
+1. Insert a blank CD-R/RW into your burner.
+2. List devices: `GET /api/cd-burner/devices` — shows device `id`, `present`, `writable`.
+3. Select device (optional, defaults to first): `POST /api/cd-burner/select-device` with `{ "device_id": "<id>" }`.
+4. Start burn: `POST /api/cd-burner/burn` with `{ "download_item_id": <id> }` for a previously downloaded item.
+5. View progress: UI CDBurner page or connect to `/api/progress/stream` (SSE).
+6. Cancel (optional): `POST /api/cd-burner/cancel` with `{ "session_id": "..." }`.
+
+Progress Phases
+- Preparing: 0–5% (validation, device/disc checks)
+- Converting: 5–50% (MP3 to WAV, per-track updates)
+- Staging: 50–60% (IMAPI staging, per-track updates)
+- Burning: 60–100% (disc write progress via IMAPI)
+
+CD-TEXT
+- The service sets album title/artist and per-track titles/artists when supported by the OS/device. Display varies by player.
+
+Notes
+- The service expects a `spotify_metadata.json` file in the content directory to determine track order and titles.
+- Non-Windows platforms are not supported in this build.
 

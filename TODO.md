@@ -65,6 +65,31 @@ Follow-ups (non-blocking):
 2. Reproduce current CD burning flows end-to-end, logging failures and performance bottlenecks.
 3. Draft a refactor plan covering data validation, dependency boundaries, and improved status reporting.
 
+Immediate Fixes
+Fix check_disc_status: Move the IMAPI check block into the method and return a boolean in src/cd_burning_service.py.
+Protect success state: Ensure BurnSession.complete() clears is_burning; guard the finally block from overwriting success with error in burn_cd.
+Validate inputs: In burn_cd, verify content_dir exists/readable and spotify_metadata.json present; fail fast with clear errors.
+
+Device Handling
+Add select_device(id): Public method to choose a recorder and set _imapi_recorder[_id]; update route usage.
+Improve non‑Windows path: Early, user‑friendly error from routes when not on Windows.
+
+Progress & Observability
+Standardize phases: preparing (0–5), converting (5–50), staging (50–60), burning (60–100) with consistent ProgressPublisher payloads.
+Add timing logs: Time per‑track conversion and staging totals; log at INFO for audits.
+
+Testing
+Unit tests: Cover metadata parsing, conversion filename matching (mock AudioSegment), device listing/status (mock IMAPI), and check_disc_status.
+Run suite: Execute pytest -q and address regressions.
+
+End‑to‑End Repro
+Dependency check: Ensure ffmpeg on PATH, pydub and comtypes installed.
+Manual burn on Windows: Blank disc inserted, list/select device, burn flow, confirm progress phases and CD‑TEXT; test cancel path.
+
+Cleanup & Docs
+Trim dead code.
+Document usage: Update README with platform limits, dependencies, and burn workflow.
+
 ## Frontend Cleanup
 1. Identify unused components, styles, and assets; remove them while keeping a changelog for QA.
 2. Standardize component structure (naming, props, hooks) and align with the design system guidelines.
