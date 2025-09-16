@@ -85,6 +85,12 @@ python app.py  # Starts Flask on http://localhost:5000
 
 On first run, the SQLite DB and tables are created automatically.
 
+## CLI Status
+
+- No standalone CLI commands or entry points are shipped.
+- Legacy CLI helpers have been retired; interact via the Flask HTTP API and the React UI.
+- No external consumers depend on a CLI interface at this time.
+
 
 ## Troubleshooting
 

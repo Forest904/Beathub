@@ -1,9 +1,10 @@
 # TODO
 
-## Legacy CLI Cleanup
-1. Inventory every CLI-related module or script (e.g., `cli/`, `scripts/`, or `__main__` blocks) and document current consumers in the README.
-2. Remove unused entry points and helper functions after confirming they are not referenced by the application, tests, or deployment scripts.
-3. Update dependency lists to drop packages that were only required by the legacy CLI and validate the application still installs cleanly.
+## Legacy CLI Cleanup — Completed
+- Inventory: No standalone CLI modules, scripts, or packaging entry points found (search for `argparse`, `click`, `typer`, `__main__` blocks returned none beyond `app.py`).
+- Removals: No CLI entry points to remove.
+- Dependencies: Removed `rich` from `requirements.txt` as it was CLI-only and unused; retained `click` as it is required by Flask (transitively).
+- Documentation: Added a "CLI Status" section to `README.md` clarifying there is no standalone CLI and that legacy helpers were retired.
 
 ## Architecture Review
 1. Map the current package structure and data flow between core services to highlight tight coupling or circular dependencies.
