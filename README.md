@@ -85,62 +85,6 @@ python app.py  # Starts Flask on http://localhost:5000
 
 On first run, the SQLite DB and tables are created automatically.
 
-## Project Structure
-
-- `app.py`: Flask app factory, blueprint registration, static serving
-- `config.py`: Configuration (DB URI, API keys, base output dir)
-- `database/db_manager.py`: SQLAlchemy setup and `DownloadedItem` model
-- `src/spotify_content_downloader.py`: Orchestrates metadata, audio, cover, lyrics, files
-- `src/download_service.py`: Cover download helpers (SpotDL API is used directly elsewhere)
-- `src/metadata_service.py`: Spotify metadata via `spotipy`
-- `src/lyrics_service.py`: Embedded lyrics extraction and export
-- `src/file_manager.py`: File/dir creation and JSON metadata saving
-- `src/routes/*.py`: API routes (downloads, artists, album details, CD burner)
-- `frontend/`: React app (CRA). Built assets at `frontend/build`
-- `downloads/`: Default output root for downloaded content
-
-## API Overview
-
-- `POST /api/download`: Download a Spotify item
-  - Body: `{ "spotify_link": "https://open.spotify.com/..." }`
-  - Success: metadata, output paths, tracks, cover path
-
-- `GET /api/albums`: List downloaded items from DB
-- `DELETE /api/albums/:id`: Remove DB row and local files
-
-- `GET /api/search_artists?q=term`: Search Spotify artists
-- `GET /api/famous_artists`: Curated famous artists list
-- `GET /api/artist_details/:artist_id`: Artist profile
-- `GET /api/artist_discography/:artist_id`: Albums and singles
-
-- `GET /api/album_details/:album_id`: Album with tracks
-
-- CD Burning
-  - `GET /api/cd-burner/status`: Poll burn state/progress
-  - `POST /api/cd-burner/burn`: Start burn for a downloaded item
-    - Body: `{ "download_item_id": 123 }`
-
-## How Downloads Are Organized
-
-- Root folder: `downloads/` (configurable via `BASE_OUTPUT_DIR`)
-- Per item: `downloads/<Artist> - <Title>/`
-  - Audio: `<Title>.<ext>` (`mp3` by default)
-  - Cover: `cover.jpg` (if available)
-  - Metadata: `spotify_metadata.json`
-  - Lyrics: `"<Track Title> - <Artist>.txt"` (when found)
-
-## CD Burning Notes
-
-- Converts MP3 to WAV via `pydub`/`ffmpeg` before burning
-- Uses `cdrecord -scanbus` to detect burner and `cdrecord` to burn
-- Requires a blank/erasable disc; progress is exposed via `/api/cd-burner/status`
-- Linux/macOS recommended. Windows may require installing cdrtools and adjusting paths.
-
-## Configuration Tips
-
-- spotDL format/source/threads: Defaults are `mp3`, `youtube-music`, and `1` thread. Configure via env vars `SPOTDL_FORMAT`, `SPOTDL_AUDIO_SOURCE`, and `SPOTDL_THREADS`, or change defaults in `src/download_service.py`.
-- DB file: Default is `database/instance/cd_collector.db` (configured in `config.py`). Created on startup.
-- Static build: Flask serves `frontend/build` when present. During dev, use CRA dev server with the proxy.
 
 ## Troubleshooting
 
@@ -151,13 +95,6 @@ On first run, the SQLite DB and tables are created automatically.
 - No burner detected: Verify `cdrecord`/`wodim` is installed and accessible; try running with admin/root if required
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
 
-## SpotDL API Pipeline
-
-The app now uses the SpotDL Python API directly (no CLI subprocesses). Goals achieved:
-- Use SpotDL’s `Song` model for richer, consistent metadata.
-- Configure via `config.py` defaults and `.env` overrides.
-- Lyrics come via SpotDL providers and are exported to `.txt` when embedded.
-- Local filesystem storage remains the same.
 
 ## Development
 
@@ -168,7 +105,8 @@ The app now uses the SpotDL Python API directly (no CLI subprocesses). Goals ach
 ## License
 
 No license specified. Add one if you plan to distribute.
-
+
+
 ## Tests
 
 Run the backend test suite from the repository root:
@@ -185,19 +123,5 @@ pip install -r requirements-dev.txt
 ```
 
 Tests automatically isolate their database storage and stub external SpotDL/Spotify calls, so the suite runs quickly without network access.
-## Migration Notes (SpotDL Service)
-
-- The SpotDL API pipeline is the default. The legacy CLI subprocess flow has been removed.
-- Configuration sources:
-  - Defaults live in `config.py`.
-  - Environment variables override defaults (see `.env`).
-- Important overrides:
-  - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET` (used for metadata and SpotDL)
-  - `SPOTDL_AUDIO_SOURCE` (e.g., `youtube-music` or `youtube`)
-  - `SPOTDL_FORMAT` (e.g., `mp3`, `flac`), `SPOTDL_THREADS`
-  - `BASE_OUTPUT_DIR` for downloads root
-- Progress SSE: endpoint `/api/progress/stream` streams JSON events published by the downloader.
-
-
 
 
