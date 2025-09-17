@@ -201,35 +201,119 @@ class IMAPI2AudioBurner:
 
     # --- Burn flow ---
     def check_audio_disc_ready(self, recorder) -> Tuple[bool, bool]:
-        """Return (present, writable) for current media using AudioCD format checks."""
+        """
+        Probe current media and return a tuple (present, writable_for_audio).
+
+        - present: True if any recordable media is present (CD/DVD) that the system
+          recognizes for burning. Uses Audio CD first, then falls back to Data format
+          to avoid false negatives on some drives/media.
+        - writable_for_audio: True only if the inserted media is suitable for Audio CD
+          (i.e., blank CD-R/RW recognized by IMAPI2 audio format).
+        """
         _ensure_com_initialized()
-        fmt = cc.CreateObject('IMAPI2.MsftDiscFormat2AudioCD')
+
+        # First attempt: Audio CD format (preferred)
+        audio_present = False
+        audio_writable = False
         try:
-            setattr(fmt, 'ClientName', self._client_name)
-        except Exception:
-            pass
-        # Prefer property assignment if supported
-        try:
-            setattr(fmt, 'Recorder', recorder)
-        except Exception:
+            fmt_audio = cc.CreateObject('IMAPI2.MsftDiscFormat2AudioCD')
             try:
-                fmt.SetActiveDiscRecorder(recorder)
+                setattr(fmt_audio, 'ClientName', self._client_name)
+            except Exception:
+                pass
+            try:
+                setattr(fmt_audio, 'Recorder', recorder)
+            except Exception:
+                try:
+                    fmt_audio.SetActiveDiscRecorder(recorder)
+                except Exception:
+                    pass
+            try:
+                # Returns True only when the current media is usable for audio CDs
+                audio_writable = bool(fmt_audio.IsCurrentMediaSupported(recorder))
+                audio_present = audio_writable
+            except Exception:
+                audio_present = False
+                audio_writable = False
+        except Exception:
+            # If AudioCD objects fail to create, fall through to data probing
+            pass
+
+        # Fallback probe: Data format — helps detect presence and blank CD types
+        any_present = bool(audio_present)
+        try:
+            fmt_data = cc.CreateObject('IMAPI2.MsftDiscFormat2Data')
+            try:
+                setattr(fmt_data, 'ClientName', self._client_name)
+            except Exception:
+                pass
+            try:
+                # For Format2Data the COM API exposes a Recorder property setter
+                fmt_data.Recorder = recorder  # type: ignore[attr-defined]
+            except Exception:
+                # As a fallback, try a variant naming (rare)
+                try:
+                    setattr(fmt_data, 'Recorder', recorder)
+                except Exception:
+                    pass
+
+            data_writable = False
+            data_blank = False
+            phys_type = None
+            try:
+                data_writable = bool(fmt_data.IsCurrentMediaSupported(recorder))
+            except Exception:
+                pass
+            try:
+                data_blank = bool(getattr(fmt_data, 'MediaHeuristicallyBlank'))
+            except Exception:
+                pass
+            try:
+                phys_type = getattr(fmt_data, 'CurrentPhysicalMediaType')
             except Exception:
                 pass
 
-        present = False
-        writable = False
-        try:
-            # These checks may throw if no media present
-            is_supported = bool(fmt.IsRecorderSupported(recorder))
-            media_ok = bool(fmt.IsCurrentMediaSupported(recorder))
-            present = is_supported or media_ok
-            writable = media_ok
+            # Presence considered true if the data formatter sees a supported writable media
+            # or we can read a plausible physical media type.
+            any_present = any_present or bool(data_writable or (isinstance(phys_type, (int,)) and phys_type != 0))
+
+            # If AudioCD formatter is unavailable on this system, infer audio-writability from
+            # data formatter and recorder profile information. Treat CD-R/CD-RW media as
+            # acceptable for audio when the data formatter says current media is supported.
+            if not audio_present:
+                try:
+                    if isinstance(phys_type, (int,)) and phys_type in (2, 3) and data_writable:
+                        audio_writable = True
+                    elif data_blank:
+                        # As an additional hint, check the recorder's CurrentProfiles (IMAPI_PROFILE_TYPE)
+                        # Values of interest: 0x0009 (CD-R), 0x000A (CD-RW)
+                        try:
+                            profiles = tuple(getattr(recorder, 'CurrentProfiles', []) or [])
+                        except Exception:
+                            profiles = ()
+                        try:
+                            # Normalize to ints
+                            profiles_int = []
+                            for p in profiles:
+                                try:
+                                    profiles_int.append(int(p))
+                                except Exception:
+                                    # Some drivers expose small COM wrappers; best-effort cast
+                                    try:
+                                        profiles_int.append(int(getattr(p, 'value', 0)))
+                                    except Exception:
+                                        pass
+                            if any(p in (0x0009, 0x000A) for p in profiles_int):
+                                audio_writable = True
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
         except Exception:
-            # Any failure here typically means no media / unsupported
-            present = False
-            writable = False
-        return present, writable
+            # Creating data formatter failed — ignore
+            pass
+
+        return bool(any_present), bool(audio_writable)
 
     def _apply_cdtext(self, fmt, *, album: Optional[Dict[str, str]] = None, tracks: Optional[List[Dict[str, str]]] = None):
         # Best-effort: these properties may exist depending on OS version
@@ -278,7 +362,15 @@ class IMAPI2AudioBurner:
         if not wav_paths:
             raise ValueError("No WAV tracks provided for burning")
 
-        fmt = cc.CreateObject('IMAPI2.MsftDiscFormat2AudioCD')
+        try:
+            fmt = cc.CreateObject('IMAPI2.MsftDiscFormat2AudioCD')
+        except OSError as e:
+            # When the Audio CD formatter COM class is unavailable (common on Windows N/KN
+            # without the Media Feature Pack), surface a clear error for the caller.
+            raise IMAPIUnavailableError(
+                "Windows Audio CD burning components are missing. Install 'Windows Media Player' / Media Feature Pack, "
+                "then restart the app."
+            ) from e
         # Assign recorder
         try:
             setattr(fmt, 'Recorder', recorder)
