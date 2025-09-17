@@ -25,9 +25,6 @@ const Header = () => (
             </span>
             <span>CD Collector</span>
           </Link>
-          <p className="mt-2 max-w-xl text-sm text-slate-300 md:text-base">
-            Build the perfect offline music library—browse artists, download playlists, and burn custom CDs with ease.
-          </p>
         </div>
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-8">
           <nav aria-label="Primary">
@@ -50,12 +47,6 @@ const Header = () => (
               ))}
             </ul>
           </nav>
-          <Link
-            to="/download"
-            className="inline-flex items-center justify-center rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-slate-900 shadow-lg shadow-sky-500/30 transition hover:-translate-y-0.5 hover:bg-sky-400 md:text-base"
-          >
-            Start Downloading
-          </Link>
         </div>
       </div>
     </div>

@@ -99,6 +99,8 @@ Document usage: Update README with platform limits, dependencies, and burn workf
 - Dynamic playlist-driven popular artist sourcing with Spotipy batching and popularity sorting now lives in src/spotify_content_downloader.py.
 - Metadata TTL caches in MetadataService and SpotifyContentDownloader keep repeat lookups within the SLA.
 
+Yet TODO:
+
 ## Lyrics Component Delivery
 1. Design a frontend component that displays lyrics when the user clicks the green "lyrics acquired" icon, with loading and error states defined.
 2. Wire the component to existing lyrics retrieval APIs, including fallback messaging when lyrics are unavailable.
