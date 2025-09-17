@@ -153,11 +153,15 @@ class IMAPI2AudioBurner:
 
     # --- Device management ---
     def _get_master(self):
+        # Ensure COM is initialized for whichever thread invokes this
+        _ensure_com_initialized()
         if self._disc_master is None:
             self._disc_master = cc.CreateObject('IMAPI2.MsftDiscMaster2')
         return self._disc_master
 
     def list_recorders(self) -> List[Dict[str, object]]:
+        # Ensure COM for the current thread before using COM objects
+        _ensure_com_initialized()
         master = self._get_master()
         devices = []
         try:
@@ -182,6 +186,8 @@ class IMAPI2AudioBurner:
         return devices
 
     def open_recorder(self, unique_id: Optional[str] = None):
+        # Ensure COM for the current thread before using COM objects
+        _ensure_com_initialized()
         master = self._get_master()
         if unique_id is None:
             # default: first available
@@ -196,6 +202,7 @@ class IMAPI2AudioBurner:
     # --- Burn flow ---
     def check_audio_disc_ready(self, recorder) -> Tuple[bool, bool]:
         """Return (present, writable) for current media using AudioCD format checks."""
+        _ensure_com_initialized()
         fmt = cc.CreateObject('IMAPI2.MsftDiscFormat2AudioCD')
         try:
             setattr(fmt, 'ClientName', self._client_name)
@@ -264,6 +271,7 @@ class IMAPI2AudioBurner:
                        session,
                        publisher,
                        cancel_flag: Optional[threading.Event] = None) -> None:
+        _ensure_com_initialized()
         if cancel_flag is None:
             cancel_flag = threading.Event()
 
