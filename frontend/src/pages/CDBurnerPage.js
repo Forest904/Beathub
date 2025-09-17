@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
 import { AlbumCardVariant } from '../components/AlbumCard';
-import DevicesPanel from '../components/DevicesPanel';
+import DeviceGrid from '../components/DeviceGrid';
 import BurnProgress from '../components/BurnProgress';
 import Message from '../components/Message';
 
@@ -82,12 +82,20 @@ const CDBurnerPage = () => {
     try {
       const response = await axios.get(`${apiBaseUrl}/api/cd-burner/devices`);
       setDevices(response.data.devices || []);
+      if (response.data?.error) {
+        pushMessage({ type: 'error', text: response.data.error });
+      }
     } catch (error) {
       console.error('Error fetching devices', error);
+      const errorMessage =
+        error.response?.data?.error ||
+        'Unable to enumerate CD burners. Ensure Windows IMAPI2 and comtypes are installed.';
+      pushMessage({ type: 'error', text: errorMessage });
+      setDevices(error.response?.data?.devices || []);
     } finally {
       setLoadingDevices(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, pushMessage]);
 
   useEffect(() => {
     fetchDownloadedItems();
@@ -167,17 +175,35 @@ const CDBurnerPage = () => {
   const handleSelectDevice = useCallback(
     async (device) => {
       try {
-        await axios.post(`${apiBaseUrl}/api/cd-burner/select-device`, { device_id: device.id });
-        pushMessage({ type: 'success', text: `Selected ${device.display_name || device.id}.` });
+        if (!device) {
+          await axios.post(`${apiBaseUrl}/api/cd-burner/select-device`, { device_id: null });
+          pushMessage({ type: 'info', text: 'Deselected burner device.' });
+        } else {
+          await axios.post(`${apiBaseUrl}/api/cd-burner/select-device`, { device_id: device.id });
+          pushMessage({ type: 'success', text: `Selected ${device.display_name || device.id}.` });
+        }
         fetchDevices();
         pollBurnerStatus();
       } catch (error) {
         console.error('Failed to select device', error);
-        pushMessage({ type: 'error', text: 'Failed to select device.' });
+        const errorMessage = error.response?.data?.error || 'Failed to select device.';
+        pushMessage({ type: 'error', text: errorMessage });
       }
     },
     [apiBaseUrl, fetchDevices, pollBurnerStatus, pushMessage],
   );
+  const statusSummary = useMemo(() => {
+    if (burnerStatus?.last_error) {
+      return { label: burnerStatus.last_error, className: 'text-red-400' };
+    }
+    if (burnerStatus?.is_burning) {
+      return { label: burnerStatus?.current_status || 'Burning', className: 'text-yellow-400' };
+    }
+    if (burnerStatus?.current_status === 'Burner Ready') {
+      return { label: 'Burner Ready', className: 'text-green-400' };
+    }
+    return { label: burnerStatus?.current_status || 'Unknown', className: 'text-gray-400' };
+  }, [burnerStatus]);
 
   const selectedDevice = useMemo(() => devices.find((device) => device.selected) || null, [devices]);
 
@@ -214,7 +240,50 @@ const CDBurnerPage = () => {
           </div>
         )}
 
-        <DevicesPanel devices={devices} loading={loadingDevices} onSelect={handleSelectDevice} burnerStatus={burnerStatus} />
+        <section className="bg-gray-800 rounded-lg shadow-md p-6 mb-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h2 className="text-xl font-semibold">Devices</h2>
+            <span className={`text-sm font-medium ${statusSummary.className}`}>{statusSummary.label}</span>
+          </div>
+          {loadingDevices ? (
+            <p className="text-gray-400">Scanning devices...</p>
+          ) : (
+            <>
+              <DeviceGrid devices={devices} onSelect={handleSelectDevice} />
+              {selectedDevice && (
+                <div className="mt-6 border border-gray-700 rounded-lg p-4 bg-gray-900/40">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <h3 className="text-lg font-semibold">Selected Burner</h3>
+                    <span className={`text-xs font-semibold ${statusSummary.className}`}>{statusSummary.label}</span>
+                  </div>
+                  <p className="text-sm text-gray-300">
+                    <span className="text-gray-400">Device:</span>
+                    <span className="text-white"> {selectedDevice.display_name || selectedDevice.id}</span>
+                  </p>
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-300">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400">Disc Present</span>
+                      <span className={selectedDevice.present ? 'text-green-400' : 'text-red-400'}>
+                        {selectedDevice.present ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400">Writable</span>
+                      <span className={selectedDevice.writable ? 'text-green-400' : 'text-red-400'}>
+                        {selectedDevice.writable ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                    {selectedDevice.volume_paths?.length ? (
+                      <div className="sm:col-span-2 text-xs text-gray-500">
+                        {selectedDevice.volume_paths.join(' \u2022 ')}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
 
         <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4">Music</h2>

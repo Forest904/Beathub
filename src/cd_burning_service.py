@@ -6,7 +6,7 @@ import tempfile
 import shutil
 import threading
 import time
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, TYPE_CHECKING, Any
 
 from config import Config
 from .burn_sessions import BurnSession
@@ -20,8 +20,13 @@ import sys
 try:
     from .burners.imapi2_audio import IMAPI2AudioBurner, IMAPIUnavailableError
 except Exception:  # pragma: no cover - adapter optional at import time
-    IMAPI2AudioBurner = None  # type: ignore
-    IMAPIUnavailableError = RuntimeError  # type: ignore
+    IMAPI2AudioBurner = None  # type: ignore[assignment]
+    IMAPIUnavailableError = RuntimeError  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    from .burners.imapi2_audio import IMAPI2AudioBurner as IMAPI2AudioBurnerType
+else:
+    IMAPI2AudioBurnerType = Any
 
 # Instance-specific loggers will be used within CDBurningService.
 
@@ -34,7 +39,7 @@ class CDBurningService:
         # ffmpeg is used indirectly by pydub
         self.ffmpeg_path = "ffmpeg"
         # IMAPI2 burner (Windows only)
-        self._imapi: Optional[IMAPI2AudioBurner] = None
+        self._imapi: Optional[IMAPI2AudioBurnerType] = None
         self._imapi_recorder = None
         self._imapi_recorder_id: Optional[str] = None
         self._active_session_id: Optional[str] = None
@@ -110,6 +115,12 @@ class CDBurningService:
             self.logger.error("Failed to select recorder %s: %s", unique_id, e)
             return False
 
+    def clear_selected_device(self) -> bool:
+        """Clear cached recorder selection so no device is marked as active."""
+        self._imapi_recorder = None
+        self._imapi_recorder_id = None
+        return True
+
     def check_disc_status(self, session: BurnSession):
         """Check disc presence/writability using IMAPI2 audio format."""
         if not self._imapi or not self._imapi_recorder:
@@ -133,16 +144,35 @@ class CDBurningService:
     # --- Device/status helpers for routes ---
     def list_devices_with_status(self) -> List[dict]:
         """Return devices and dynamic media status. Windows/IMAPI only."""
-        if sys.platform != 'win32' or IMAPI2AudioBurner is None:
-            return []
+
+        if sys.platform != 'win32':
+            msg = f"CD burning requires Windows IMAPI2 support (current platform: {sys.platform})."
+            self.logger.error(msg)
+            raise IMAPIUnavailableError(msg)
+
+        if IMAPI2AudioBurner is None:
+            msg = ("IMAPI2AudioBurner adapter is unavailable. Install 'comtypes' and ensure IMAPI2 is registered.")
+            self.logger.error(msg)
+            raise IMAPIUnavailableError(msg)
+
+        assert IMAPI2AudioBurner is not None
+
         if self._imapi is None:
             try:
                 self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="CD-Collector")
-            except Exception:
-                return []
+            except IMAPIUnavailableError as exc:
+                msg = f"IMAPI2 initialization failed: {exc}"
+                self.logger.error(msg)
+                raise IMAPIUnavailableError(msg) from exc
+            except Exception as exc:
+                msg = f"Failed to initialize IMAPI2 burner: {exc}"
+                self.logger.exception(msg)
+                raise IMAPIUnavailableError(msg) from exc
 
         out: List[dict] = []
+
         devices = self._imapi.list_recorders()
+
         for dev in devices:
             present = False
             writable = False
@@ -151,7 +181,9 @@ class CDBurningService:
                 present, writable = self._imapi.check_audio_disc_ready(rec)
             except Exception:
                 pass
+
             display = f"{dev.get('vendor_id','').strip()} {dev.get('product_id','').strip()}".strip()
+
             out.append({
                 'id': dev['unique_id'],
                 'display_name': display or dev['unique_id'],
@@ -164,6 +196,7 @@ class CDBurningService:
                 'selected': dev['unique_id'] == self._imapi_recorder_id,
                 'active': (self._active_session_id is not None) and (dev['unique_id'] == self._imapi_recorder_id),
             })
+
         return out
 
     def get_active_device_id(self) -> Optional[str]:

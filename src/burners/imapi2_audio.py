@@ -18,6 +18,24 @@ class IMAPIUnavailableError(RuntimeError):
     pass
 
 
+_THREAD_STATE = threading.local()
+
+
+def _ensure_com_initialized():
+    """Ensure COM is initialized for the current thread."""
+    if getattr(_THREAD_STATE, 'com_initialized', False):
+        return
+    if comtypes is None:
+        raise IMAPIUnavailableError("comtypes is not available. Install 'comtypes' and run on Windows.")
+    try:
+        comtypes.CoInitialize()
+    except OSError as exc:
+        # RPC_E_CHANGED_MODE (0x80010106) indicates COM already initialized in a different mode; ignore
+        if getattr(exc, 'winerror', None) not in (None, -2147417850):
+            raise
+    _THREAD_STATE.com_initialized = True
+
+
 def _ensure_imapi_available():
     if cc is None:
         raise IMAPIUnavailableError(
@@ -127,6 +145,7 @@ class IMAPI2AudioBurner:
 
     def __init__(self, logger: Optional[logging.Logger] = None, client_name: str = "CD-Collector"):
         _ensure_imapi_available()
+        _ensure_com_initialized()
         self._logger = logger or logging.getLogger(self.__class__.__name__)
         self._client_name = client_name
         # Create master on-demand to keep COM init light

@@ -106,6 +106,25 @@ def test_convert_mp3_to_wav_filename_matching(monkeypatch, tmp_path):
     assert os.path.basename(wavs[1]).startswith('02_') and os.path.basename(wavs[1]).endswith('.wav')
 
 
+@pytest.mark.unit
+def test_list_devices_with_status_imapi_unavailable(monkeypatch):
+    monkeypatch.setattr(svc_mod.sys, 'platform', 'win32', raising=False)
+    monkeypatch.setattr(svc_mod, 'IMAPI2AudioBurner', None, raising=False)
+    svc = svc_mod.CDBurningService()
+    with pytest.raises(svc_mod.IMAPIUnavailableError):
+        svc.list_devices_with_status()
+
+
+@pytest.mark.unit
+def test_clear_selected_device_resets_state():
+    svc = svc_mod.CDBurningService()
+    svc._imapi_recorder = object()
+    svc._imapi_recorder_id = 'DEV_A'
+    assert svc.clear_selected_device() is True
+    assert svc._imapi_recorder is None
+    assert svc._imapi_recorder_id is None
+
+
 class _FakeImapi:
     def __init__(self):
         self._rec = {}

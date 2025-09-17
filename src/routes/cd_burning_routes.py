@@ -10,6 +10,7 @@ from src.burn_sessions import BurnSessionManager
 from src.progress import BrokerPublisher
 
 
+from src.cd_burning_service import IMAPIUnavailableError
 # Initialize logger for this blueprint
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,11 @@ def list_devices():
         mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
         if not cd_burner:
             return jsonify({"devices": [], "error": "CD Burning Service not available"}), 503
-        devices = cd_burner.list_devices_with_status()
+        try:
+            devices = cd_burner.list_devices_with_status()
+        except IMAPIUnavailableError as exc:
+            logger.warning('IMAPI unavailable while listing devices: %s', exc)
+            return jsonify({"devices": [], "error": str(exc)}), 503
         # augment with global busy flag if anything burning
         is_busy = bool(mgr and mgr.is_any_burning())
         for d in devices:
@@ -170,26 +175,34 @@ def cancel_burn():
 
 @cd_burning_bp.route('/select-device', methods=['POST'])
 def select_device():
-    """Select the active recorder by device_id (Windows/IMAPI2)."""
+    """Select or clear the active recorder by device_id (Windows/IMAPI2)."""
     try:
         data = request.get_json(silent=True) or {}
-        device_id = data.get('device_id') or request.args.get('device_id')
-        if not device_id:
-            return jsonify({"error": "Missing device_id"}), 400
+        has_device_field = 'device_id' in data
+        device_id = data.get('device_id') if has_device_field else request.args.get('device_id')
 
         mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
         cd_burner = current_app.extensions.get('cd_burning_service')
         if not cd_burner:
             return jsonify({"error": "CD Burning Service not available"}), 503
 
-        # Do not allow selection while burning
+        # Do not allow selection changes while burning
         if mgr and mgr.is_any_burning():
             return jsonify({"error": "Cannot change device while burning"}), 409
+
+        if has_device_field and (device_id is None or (isinstance(device_id, str) and not device_id.strip())):
+            cd_burner.clear_selected_device()
+            devices = cd_burner.list_devices_with_status()
+            return jsonify({"devices": devices, "selected": None}), 200
+
+        if isinstance(device_id, str):
+            device_id = device_id.strip()
+        if not device_id:
+            return jsonify({"error": "Missing device_id"}), 400
 
         ok = cd_burner.select_device(device_id)
         if not ok:
             return jsonify({"error": "Failed to select device"}), 400
-        # Return updated list
         devices = cd_burner.list_devices_with_status()
         return jsonify({"devices": devices, "selected": device_id}), 200
     except Exception as e:
