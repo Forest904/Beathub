@@ -26,6 +26,11 @@ const ArtistCard = ({ artist }) => {
               <span className="font-medium">Followers:</span> {artist.followers.toLocaleString()}
             </p>
           )}
+          {typeof artist.popularity === 'number' && (
+            <p className="text-sm text-gray-300">
+              <span className="font-medium">Popularity:</span> {artist.popularity}
+            </p>
+          )}
         </div>
       </div>
     </Link>
@@ -39,6 +44,7 @@ ArtistCard.propTypes = {
     image: PropTypes.string,
     genres: PropTypes.arrayOf(PropTypes.string),
     followers: PropTypes.number,
+    popularity: PropTypes.number,
   }).isRequired,
 };
 

@@ -113,45 +113,50 @@ const AlbumDetailsPage = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="container mx-auto p-6">
-        <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-x-8">
-          <img
-            src={albumDetails.image_url || FALLBACK_IMAGE}
-            alt={`${albumDetails.title} Album Cover`}
-            className="w-full md:w-1/3 lg:w-1/4 rounded-lg shadow-xl"
-          />
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-6 md:space-y-0 md:space-x-8">
+          <div className="w-full md:w-1/6 lg:w-1/6 max-w-xs md:max-w-sm md:flex md:items-center">
+            <div className="relative w-full aspect-square overflow-hidden rounded-lg shadow-xl">
+              <img
+                src={albumDetails.image_url || FALLBACK_IMAGE}
+                alt={`${albumDetails.title} Album Cover`}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            </div>
+          </div>
 
-          <div className="flex-1 text-center md:text-left">
+          <div className="w-full md:flex-1 md:mx-8 flex flex-col justify-center text-center md:text-center md:items-center">
             <h1 className="text-4xl font-bold mb-2">{albumDetails.title}</h1>
             <p className="text-xl text-gray-400 mb-2">by {albumDetails.artist}</p>
             <p className="text-md text-gray-500 mb-1">Release Date: {releaseDateLabel}</p>
             <p className="text-md text-gray-500">Total Tracks: {albumDetails.total_tracks}</p>
-            <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-4">
-              {albumDetails.spotify_url && (
-                <a
-                  href={albumDetails.spotify_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
-                >
-                  Listen on Spotify
-                </a>
-              )}
+            {copyFeedback && <p className="text-green-400 mt-4 text-sm">{copyFeedback}</p>}
+          </div>
+
+          <div className="w-full md:w-auto md:flex md:items-center">
+            <div className="flex flex-col gap-3 md:h-auto">
+              <button
+                type="button"
+                onClick={() => albumDetails.spotify_url && window.open(albumDetails.spotify_url, '_blank', 'noopener,noreferrer')}
+                className="w-full md:w-auto bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
+                disabled={!albumDetails.spotify_url}
+              >
+                Listen on Spotify
+              </button>
               <button
                 type="button"
                 onClick={handleCopySpotifyLink}
-                className="inline-block bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
+                className="w-full md:w-auto bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
               >
                 Copy Spotify Link
               </button>
               <button
                 type="button"
                 onClick={handleDirectDownload}
-                className="inline-block bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-full transition duration-200"
+                className="w-full md:w-auto bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
               >
                 Direct Download
               </button>
             </div>
-            {copyFeedback && <p className="text-green-400 mt-2 text-sm">{copyFeedback}</p>}
           </div>
         </div>
 

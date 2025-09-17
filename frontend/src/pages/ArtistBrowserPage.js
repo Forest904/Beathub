@@ -5,6 +5,7 @@ import ArtistGallery from '../components/ArtistGallery';
 import useDebounce from '../hooks/useDebounce';
 
 const ArtistBrowserPage = () => {
+  const POPULAR_LIMIT = 20;
   const [searchTerm, setSearchTerm] = useState('');
   const [artists, setArtists] = useState([]);
   const [famousArtists, setFamousArtists] = useState([]);
@@ -17,7 +18,9 @@ const ArtistBrowserPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.get('/api/famous_artists');
+      const response = await axios.get('/api/famous_artists', {
+        params: { limit: POPULAR_LIMIT },
+      });
       setFamousArtists(response.data.artists);
     } catch (fetchError) {
       console.error('Error fetching famous artists', fetchError);
@@ -25,7 +28,7 @@ const ArtistBrowserPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [POPULAR_LIMIT]);
 
   useEffect(() => {
     loadFamousArtists();
@@ -102,3 +105,4 @@ const ArtistBrowserPage = () => {
 };
 
 export default ArtistBrowserPage;
+

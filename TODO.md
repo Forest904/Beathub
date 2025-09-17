@@ -95,15 +95,9 @@ Document usage: Update README with platform limits, dependencies, and burn workf
 2. Standardize component structure (naming, props, hooks) and align with the design system guidelines.
 3. Resolve lint warnings and type-checking errors to enforce a stable baseline.
 
-## Spotify Metadata Performance
-1. Profile existing Spotify metadata retrieval to measure latency per track and per batch.
-2. Replace static artist lists with dynamic queries that pull the "Popular Artists" endpoint or equivalent high-relevance source.
-3. Implement caching or request batching so repeated metadata lookups stay under the defined SLA.
-
-## Test Suite Expansion
-1. Review unit, integration, and end-to-end coverage to flag critical paths lacking automated tests.
-2. Update brittle tests affected by recent refactors, ensuring fixtures and mocks reflect the current architecture.
-3. Add regression tests for newly identified edge cases, prioritising the CD burning flow and Spotify integration.
+## Spotify Metadata Performance - Completed
+- Dynamic playlist-driven popular artist sourcing with Spotipy batching and popularity sorting now lives in src/spotify_content_downloader.py.
+- Metadata TTL caches in MetadataService and SpotifyContentDownloader keep repeat lookups within the SLA.
 
 ## Lyrics Component Delivery
 1. Design a frontend component that displays lyrics when the user clicks the green "lyrics acquired" icon, with loading and error states defined.

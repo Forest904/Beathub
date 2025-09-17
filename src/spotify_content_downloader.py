@@ -1,10 +1,11 @@
 import logging
 import os
-from typing import List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 import spotipy  # Spotipy remains for browse/metadata endpoints
 from spotipy.oauth2 import SpotifyClientCredentials
 from config import Config
+from .utils.cache import TTLCache, MISSING
 
 # Services
 from .metadata_service import MetadataService
@@ -84,6 +85,14 @@ class SpotifyContentDownloader:
         # Repository for persistence (optional); default to SQLAlchemy-based
         self.repo: DownloadRepository = download_repository or DefaultDownloadRepository()
 
+        cache_maxsize = Config.METADATA_CACHE_MAXSIZE
+        cache_ttl = Config.METADATA_CACHE_TTL_SECONDS
+        self._artist_cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
+        self._artist_discography_cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
+        self._popular_artists_cache = TTLCache(maxsize=4, ttl=Config.POPULAR_ARTIST_CACHE_TTL_SECONDS)
+        self._popular_artist_playlist_ids = Config.POPULAR_ARTIST_PLAYLIST_IDS
+        self._popular_artist_limit = Config.POPULAR_ARTIST_LIMIT
+
         logger.info("SpotifyContentDownloader initialized with decoupled services and configuration passed.")
 
     def get_spotipy_instance(self):
@@ -119,6 +128,223 @@ class SpotifyContentDownloader:
             return segs[-1] if segs else ""
         except Exception:
             return ""
+
+    @staticmethod
+    def _chunked_iterable(sequence: Sequence[str], size: int) -> Iterable[Sequence[str]]:
+        if size <= 0:
+            raise ValueError('size must be positive')
+        for index in range(0, len(sequence), size):
+            yield sequence[index:index + size]
+
+    @staticmethod
+    def _normalize_artist_payload(artist: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        artist_id = artist.get('id')
+        if not artist_id:
+            return None
+        images = artist.get('images') or []
+        image_url = None
+        if images:
+            first_image = images[0]
+            image_url = first_image.get('url') if isinstance(first_image, dict) else None
+        followers = artist.get('followers') or {}
+        return {
+            'id': artist_id,
+            'name': artist.get('name'),
+            'genres': artist.get('genres', []),
+            'followers': followers.get('total'),
+            'popularity': artist.get('popularity'),
+            'image': image_url,
+            'external_urls': (artist.get('external_urls') or {}).get('spotify'),
+        }
+
+    def fetch_artist_details(self, artist_id: str) -> Optional[Dict[str, Any]]:
+        cache_entry = self._artist_cache.get(artist_id, MISSING)
+        if cache_entry is not MISSING:
+            return cache_entry
+        if not self.sp:
+            logger.error('Spotipy client not initialized. Cannot fetch artist details.')
+            return None
+        try:
+            artist_data = self.sp.artist(artist_id)
+            if not artist_data:
+                return None
+            normalized = self._normalize_artist_payload(artist_data)
+            if normalized:
+                self._artist_cache.set(artist_id, normalized)
+            return normalized
+        except Exception as exc:
+            logger.error('Error fetching artist details for %s: %s', artist_id, exc, exc_info=True)
+            return None
+
+    def fetch_artist_discography(self, artist_id: str, market: str = 'US') -> List[Dict[str, Any]]:
+        cache_key = (artist_id, market)
+        cached = self._artist_discography_cache.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached
+        if not self.sp:
+            logger.error('Spotipy client not initialized. Cannot fetch artist discography.')
+            return []
+        discography: List[Dict[str, Any]] = []
+        seen_titles: Set[str] = set()
+        try:
+            albums_results = self.sp.artist_albums(artist_id, album_type='album,single', country=market, limit=50)
+            if not albums_results:
+                self._artist_discography_cache.set(cache_key, discography)
+                return discography
+
+            def _ingest(items: Sequence[Dict[str, Any]]) -> None:
+                for album_data in items:
+                    name = album_data.get('name')
+                    if not name:
+                        continue
+                    album_name_lower = name.lower()
+                    if album_name_lower in seen_titles:
+                        continue
+                    artists = [a.get('name') for a in album_data.get('artists', []) if a.get('name')]
+                    images = album_data.get('images') or []
+                    image_url = images[0].get('url') if images else None
+                    discography.append({
+                        'id': album_data.get('id'),
+                        'name': name,
+                        'album_type': album_data.get('album_type'),
+                        'release_date': album_data.get('release_date'),
+                        'total_tracks': album_data.get('total_tracks'),
+                        'image_url': image_url,
+                        'spotify_url': (album_data.get('external_urls') or {}).get('spotify'),
+                        'artist': artists[0] if artists else 'Various Artists',
+                        'artists': artists,
+                    })
+                    seen_titles.add(album_name_lower)
+
+            _ingest(albums_results.get('items', []))
+            while albums_results.get('next'):
+                albums_results = self.sp.next(albums_results)
+                _ingest(albums_results.get('items', []))
+        except Exception as exc:
+            logger.error('Error fetching artist discography for %s: %s', artist_id, exc, exc_info=True)
+            return []
+        self._artist_discography_cache.set(cache_key, discography)
+        return discography
+
+
+
+    def fetch_popular_artists(self, limit: Optional[int] = None, market: str = 'US') -> List[Dict[str, Any]]:
+        if not self.sp:
+            logger.error('Spotipy client not initialized. Cannot fetch popular artists.')
+            return []
+        resolved_limit = limit or self._popular_artist_limit
+        cache_key = (resolved_limit, market)
+        cached = self._popular_artists_cache.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached
+
+        playlist_ids = [pid for pid in self._popular_artist_playlist_ids if pid]
+        artist_payloads: List[Dict[str, Any]] = []
+
+        if playlist_ids:
+            target_unique = max(resolved_limit * 2, resolved_limit)
+            collected: List[str] = []
+            seen_ids: Set[str] = set()
+
+            for playlist_id in playlist_ids:
+                if len(collected) >= target_unique:
+                    break
+
+                playlist_uri = playlist_id
+                if not playlist_uri.startswith(('spotify:playlist:', 'https://', 'http://')):
+                    playlist_uri = f'spotify:playlist:{playlist_id}'
+
+                try:
+                    playlist_items = self.sp.playlist_items(playlist_uri, limit=100, market=market)
+                except Exception as exc:
+                    logger.warning('Failed to load playlist %s for popular artist discovery: %s', playlist_id, exc)
+                    continue
+
+                while playlist_items:
+                    items = playlist_items.get('items', [])
+                    for entry in items:
+                        track = entry.get('track')
+                        if not track:
+                            continue
+                        for artist in track.get('artists', []):
+                            artist_id = artist.get('id')
+                            if not artist_id or artist_id in seen_ids:
+                                continue
+                            seen_ids.add(artist_id)
+                            collected.append(artist_id)
+                            if len(collected) >= target_unique:
+                                break
+                        if len(collected) >= target_unique:
+                            break
+                    if len(collected) >= target_unique or not playlist_items.get('next'):
+                        break
+                    try:
+                        playlist_items = self.sp.next(playlist_items)
+                    except Exception as exc:
+                        logger.warning('Pagination failed for playlist %s: %s', playlist_id, exc)
+                        break
+
+            ids_to_fetch: List[str] = []
+            for artist_id in collected:
+                cached_artist = self._artist_cache.get(artist_id, MISSING)
+                if cached_artist is not MISSING:
+                    if cached_artist:
+                        artist_payloads.append(cached_artist)
+                else:
+                    ids_to_fetch.append(artist_id)
+
+            for chunk in self._chunked_iterable(ids_to_fetch, 50):
+                try:
+                    resp = self.sp.artists(list(chunk))
+                except Exception as exc:
+                    logger.warning('Batch artist lookup failed for %s: %s', chunk, exc)
+                    continue
+                for artist in resp.get('artists', []):
+                    normalized = self._normalize_artist_payload(artist)
+                    if not normalized:
+                        continue
+                    self._artist_cache.set(normalized['id'], normalized)
+                    artist_payloads.append(normalized)
+        else:
+            logger.warning('No playlist sources configured for popular artists.')
+
+        if not artist_payloads:
+            fallback_artists: List[Dict[str, Any]] = []
+            seen_fallback: Set[str] = set()
+            fallback_genres = ['pop', 'rock', 'hip-hop', 'latin', 'r&b']
+            for genre in fallback_genres:
+                try:
+                    search = self.sp.search(q=f'genre:"{genre}"', type='artist', market=market, limit=resolved_limit)
+                except Exception as exc:
+                    logger.warning('Fallback genre search failed for %s: %s', genre, exc)
+                    continue
+                for artist in search.get('artists', {}).get('items', []):
+                    normalized = self._normalize_artist_payload(artist)
+                    if not normalized:
+                        continue
+                    identifier = normalized['id']
+                    if identifier in seen_fallback:
+                        continue
+                    seen_fallback.add(identifier)
+                    fallback_artists.append(normalized)
+                    if len(fallback_artists) >= resolved_limit:
+                        break
+                if len(fallback_artists) >= resolved_limit:
+                    break
+            artist_payloads = fallback_artists
+
+        unique_by_id: Dict[str, Dict[str, Any]] = {}
+        for artist in artist_payloads:
+            if not artist:
+                continue
+            unique_by_id[artist['id']] = artist
+
+        final_list = list(unique_by_id.values())
+        final_list.sort(key=lambda data: ((data.get('popularity') or 0), (data.get('followers') or 0)), reverse=True)
+        result = final_list[:resolved_limit]
+        self._popular_artists_cache.set(cache_key, result)
+        return result
+
 
     def download_spotify_content(self, spotify_link):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""
@@ -360,3 +586,5 @@ class SpotifyContentDownloader:
             "tracks": simplified_tracks_info_for_return,
             "metadata_file_path": metadata_json_path
         }
+
+

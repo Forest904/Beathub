@@ -2,9 +2,9 @@
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import logging
-import os
 
 from config import Config
+from .utils.cache import TTLCache, MISSING
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,8 @@ class MetadataService:
                     self.sp = None
             else:
                 logger.warning("Spotify client ID and secret not provided in Config or args. MetadataService will be limited.")
+
+        self._cache = TTLCache(maxsize=Config.METADATA_CACHE_MAXSIZE, ttl=Config.METADATA_CACHE_TTL_SECONDS)
 
     def _get_item_type(self, spotify_link):
         """Determines the type of Spotify item from its link."""
@@ -60,13 +62,19 @@ class MetadataService:
 
     def get_album_by_id(self, album_id):
         """ Fetches detailed metadata for a specific Spotify album by its ID. """
+        cache_key = ('album_metadata', album_id)
+        cached = self._cache.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached
+
         if not self.sp:
             logger.error("Spotipy client not initialized. Cannot fetch album by ID.")
             return None
         try:
             album_info = self.sp.album(album_id)
+            album_data = None
             if album_info:
-                return {
+                album_data = {
                     'spotify_id': album_info['id'],
                     'title': album_info['name'],
                     'artist': album_info['artists'][0]['name'] if album_info.get('artists') else 'Unknown Artist',
@@ -76,13 +84,19 @@ class MetadataService:
                     'release_date': album_info.get('release_date'),
                     'total_tracks': album_info.get('total_tracks')
                 }
-            return None
+            self._cache.set(cache_key, album_data)
+            return album_data
         except Exception as e:
             logger.exception(f"Error fetching Spotify album details for ID {album_id}: {e}")
             return None
 
     def get_metadata_from_link(self, spotify_link):
         """ Fetches metadata for a given Spotify link (track, album, or playlist). """
+        cache_key = ('metadata_from_link', spotify_link)
+        cached = self._cache.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached
+
         if not self.sp:
             logger.error("Spotipy client not initialized. Cannot fetch metadata.")
             return None
@@ -94,15 +108,25 @@ class MetadataService:
                 if not album_id:
                     logger.warning(f"Could not parse album ID from {spotify_link}")
                     return None
-                return self.get_album_by_id(album_id) # Reuse the new method
+                result = self.get_album_by_id(album_id)
+                self._cache.set(cache_key, result)
+                return result
             elif item_type == "track":
                 track_id = self._extract_id_from_url(spotify_link)
                 if not track_id:
                     logger.warning(f"Could not parse track ID from {spotify_link}")
                     return None
-                track_info = self.sp.track(track_id)
-                album_info = track_info.get('album', {})
-                return {
+                raw_track_key = ('track_metadata_raw', track_id)
+                track_info = self._cache.get(raw_track_key, MISSING)
+                if track_info is MISSING:
+                    track_info = self.sp.track(track_id)
+                    if track_info:
+                        self._cache.set(raw_track_key, track_info)
+                    else:
+                        logger.warning(f"No track metadata returned for {track_id}")
+                        return None
+                album_info = track_info.get('album', {}) if track_info else {}
+                result = {
                     'spotify_id': track_info['id'],
                     'title': track_info['name'],
                     'artist': track_info.get('artists', [{}])[0].get('name', 'Unknown Artist') if track_info.get('artists') else 'Unknown Artist',
@@ -110,13 +134,23 @@ class MetadataService:
                     'spotify_url': track_info.get('external_urls', {}).get('spotify'),
                     'item_type': 'track',
                 }
+                self._cache.set(cache_key, result)
+                return result
             elif item_type == "playlist":
                 playlist_id = self._extract_id_from_url(spotify_link)
                 if not playlist_id:
                     logger.warning(f"Could not parse playlist ID from {spotify_link}")
                     return None
-                playlist_info = self.sp.playlist(playlist_id)
-                return {
+                raw_playlist_key = ('playlist_metadata_raw', playlist_id)
+                playlist_info = self._cache.get(raw_playlist_key, MISSING)
+                if playlist_info is MISSING:
+                    playlist_info = self.sp.playlist(playlist_id)
+                    if playlist_info:
+                        self._cache.set(raw_playlist_key, playlist_info)
+                    else:
+                        logger.warning(f"No playlist metadata returned for {playlist_id}")
+                        return None
+                result = {
                     'spotify_id': playlist_info['id'],
                     'title': playlist_info['name'],
                     'artist': playlist_info.get('owner', {}).get('display_name', 'Unknown Owner'),
@@ -124,6 +158,8 @@ class MetadataService:
                     'spotify_url': playlist_info.get('external_urls', {}).get('spotify'),
                     'item_type': 'playlist',
                 }
+                self._cache.set(cache_key, result)
+                return result
             else:
                 logger.warning(f"Unsupported Spotify link type: {spotify_link}")
                 return None
@@ -133,6 +169,11 @@ class MetadataService:
 
     def get_tracks_details(self, spotify_id, item_type, image_url_from_metadata):
         """ Fetches detailed track information for albums, tracks, or playlists. """
+        cache_key = ('track_details', item_type, spotify_id, image_url_from_metadata)
+        cached = self._cache.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached
+
         if not self.sp:
             logger.error("Spotipy client not initialized. Cannot fetch detailed track list.")
             return []
@@ -200,4 +241,10 @@ class MetadataService:
                         })
         except Exception as e:
             logger.exception(f"Error fetching detailed track list for {item_type} ID {spotify_id}: {e}")
+        else:
+            self._cache.set(cache_key, detailed_tracks_list)
         return detailed_tracks_list
+
+
+
+

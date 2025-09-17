@@ -97,8 +97,8 @@ const ArtistDetailsPage = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="container mx-auto px-4 py-8">
-        <section className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-start gap-6">
-          <div className="flex-shrink-0">
+        <section className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-center md:justify-center gap-6 max-w-5xl mx-auto">
+          <div className="flex-shrink-0 md:mr-10">
             <img
               src={artistDetails.image || FALLBACK_IMAGE}
               alt={artistDetails.name}
