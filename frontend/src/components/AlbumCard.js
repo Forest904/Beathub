@@ -1,107 +1,155 @@
-// src/components/AlbumCard.js
-
-import React from 'react';
+import React, { useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 
-function AlbumCard({ album, onDeleteAlbum, onAlbumClick, pageType, isSelected }) { // Added isSelected prop
-    const navigate = useNavigate();
+export const AlbumCardVariant = Object.freeze({
+  DISCOVERY: 'discography',
+  HISTORY: 'history',
+  BURN_SELECTION: 'burn-selection',
+});
 
-    // Existing functions (keep as is, they will be conditionally rendered)
-    const handleCopyLink = () => {
-        navigator.clipboard.writeText(album.spotify_url)
-            .then(() => alert('Spotify link copied to clipboard!'))
-            .catch(err => {
-                console.error('Failed to copy text: ', err);
-                alert('Failed to copy link. Please copy manually: ' + album.spotify_url);
-            });
-    };
+const FALLBACK_IMAGE = 'https://via.placeholder.com/200x200.png?text=No+Cover';
 
-    const handleDirectDownload = () => {
-        if (album.spotify_url) {
-            navigate('/download', { state: { spotifyLinkToDownload: album.spotify_url } });
-        } else {
-            alert('Spotify URL not available for direct download.');
-        }
-    };
+const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected }) => {
+  const navigate = useNavigate();
 
-    const handleClick = (e) => {
-        // Prevent click from propagating to the card if a button was clicked
-        if (e.target.tagName === 'BUTTON') {
-            e.stopPropagation();
-            return;
-        }
+  const handleCopyLink = useCallback(
+    (event) => {
+      event.stopPropagation();
+      if (!album.spotify_url) {
+        return;
+      }
 
-        // Conditional navigation/action based on pageType ---
-        if (pageType === 'discography') {
-            // Original behavior for artist discography page
-            if (onAlbumClick) {
-                onAlbumClick(album.id);
-            }
-        } else if (pageType === 'history') {
-            // On history page: if a selection handler is provided, use it to select
-            // and show metadata; otherwise, fall back to opening the Spotify link.
-            if (onAlbumClick) {
-                onAlbumClick(album);
-            } else if (album.spotify_url) {
-                window.open(album.spotify_url, '_blank', 'noopener,noreferrer');
-            } else {
-                // no-op when link not available
-            }
-        } else if (pageType === 'burn-selection') {
-            // Behavior for the CD Burner Page
-            if (onAlbumClick) {
-                onAlbumClick(album); // Pass the whole album object for selection
-            }
-        }
-    };
+      navigator.clipboard
+        .writeText(album.spotify_url)
+        .then(() => window.alert('Spotify link copied to clipboard!'))
+        .catch((error) => {
+          console.error('Failed to copy text: ', error);
+          window.alert(`Failed to copy link. Please copy manually: ${album.spotify_url}`);
+        });
+    },
+    [album.spotify_url],
+  );
 
-    return (
-        <div
-            className={`album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105 cursor-pointer
-                ${isSelected ? 'border-4 border-blue-500' : 'border-2 border-transparent'}
-            `}
-            onClick={handleClick}
-        >
-            <img
-                src={album.image_url || 'https://via.placeholder.com/200x200.png?text=No+Cover'}
-                alt={`${album.name} Album Cover`}
-                className="w-full h-auto object-cover"
-            />
-            <div className="p-4 text-center">
-                <h3 className="text-lg font-semibold text-white mb-1 truncate">{album.name}</h3> {/* Displays album/playlist/track name  */}
-                <p className="text-sm text-gray-400 mb-3 truncate">{album.title}</p>
-                <div className="flex flex-col space-y-2">
+  const handleDirectDownload = useCallback(
+    (event) => {
+      event.stopPropagation();
+      if (!album.spotify_url) {
+        window.alert('Spotify URL not available for direct download.');
+        return;
+      }
 
-                    {pageType !== 'burn-selection' && album.spotify_url && (
-                        <button
-                            onClick={handleCopyLink}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
-                        >
-                            Copy Spotify Link
-                        </button>
-                    )}
+      navigate('/download', { state: { spotifyLinkToDownload: album.spotify_url } });
+    },
+    [album.spotify_url, navigate],
+  );
 
-                    {pageType === 'discography' && album.spotify_url && (
-                        <button
-                            onClick={handleDirectDownload}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
-                        >
-                            Direct Download
-                        </button>
-                    )}
+  const handleDelete = useCallback(
+    (event) => {
+      event.stopPropagation();
+      if (typeof onDelete === 'function') {
+        onDelete(album.id);
+      }
+    },
+    [album.id, onDelete],
+  );
 
-                    {pageType === 'history' && onDeleteAlbum && (
-                        <button
-                            onClick={() => onDeleteAlbum(album.id)}
-                            className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
-                        >
-                            Delete
-                        </button>
-                    )}
-                </div>
-            </div>
+  const handleCardClick = useCallback(() => {
+    if (variant === AlbumCardVariant.DISCOVERY) {
+      if (typeof onSelect === 'function') {
+        onSelect(album);
+      } else {
+        navigate(`/album/${album.id}`);
+      }
+      return;
+    }
+
+    if (variant === AlbumCardVariant.HISTORY) {
+      if (typeof onSelect === 'function') {
+        onSelect(album);
+      } else if (album.spotify_url) {
+        window.open(album.spotify_url, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
+    if (variant === AlbumCardVariant.BURN_SELECTION) {
+      if (typeof onSelect === 'function') {
+        onSelect(album);
+      }
+    }
+  }, [album, navigate, onSelect, variant]);
+
+  return (
+    <div
+      onClick={handleCardClick}
+      className={`album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105 cursor-pointer ${
+        isSelected ? 'border-4 border-blue-500' : 'border-2 border-transparent'
+      }`}
+    >
+      <img
+        src={album.image_url || FALLBACK_IMAGE}
+        alt={`${album.name} Album Cover`}
+        className="w-full h-auto object-cover"
+      />
+      <div className="p-4 text-center">
+        <h3 className="text-lg font-semibold text-white mb-1 truncate">{album.name}</h3>
+        <p className="text-sm text-gray-400 mb-3 truncate">{album.title}</p>
+        <div className="flex flex-col space-y-2">
+          {variant !== AlbumCardVariant.BURN_SELECTION && album.spotify_url && (
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
+            >
+              Copy Spotify Link
+            </button>
+          )}
+
+          {variant === AlbumCardVariant.DISCOVERY && album.spotify_url && (
+            <button
+              type="button"
+              onClick={handleDirectDownload}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
+            >
+              Direct Download
+            </button>
+          )}
+
+          {variant === AlbumCardVariant.HISTORY && typeof onDelete === 'function' && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
+            >
+              Delete
+            </button>
+          )}
         </div>
-    );
-}
+      </div>
+    </div>
+  );
+};
+
+AlbumCard.propTypes = {
+  album: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    name: PropTypes.string.isRequired,
+    title: PropTypes.string,
+    image_url: PropTypes.string,
+    spotify_url: PropTypes.string,
+  }).isRequired,
+  onDelete: PropTypes.func,
+  onSelect: PropTypes.func,
+  variant: PropTypes.oneOf(Object.values(AlbumCardVariant)),
+  isSelected: PropTypes.bool,
+};
+
+AlbumCard.defaultProps = {
+  onDelete: undefined,
+  onSelect: undefined,
+  variant: AlbumCardVariant.DISCOVERY,
+  isSelected: false,
+};
 
 export default AlbumCard;

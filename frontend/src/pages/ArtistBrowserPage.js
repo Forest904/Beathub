@@ -1,10 +1,10 @@
-// src/pages/ArtistBrowserPage.js
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import axios from 'axios';
 import SearchBar from '../components/SearchBar';
 import ArtistGallery from '../components/ArtistGallery';
 import useDebounce from '../hooks/useDebounce';
 
-function ArtistBrowserPage() {
+const ArtistBrowserPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [artists, setArtists] = useState([]);
   const [famousArtists, setFamousArtists] = useState([]);
@@ -13,54 +13,47 @@ function ArtistBrowserPage() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
-  useEffect(() => {
-    const fetchFamousArtists = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch('/api/famous_artists');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setFamousArtists(data.artists);
-      } catch (e) {
-        setError("Failed to load famous artists. Please try again later.");
-        console.error("Error fetching famous artists:", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchFamousArtists();
+  const loadFamousArtists = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await axios.get('/api/famous_artists');
+      setFamousArtists(response.data.artists);
+    } catch (fetchError) {
+      console.error('Error fetching famous artists', fetchError);
+      setError('Failed to load famous artists. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    const searchSpotifyArtists = async () => {
+    loadFamousArtists();
+  }, [loadFamousArtists]);
+
+  useEffect(() => {
+    const searchArtists = async () => {
       if (!debouncedSearchTerm || debouncedSearchTerm.length < 2) {
         setArtists([]);
         return;
       }
-
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/search_artists?q=${encodeURIComponent(debouncedSearchTerm)}`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setArtists(data.artists);
-      } catch (e) {
+        const response = await axios.get('/api/search_artists', {
+          params: { q: debouncedSearchTerm },
+        });
+        setArtists(response.data.artists);
+      } catch (searchError) {
+        console.error('Error searching artists', searchError);
         setError(`Failed to search for "${debouncedSearchTerm}". Please try again.`);
-        console.error("Error searching artists:", e);
         setArtists([]);
       } finally {
         setLoading(false);
       }
     };
 
-    searchSpotifyArtists();
+    searchArtists();
   }, [debouncedSearchTerm]);
 
   const handleSearchChange = (event) => {
@@ -72,19 +65,11 @@ function ArtistBrowserPage() {
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold text-center text-white mb-10">Discover Artists</h1>
 
-        <SearchBar
-          searchTerm={searchTerm}
-          onSearchChange={handleSearchChange}
-          placeholder="Search for your favorite artists..."
-        />
+        <SearchBar searchTerm={searchTerm} onSearchChange={handleSearchChange} placeholder="Search for your favorite artists..." />
 
-        {loading && (
-          <p className="text-center text-blue-400 text-xl mt-8">Loading artists...</p>
-        )}
+        {loading && <p className="text-center text-blue-400 text-xl mt-8">Loading artists...</p>}
 
-        {error && (
-          <p className="text-center text-red-400 text-xl mt-8">{error}</p>
-        )}
+        {error && <p className="text-center text-red-400 text-xl mt-8">{error}</p>}
 
         {!loading && !error && (
           <>
@@ -114,6 +99,6 @@ function ArtistBrowserPage() {
       </div>
     </div>
   );
-}
+};
 
 export default ArtistBrowserPage;
