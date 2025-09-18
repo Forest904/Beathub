@@ -73,16 +73,14 @@ const CDBurnerPage = () => {
       if (response.data?.session_id) {
         setActiveSessionId(response.data.session_id);
       }
-
-      if (response.data?.last_error) {
+      // Subtle UX: avoid periodic popups. Only show errors while an operation is active.
+      if (response.data?.last_error && (burnerStatus.is_burning || isBurningInitiating)) {
         pushMessage({ type: 'error', text: `Burner error: ${response.data.last_error}` });
-      } else if (response.data?.current_status === 'Burner Ready') {
-        pushMessage({ type: 'info', text: 'CD burner is ready.' });
       }
     } catch (error) {
       console.error('Error polling burner status', error);
     }
-  }, [apiBaseUrl, pushMessage]);
+  }, [apiBaseUrl, pushMessage, burnerStatus.is_burning, isBurningInitiating]);
 
   const fetchDevices = useCallback(
     async (options = { showSpinner: false }) => {
@@ -122,14 +120,31 @@ const CDBurnerPage = () => {
     };
   }, [fetchDownloadedItems, pollBurnerStatus, fetchDevices]);
 
+  // Prevent accidental navigation/refresh while burning or initiating
+  useEffect(() => {
+    const shouldBlock = burnerStatus.is_burning || isBurningInitiating;
+    const beforeUnload = (e) => {
+      if (!shouldBlock) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    if (shouldBlock) {
+      window.addEventListener('beforeunload', beforeUnload);
+    }
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnload);
+    };
+  }, [burnerStatus.is_burning, isBurningInitiating]);
+
   const selectedItem = useMemo(
     () => downloadedItems.find((item) => item.id === selectedItemId) || null,
     [downloadedItems, selectedItemId],
   );
 
   const handleSelectItem = useCallback((item) => {
+    if (burnerStatus.is_burning || isBurningInitiating) return;
     setSelectedItemId((current) => (current === item.id ? null : item.id));
-  }, []);
+  }, [burnerStatus.is_burning, isBurningInitiating]);
 
   const handleBurnCD = useCallback(async () => {
     if (!selectedItem) {
@@ -159,7 +174,7 @@ const CDBurnerPage = () => {
     setShowBurnProgress(true);
     try {
       await axios.post(`${apiBaseUrl}/api/cd-burner/burn`, { download_item_id: selectedItem.id });
-      pushMessage({ type: 'success', text: `Started burning ${selectedItem.name}.` });
+      // Subtle UX: no popup success; progress panel and banner will indicate activity
       pollBurnerStatus();
     } catch (error) {
       console.error('Failed to start burn', error);
@@ -175,7 +190,6 @@ const CDBurnerPage = () => {
     }
     try {
       await axios.post(`${apiBaseUrl}/api/cd-burner/cancel`, { session_id: activeSessionId });
-      pushMessage({ type: 'info', text: 'Cancel requested.' });
       pollBurnerStatus();
     } catch (error) {
       console.error('Failed to cancel burn', error);
@@ -290,7 +304,12 @@ const CDBurnerPage = () => {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {devices.map((device) => (
-                    <DeviceCard key={device.id} device={device} onSelect={handleSelectDevice} />
+                    <DeviceCard
+                      key={device.id}
+                      device={device}
+                      onSelect={handleSelectDevice}
+                      disabled={burnerStatus.is_burning || isBurningInitiating}
+                    />
                   ))}
                 </div>
               )}
@@ -314,6 +333,7 @@ const CDBurnerPage = () => {
                 onSelect={handleSelectItem}
                 variant={AlbumCardVariant.BURN_SELECTION}
                 selectedAlbumId={selectedItemId}
+                disabled={burnerStatus.is_burning || isBurningInitiating}
               />
             </>
           )}
@@ -357,6 +377,13 @@ const CDBurnerPage = () => {
           sessionId={activeSessionId}
           onClose={() => setShowBurnProgress(false)}
         />
+        {(burnerStatus.is_burning || isBurningInitiating) && (
+          <div className="fixed inset-x-0 bottom-0 z-40">
+            <div className="mx-auto mb-4 w-[96%] max-w-3xl rounded-lg bg-slate-800/95 p-3 text-center text-sm text-slate-200 ring-1 ring-slate-600">
+              Stay on this page while burning. Navigation is temporarily disabled until completion.
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

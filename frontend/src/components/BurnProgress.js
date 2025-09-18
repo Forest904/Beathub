@@ -83,6 +83,12 @@ const BurnProgress = ({ visible, baseUrl, sessionId, onClose }) => {
             trackTotal: null,
             elapsedSec: null,
           });
+          // Auto-hide after a short delay for a subtle finish
+          setTimeout(() => {
+            if (typeof onClose === 'function') {
+              onClose();
+            }
+          }, 1500);
         }
       } catch (error) {
         console.warn('Failed to parse burn progress event', error);

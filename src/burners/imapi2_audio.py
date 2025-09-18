@@ -1,4 +1,7 @@
 import os
+import tempfile
+import wave
+import contextlib
 import threading
 import logging
 import time
@@ -8,7 +11,7 @@ from typing import List, Dict, Optional, Tuple
 try:
     import comtypes
     import comtypes.client as cc
-    from ctypes import wintypes, POINTER, byref, c_void_p, windll
+    from ctypes import wintypes, POINTER, byref, c_void_p, windll, memmove, c_size_t
 except Exception as e:  # pragma: no cover - runtime import
     comtypes = None
     cc = None
@@ -43,10 +46,29 @@ def _ensure_imapi_available():
 
 
 def _create_stream_on_file(path: str):
-    """Create an IStream on a file for IMAPI using SHCreateStreamOnFileEx."""
+    """Create an IStream on a file for IMAPI using SHCreateStreamOnFileEx.
+
+    Some comtypes builds do not expose ``comtypes.IStream`` at the top level.
+    To be robust, import fallbacks or define a minimal IStream interface so we
+    can type-cast the returned pointer for IMAPI consumption.
+    """
     # Late import to avoid import cost unless needed
-    import comtypes
-    IStream = comtypes.IStream  # provided by comtypes
+    import comtypes  # type: ignore
+    # Resolve an IStream interface type
+    IStream = None  # type: ignore[assignment]
+    try:  # Preferred
+        IStream = getattr(comtypes, 'IStream')
+    except Exception:
+        try:  # Fallback location in some versions
+            from comtypes.automation import IStream as _AutoIStream  # type: ignore
+            IStream = _AutoIStream  # type: ignore[assignment]
+        except Exception:
+            # Last resort: declare a minimal interface with the correct IID.
+            from comtypes import IUnknown, GUID  # type: ignore
+
+            class IStream(IUnknown):  # type: ignore[misc, valid-type]
+                _iid_ = GUID('{0000000C-0000-0000-C000-000000000046}')
+                _methods_ = []  # We don't invoke methods directly on the stream here
 
     # SHCreateStreamOnFileEx signature
     # HRESULT SHCreateStreamOnFileEx(
@@ -60,7 +82,12 @@ def _create_stream_on_file(path: str):
     SHC = windll.shlwapi.SHCreateStreamOnFileEx
     SHC.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                     wintypes.BOOL, c_void_p, POINTER(c_void_p)]
-    SHC.restype = wintypes.HRESULT
+    # Some Python builds do not expose wintypes.HRESULT; use ctypes.HRESULT or c_long fallback.
+    try:
+        from ctypes import HRESULT as _HRESULT
+    except Exception:  # pragma: no cover - robustness
+        from ctypes import c_long as _HRESULT
+    SHC.restype = _HRESULT
 
     # STGM flags (subset)
     STGM_READ = 0x00000000
@@ -72,6 +99,82 @@ def _create_stream_on_file(path: str):
     if hr < 0:
         raise OSError(f"SHCreateStreamOnFileEx failed, HRESULT=0x{hr & 0xFFFFFFFF:08X}")
     # Cast to IStream*
+    return comtypes.cast(ppstm, POINTER(IStream))
+
+
+def _create_stream_on_memory(data: bytes):
+    """Create an IStream over the given bytes using CreateStreamOnHGlobal.
+
+    This helps when a few drivers are picky about file-backed streams; a
+    memory-backed IStream is broadly compatible.
+    """
+    import comtypes  # type: ignore
+    # Resolve IStream type (reuse logic in _create_stream_on_file)
+    try:
+        IStream = getattr(comtypes, 'IStream')  # type: ignore[attr-defined]
+    except Exception:
+        try:
+            from comtypes.automation import IStream as _AutoIStream  # type: ignore
+            IStream = _AutoIStream
+        except Exception:
+            from comtypes import IUnknown, GUID  # type: ignore
+
+            class IStream(IUnknown):  # type: ignore[misc, valid-type]
+                _iid_ = GUID('{0000000C-0000-0000-C000-000000000046}')
+                _methods_ = []
+
+    GMEM_MOVEABLE = 0x0002
+    kernel32 = windll.kernel32
+    ole32 = windll.ole32
+
+    # Ensure correct prototypes on 64-bit Python to avoid pointer truncation
+    try:
+        kernel32.GlobalAlloc.argtypes = [wintypes.UINT, c_size_t]
+        kernel32.GlobalAlloc.restype = c_void_p
+        kernel32.GlobalLock.argtypes = [c_void_p]
+        kernel32.GlobalLock.restype = c_void_p
+        kernel32.GlobalUnlock.argtypes = [c_void_p]
+        kernel32.GlobalUnlock.restype = wintypes.BOOL
+        kernel32.GlobalFree.argtypes = [c_void_p]
+        kernel32.GlobalFree.restype = c_void_p
+    except Exception:
+        pass
+
+    # Allocate moveable global memory and copy data
+    hglobal = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+    if not hglobal:
+        raise OSError('GlobalAlloc failed')
+    ptr = kernel32.GlobalLock(hglobal)
+    if not ptr:
+        kernel32.GlobalFree(hglobal)
+        raise OSError('GlobalLock failed')
+    try:
+        memmove(ptr, data, len(data))
+    finally:
+        kernel32.GlobalUnlock(hglobal)
+
+    # Create the IStream; delete HGLOBAL on release
+    ppstm = c_void_p()
+    try:
+        try:
+            from ctypes import HRESULT as _HRESULT
+        except Exception:
+            from ctypes import c_long as _HRESULT
+        ole32.CreateStreamOnHGlobal.argtypes = [c_void_p, wintypes.BOOL, POINTER(c_void_p)]
+        ole32.CreateStreamOnHGlobal.restype = _HRESULT
+        hr = ole32.CreateStreamOnHGlobal(hglobal, True, byref(ppstm))
+        if hr < 0:
+            # If creation failed, free memory ourselves
+            kernel32.GlobalFree(hglobal)
+            raise OSError(f"CreateStreamOnHGlobal failed, HRESULT=0x{hr & 0xFFFFFFFF:08X}")
+    except Exception:
+        # In case of any exception, ensure memory is freed
+        try:
+            kernel32.GlobalFree(hglobal)
+        except Exception:
+            pass
+        raise
+
     return comtypes.cast(ppstm, POINTER(IStream))
 
 
@@ -236,8 +339,30 @@ class IMAPI2AudioBurner:
                 audio_present = False
                 audio_writable = False
         except Exception:
-            # If AudioCD objects fail to create, fall through to data probing
-            pass
+            # If AudioCD objects fail to create, attempt Track‑At‑Once as a
+            # secondary probe for audio-capable blank media; otherwise fall through
+            # to data probing below.
+            try:
+                fmt_tao = cc.CreateObject('IMAPI2.MsftDiscFormat2TrackAtOnce')
+                try:
+                    setattr(fmt_tao, 'ClientName', self._client_name)
+                except Exception:
+                    pass
+                try:
+                    setattr(fmt_tao, 'Recorder', recorder)
+                except Exception:
+                    try:
+                        fmt_tao.SetActiveDiscRecorder(recorder)
+                    except Exception:
+                        pass
+                try:
+                    audio_writable = bool(fmt_tao.IsCurrentMediaSupported(recorder))
+                    audio_present = audio_writable
+                except Exception:
+                    audio_present = False
+                    audio_writable = False
+            except Exception:
+                pass
 
         # Fallback probe: Data format — helps detect presence and blank CD types
         any_present = bool(audio_present)
@@ -362,15 +487,29 @@ class IMAPI2AudioBurner:
         if not wav_paths:
             raise ValueError("No WAV tracks provided for burning")
 
+        # Prefer the AudioCD formatter; if missing on the host, gracefully
+        # fall back to Track-At-Once which can also burn Red Book audio.
+        using_tao = False
         try:
             fmt = cc.CreateObject('IMAPI2.MsftDiscFormat2AudioCD')
-        except OSError as e:
-            # When the Audio CD formatter COM class is unavailable (common on Windows N/KN
-            # without the Media Feature Pack), surface a clear error for the caller.
-            raise IMAPIUnavailableError(
-                "Windows Audio CD burning components are missing. Install 'Windows Media Player' / Media Feature Pack, "
-                "then restart the app."
-            ) from e
+        except OSError as e_audio:
+            try:
+                fmt = cc.CreateObject('IMAPI2.MsftDiscFormat2TrackAtOnce')
+                using_tao = True
+                # Let callers know via logs that we're using the fallback path
+                try:
+                    self._logger.warning(
+                        "AudioCD formatter unavailable; falling back to Track-At-Once (TAO)."
+                    )
+                except Exception:
+                    pass
+            except Exception as e_tao:
+                # When neither Audio CD nor TAO is available (e.g., stripped Windows image),
+                # surface a clear and actionable error.
+                raise IMAPIUnavailableError(
+                    "Windows Audio CD burning components are missing. Tried 'MsftDiscFormat2AudioCD' and TAO fallback. "
+                    "Enable 'Windows Media Player' in Optional Features or repair Windows media components, then restart the app."
+                ) from (e_tao or e_audio)
         # Assign recorder
         try:
             setattr(fmt, 'Recorder', recorder)
@@ -381,7 +520,7 @@ class IMAPI2AudioBurner:
         except Exception:
             pass
 
-        # Best-effort CD-TEXT
+        # Best-effort CD-TEXT (supported by both AudioCD and TAO on most systems)
         try:
             self._apply_cdtext(fmt, album=album_cdtext, tracks=per_track_cdtext)
         except Exception as e:
@@ -395,65 +534,147 @@ class IMAPI2AudioBurner:
         except Exception as e:
             self._logger.warning("IMAPI events not available: %s", e)
 
-        # Add tracks (staging phase 50..60)
-        stage_start = time.perf_counter()
-        for i, p in enumerate(wav_paths):
-            if cancel_flag.is_set():
-                raise RuntimeError("Burn canceled")
-            if not os.path.exists(p):
-                raise FileNotFoundError(p)
-            try:
-                t0 = time.perf_counter()
-                stream = _create_stream_on_file(p)
-                fmt.AddAudioTrack(stream)
-                # Update conversion -> preparation progress: 50% + small step
-                prep_prog = 50 + int((i + 1) / max(1, len(wav_paths)) * 10)
-                session.update_status(f"Staging tracks ({i+1}/{len(wav_paths)})", progress=prep_prog)
-                if publisher is not None:
-                    try:
-                        publisher.publish({
-                            'event': 'cd_burn_progress',
-                            'status': 'staging',
-                            'phase': 'staging',
-                            'progress': prep_prog,
-                            'message': f'Staging {i+1}/{len(wav_paths)}',
-                            'track_index': i + 1,
-                            'track_total': len(wav_paths),
-                            'elapsed_sec': round(time.perf_counter() - t0, 2),
-                            'session_id': session.id,
-                        })
-                    except Exception:
-                        pass
-            except Exception as e:
-                raise RuntimeError(f"Failed to stage track {i+1}: {e}")
+        # State kept for cleanup in outer finally
+        created_pcm_files: List[str] = []
 
-        # Start burn
-        session.update_status("Burning Disc...", progress=60)
+        # Wrap staging/burn in outer try/finally so TAO media is always released
         try:
-            total_stage = time.perf_counter() - stage_start
-            self._logger.info("Staged %d tracks in %.2fs", len(wav_paths), total_stage)
-        except Exception:
-            pass
-        try:
-            # Some builds expose Write() with no args; others require Write(variant)
-            write = getattr(fmt, 'Write')
+            # For Track-At-Once, media must be explicitly prepared before adding tracks
+            if using_tao:
+                try:
+                    prep = getattr(fmt, 'PrepareMedia', None)
+                    if callable(prep):
+                        prep()
+                except Exception as e:
+                    raise RuntimeError(f"TAO prepare media failed: {e}")
+                # Ensure media is finalized after writing tracks (best-effort)
+                try:
+                    try:
+                        setattr(fmt, 'DoNotFinalizeMedia', False)
+                    except Exception:
+                        put_finalize = getattr(fmt, 'put_DoNotFinalizeMedia', None)
+                        if callable(put_finalize):
+                            put_finalize(False)
+                except Exception:
+                    pass
+
+            # Helper: when using TAO, provide raw PCM (headerless) stream
+            def _ensure_tao_stream_file(wav_path: str) -> Tuple[str, bool]:
+                if not using_tao:
+                    return wav_path, False
+                # Convert WAV to raw PCM (s16le, 44.1kHz, stereo) expected by TAO
+                with contextlib.closing(wave.open(wav_path, 'rb')) as wf:
+                    n_channels = wf.getnchannels()
+                    sampwidth = wf.getsampwidth()
+                    framerate = wf.getframerate()
+                    if not (n_channels == 2 and sampwidth == 2 and framerate == 44100):
+                        raise RuntimeError(
+                            f"Invalid WAV format for TAO: {n_channels}ch, {sampwidth*8}bit, {framerate}Hz. "
+                            "Expected 2ch/16bit/44100Hz."
+                        )
+                    raw = wf.readframes(wf.getnframes())
+                # Defensive: ensure bytes and padding/alignment
+                if raw is None:
+                    raw = b""
+                # Ensure the total byte length is a multiple of audio frame (4 bytes) and sector size (2352)
+                if len(raw) % 4 != 0:
+                    pad = 4 - (len(raw) % 4)
+                    raw += b"\x00" * pad
+                # Sector alignment: IMAPI can pad, but some drivers are picky; pre-pad to 2352 boundary
+                SECTOR = 2352
+                rem = len(raw) % SECTOR
+                if rem != 0:
+                    raw += b"\x00" * (SECTOR - rem)
+                fd, pcm_path = tempfile.mkstemp(prefix='imapi_pcm_', suffix='.pcm')
+                os.close(fd)
+                with open(pcm_path, 'wb') as f:
+                    f.write(raw)
+                return pcm_path, True
+
+            # Add tracks (staging phase 50..60)
+            stage_start = time.perf_counter()
+            for i, p in enumerate(wav_paths):
+                if cancel_flag.is_set():
+                    raise RuntimeError("Burn canceled")
+                if not os.path.exists(p):
+                    raise FileNotFoundError(p)
+                try:
+                    t0 = time.perf_counter()
+                    stream_path, is_temp_pcm = _ensure_tao_stream_file(p)
+                    if is_temp_pcm:
+                        created_pcm_files.append(stream_path)
+                    # Prefer memory-backed stream for TAO to avoid any file stream quirks
+                    if using_tao:
+                        with open(stream_path, 'rb') as f:
+                            buf = f.read()
+                        stream = _create_stream_on_memory(buf)
+                    else:
+                        stream = _create_stream_on_file(stream_path)
+                    fmt.AddAudioTrack(stream)
+                    # Update conversion -> preparation progress: 50% + small step
+                    prep_prog = 50 + int((i + 1) / max(1, len(wav_paths)) * 10)
+                    session.update_status(f"Staging tracks ({i+1}/{len(wav_paths)})", progress=prep_prog)
+                    if publisher is not None:
+                        try:
+                            publisher.publish({
+                                'event': 'cd_burn_progress',
+                                'status': 'staging',
+                                'phase': 'staging',
+                                'progress': prep_prog,
+                                'message': f'Staging {i+1}/{len(wav_paths)}',
+                                'track_index': i + 1,
+                                'track_total': len(wav_paths),
+                                'elapsed_sec': round(time.perf_counter() - t0, 2),
+                                'session_id': session.id,
+                            })
+                        except Exception:
+                            pass
+                except Exception as e:
+                    raise RuntimeError(f"Failed to stage track {i+1}: {e}")
+
+            # Start burn
+            session.update_status("Burning Disc...", progress=60)
             try:
-                write(None)  # type: ignore[arg-type]
-            except TypeError:
-                write()
-        except Exception as e:
-            # If cancellation occurred, surface a friendly message
-            if cancel_flag.is_set():
-                raise RuntimeError("Burn canceled by user")
-            raise RuntimeError(f"IMAPI2 write failed: {e}")
+                total_stage = time.perf_counter() - stage_start
+                self._logger.info("Staged %d tracks in %.2fs", len(wav_paths), total_stage)
+            except Exception:
+                pass
+            if not using_tao:
+                try:
+                    # Some builds expose Write() with no args; others require Write(variant)
+                    write = getattr(fmt, 'Write')
+                    try:
+                        write(None)  # type: ignore[arg-type]
+                    except TypeError:
+                        write()
+                except Exception as e:
+                    # If cancellation occurred, surface a friendly message
+                    if cancel_flag.is_set():
+                        raise RuntimeError("Burn canceled by user")
+                    raise RuntimeError(f"IMAPI2 write failed: {e}")
+            session.update_status("Burning Completed", progress=100)
         finally:
+            # Always disconnect events
             try:
                 if conn is not None:
                     conn.disconnect()
             except Exception:
                 pass
-
-        session.update_status("Burning Completed", progress=100)
+            # Always release TAO media lock if used
+            if using_tao:
+                try:
+                    rel = getattr(fmt, 'ReleaseMedia', None)
+                    if callable(rel):
+                        rel()
+                except Exception:
+                    pass
+            # Cleanup temporary PCM files if TAO was used
+            for tmp in created_pcm_files:
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception:
+                    pass
 
 
 __all__ = [

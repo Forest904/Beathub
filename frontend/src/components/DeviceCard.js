@@ -20,12 +20,12 @@ StatusPill.defaultProps = {
 };
 
 
-const DeviceCard = ({ device, onSelect }) => {
+const DeviceCard = ({ device, onSelect, disabled }) => {
   const isSelected = Boolean(device?.selected);
   const isActive = Boolean(device?.active);
 
   const handleToggle = () => {
-    if (!onSelect || isActive) return;
+    if (!onSelect || isActive || disabled) return;
     if (isSelected) {
       onSelect(null);
     } else {
@@ -35,20 +35,20 @@ const DeviceCard = ({ device, onSelect }) => {
 
   return (
     <div
-      role={isActive ? undefined : 'button'}
-      tabIndex={isActive ? -1 : 0}
+      role={isActive || disabled ? undefined : 'button'}
+      tabIndex={isActive || disabled ? -1 : 0}
       onClick={handleToggle}
       onKeyDown={(event) => {
-        if (isActive) return;
+        if (isActive || disabled) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           handleToggle();
         }
       }}
       aria-pressed={isSelected}
-      aria-disabled={isActive}
+      aria-disabled={isActive || disabled}
       className={`bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 w-full max-w-sm ${
-        isActive ? 'cursor-not-allowed opacity-70' : 'hover:scale-105 cursor-pointer'
+        isActive || disabled ? 'cursor-not-allowed opacity-70' : 'hover:scale-105 cursor-pointer'
       } ${isSelected ? 'border-4 border-blue-500' : 'border-2 border-transparent'}`}
     >
       <div className="p-5">
@@ -75,10 +75,12 @@ DeviceCard.propTypes = {
     writable: PropTypes.bool,
   }).isRequired,
   onSelect: PropTypes.func,
+  disabled: PropTypes.bool,
 };
 
 DeviceCard.defaultProps = {
   onSelect: undefined,
+  disabled: false,
 };
 
 export default DeviceCard;

@@ -10,7 +10,7 @@ export const AlbumCardVariant = Object.freeze({
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/200x200.png?text=No+Cover';
 
-const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected }) => {
+const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled }) => {
   const navigate = useNavigate();
 
   const handleCopyLink = useCallback(
@@ -55,6 +55,7 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected }) => {
   );
 
   const handleCardClick = useCallback(() => {
+    if (disabled) return;
     if (variant === AlbumCardVariant.DISCOVERY) {
       if (typeof onSelect === 'function') {
         onSelect(album);
@@ -83,7 +84,9 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected }) => {
   return (
     <div
       onClick={handleCardClick}
-      className={`album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 hover:scale-105 cursor-pointer ${
+      className={`album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 ${
+        disabled ? 'cursor-not-allowed opacity-70' : 'hover:scale-105 cursor-pointer'
+      } ${
         isSelected ? 'border-4 border-blue-500' : 'border-2 border-transparent'
       }`}
     >
@@ -143,6 +146,7 @@ AlbumCard.propTypes = {
   onSelect: PropTypes.func,
   variant: PropTypes.oneOf(Object.values(AlbumCardVariant)),
   isSelected: PropTypes.bool,
+  disabled: PropTypes.bool,
 };
 
 AlbumCard.defaultProps = {
@@ -150,6 +154,7 @@ AlbumCard.defaultProps = {
   onSelect: undefined,
   variant: AlbumCardVariant.DISCOVERY,
   isSelected: false,
+  disabled: false,
 };
 
 export default AlbumCard;
