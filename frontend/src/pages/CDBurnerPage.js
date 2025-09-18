@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
 import { AlbumCardVariant } from '../components/AlbumCard';
 import DeviceCard from '../components/DeviceCard';
 import BurnProgress from '../components/BurnProgress';
+import BurnPreview from '../components/BurnPreview';
 import Message from '../components/Message';
 
 const CDBurnerPage = () => {
@@ -20,6 +21,12 @@ const CDBurnerPage = () => {
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [showBurnProgress, setShowBurnProgress] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState(null);
+
+  // Burn preview state
+  const [previewPlan, setPreviewPlan] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
+  const lastPreviewItemIdRef = useRef(null);
 
   const messageTextRef = useRef(null);
 
@@ -195,7 +202,6 @@ const CDBurnerPage = () => {
     [apiBaseUrl, fetchDevices, pollBurnerStatus, pushMessage],
   );
   // Removed status summary display; keep burnerStatus for internal logic only.
-
   const selectedDevice = useMemo(() => devices.find((device) => device.selected) || null, [devices]);
 
   const disableReason = useMemo(() => {
@@ -219,6 +225,46 @@ const CDBurnerPage = () => {
     }
     return null;
   }, [burnerStatus.is_burning, isBurningInitiating, selectedDevice, selectedItem]);
+  
+  const burnEnabled = !disableReason;
+  const canStartByDevice = Boolean(selectedDevice && selectedDevice.present && selectedDevice.writable && !burnerStatus.is_burning);
+
+  const fetchPreview = useCallback(async () => {
+    if (!selectedItem) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const res = await axios.post(`${apiBaseUrl}/api/cd-burner/preview`, {
+        download_item_id: selectedItem.id,
+      });
+      setPreviewPlan(res.data);
+    } catch (error) {
+      console.error('Preview fetch failed', error);
+      const msg = error.response?.data?.error || 'Failed to generate burn preview.';
+      setPreviewError(msg);
+      pushMessage({ type: 'error', text: msg });
+      setPreviewPlan(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [apiBaseUrl, pushMessage, selectedItem]);
+
+  // Auto-fetch preview only when both device and album are selected
+  useEffect(() => {
+    if (selectedItem && selectedDevice) {
+      const key = `${selectedItem.id}|${selectedDevice.id}`;
+      if (lastPreviewItemIdRef.current !== key || !previewPlan) {
+        lastPreviewItemIdRef.current = key;
+        fetchPreview();
+      }
+    } else {
+      lastPreviewItemIdRef.current = null;
+      setPreviewPlan(null);
+      setPreviewError(null);
+      setPreviewLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedItem?.id, selectedDevice?.id]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -242,7 +288,7 @@ const CDBurnerPage = () => {
               {devices.length === 0 ? (
                 <p className="text-gray-400">No connected burner detected.</p>
               ) : (
-                <div className="flex flex-wrap justify-center gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {devices.map((device) => (
                     <DeviceCard key={device.id} device={device} onSelect={handleSelectDevice} />
                   ))}
@@ -251,6 +297,8 @@ const CDBurnerPage = () => {
             </>
           )}
         </section>
+
+        {/* Checklist panel removed; guidance will appear inline with the preview/start area */}
 
         <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4">Music</h2>
@@ -270,35 +318,38 @@ const CDBurnerPage = () => {
             </>
           )}
         </div>
-
-        <div className="text-center flex flex-col items-center justify-center gap-4">
-          <div className="flex items-center justify-center gap-4">
+        {burnerStatus.is_burning && (
+          <div className="text-center mb-4">
             <button
               type="button"
-              onClick={handleBurnCD}
-              disabled={Boolean(disableReason)}
-              className={`py-3 px-8 rounded-lg text-lg font-bold transition duration-200 ${
-                disableReason ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'
-              }`}
+              onClick={handleCancelBurn}
+              className="py-3 px-6 rounded-lg text-lg font-bold bg-red-700 hover:bg-red-800 text-white"
             >
-              {isBurningInitiating
-                ? 'Initiating Burn...'
-                : burnerStatus.is_burning
-                ? `Burning (${burnerStatus.progress_percentage || 0}%)`
-                : 'Start CD Burn'}
+              Cancel Burn
             </button>
-            {burnerStatus.is_burning && (
-              <button
-                type="button"
-                onClick={handleCancelBurn}
-                className="py-3 px-6 rounded-lg text-lg font-bold bg-red-700 hover:bg-red-800 text-white"
-              >
-                Cancel Burn
-              </button>
+          </div>
+        )}
+
+        {selectedItem && selectedDevice && !burnerStatus.is_burning && (
+          <div className="w-full">
+            {previewLoading && (
+              <div className="mt-4 text-gray-300 text-sm">Generating preview…</div>
+            )}
+            {previewError && (
+              <div className="mt-4 text-red-400 text-sm">{previewError}</div>
+            )}
+            {previewPlan && !previewLoading && !previewError && (
+              <BurnPreview
+                plan={previewPlan}
+                initiating={isBurningInitiating}
+                inProgress={burnerStatus.is_burning}
+                onStart={handleBurnCD}
+                canStart={canStartByDevice}
+                disabledReason={disableReason}
+              />
             )}
           </div>
-          {disableReason && <p className="mt-2 text-sm text-gray-400">{disableReason}</p>}
-        </div>
+        )}
 
         <BurnProgress
           visible={showBurnProgress || burnerStatus.is_burning}
@@ -312,3 +363,7 @@ const CDBurnerPage = () => {
 };
 
 export default CDBurnerPage;
+
+
+
+

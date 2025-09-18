@@ -11,6 +11,7 @@ from typing import Optional, Dict, List, TYPE_CHECKING, Any
 from config import Config
 from .burn_sessions import BurnSession
 from .progress import ProgressPublisher
+from .lyrics_service import LyricsService
 
 # Ensure pydub and its dependencies (like ffmpeg) are installed
 from pydub import AudioSegment
@@ -45,6 +46,8 @@ class CDBurningService:
         self._active_session_id: Optional[str] = None
         self._cancel_flags: Dict[str, threading.Event] = {}
         self.logger.info("CDBurningService initialized (IMAPI2 backend on Windows)")
+        # Utilities
+        self._lyrics_svc = LyricsService()
 
     # Note: external burner CLI not used on Windows/IMAPI path. If a cross-platform
     # backend is added in future, introduce a dedicated command runner.
@@ -211,8 +214,13 @@ class CDBurningService:
 
     def _parse_spotify_metadata(self, content_dir):
         """
-        Parses the spotify_metadata.json file to get track order and titles.
-        Returns a list of dictionaries, each containing 'title' and 'artist' for a track.
+        Parses spotify_metadata.json and returns a list for CD-Text ordering:
+        [{ 'title': str, 'artist': str } ...]
+
+        Supports multiple formats:
+        - Saved app format: top-level 'tracks' is a list of track dicts with 'title' and 'artists' (array)
+        - Raw Spotify album/playlist: 'tracks': {'items': [ {track or item} ]}
+        - Single track: top-level 'type' or 'item_type' == 'track'
         """
         metadata_path = os.path.join(content_dir, "spotify_metadata.json")
         if not os.path.exists(metadata_path):
@@ -222,29 +230,290 @@ class CDBurningService:
         with open(metadata_path, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
 
-        tracks_data = []
-        # Handle different Spotify item types (album, playlist, track)
-        if 'tracks' in metadata and 'items' in metadata['tracks']: # Album or Playlist
+        tracks_data: List[dict] = []
+
+        # 1) Saved app format: 'tracks' is a list with our normalized fields
+        if isinstance(metadata.get('tracks'), list):
+            for t in metadata['tracks']:
+                title = t.get('title') or t.get('name')
+                artists = t.get('artists') or []
+                artist = None
+                if isinstance(artists, list) and artists:
+                    artist = artists[0]
+                elif isinstance(artists, str):
+                    artist = artists
+                else:
+                    artist = t.get('album_artist') or 'Unknown Artist'
+                if title:
+                    tracks_data.append({'title': title, 'artist': artist})
+
+        # 2) Raw Spotify format: album/playlist with tracks.items
+        elif 'tracks' in metadata and isinstance(metadata['tracks'], dict) and 'items' in metadata['tracks']:
             for item in metadata['tracks']['items']:
-                track_info = item.get('track') if item.get('track') else item # Handle playlist vs album item structure
+                track_info = item.get('track') if isinstance(item, dict) and item.get('track') else item
                 if track_info:
-                    tracks_data.append({
-                        'title': track_info.get('name'),
-                        'artist': track_info.get('artists')[0]['name'] if track_info.get('artists') else 'Unknown Artist'
-                    })
-        elif metadata.get('type') == 'track': # Single track
-            tracks_data.append({
-                'title': metadata.get('name'),
-                'artist': metadata.get('artists')[0]['name'] if metadata.get('artists') else 'Unknown Artist'
-            })
+                    title = track_info.get('name') or track_info.get('title')
+                    arts = track_info.get('artists') or []
+                    artist = None
+                    if isinstance(arts, list) and arts:
+                        first = arts[0]
+                        artist = first.get('name') if isinstance(first, dict) else str(first)
+                    if title:
+                        tracks_data.append({'title': title, 'artist': artist or 'Unknown Artist'})
+
+        # 3) Single track objects (raw or saved)
+        elif (metadata.get('type') == 'track') or (metadata.get('item_type') == 'track'):
+            title = metadata.get('name') or metadata.get('title')
+            arts = metadata.get('artists') or []
+            artist = None
+            if isinstance(arts, list) and arts:
+                first = arts[0]
+                artist = first.get('name') if isinstance(first, dict) else str(first)
+            tracks_data.append({'title': title or 'Unknown Title', 'artist': artist or 'Unknown Artist'})
         else:
-            raise ValueError("Unsupported spotify_metadata.json format. Expected album/playlist or single track.")
+            raise ValueError("Unsupported spotify_metadata.json format. Expected list 'tracks', album/playlist or track.")
 
         if not tracks_data:
             raise ValueError("No tracks found in spotify_metadata.json to burn.")
 
         self.logger.info(f"Found {len(tracks_data)} tracks in metadata.")
         return tracks_data
+
+    def generate_burn_plan(self, content_dir: str, disc_title: Optional[str] = None) -> dict:
+        """
+        Build a dry-run burn plan without converting/burning.
+
+        - Parses spotify_metadata.json for track order
+        - Resolves expected MP3 paths in order using same matching rules as conversion
+        - Summarizes per-track info (title, artist, file, duration, lyrics)
+        - Computes total duration and capacity fit for 74/80 minute CDs
+        - Returns CD-Text fields that would be used
+        """
+        if not content_dir or not os.path.isdir(content_dir):
+            raise FileNotFoundError(f"Content directory not found: {content_dir}")
+        # Ensure metadata exists and parse
+        tracks_data = self._parse_spotify_metadata(content_dir)
+
+        # Try to infer album/playlist name for disc title if not provided
+        album_title = None
+        album_artist = None
+        meta_path = os.path.join(content_dir, "spotify_metadata.json")
+        try:
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            album_title = meta.get('title') or meta.get('name') or None
+            # album/playlist artist best-effort
+            try:
+                if meta.get('artist'):
+                    album_artist = meta.get('artist')
+                elif meta.get('type') == 'album' and meta.get('artists'):
+                    album_artist = meta['artists'][0].get('name')
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        disc_title = disc_title or album_title or "Audio CD"
+
+        # Resolve MP3 files in the same way as in conversion
+        track_plans: List[dict] = []
+        missing: List[dict] = []
+        total_seconds: float = 0.0
+
+        # Pre-list files recursively once for performance
+        try:
+            all_files: List[str] = []
+            for root, _, files in os.walk(content_dir):
+                for n in files:
+                    all_files.append(os.path.join(root, n))
+        except Exception as e:
+            raise RuntimeError(f"Failed to list content directory: {e}")
+
+        # Prepare saved metadata tracks list if present for duration fallback
+        saved_meta_tracks = None
+        try:
+            if isinstance(meta.get('tracks'), list):
+                saved_meta_tracks = meta['tracks']
+        except Exception:
+            saved_meta_tracks = None
+
+        # Normalization helper for robust filename matching
+        def _norm(s: str) -> str:
+            s = (s or "").lower()
+            s = s.replace('’', "'")
+            s = re.sub(r"[\\/:*?\"<>|.,!()\[\]{}]", "", s)
+            s = s.replace('_', '')
+            s = re.sub(r"\s+", "", s)
+            return s
+
+        for idx, track in enumerate(tracks_data, start=1):
+            title = track.get('title') or 'Unknown Title'
+            artist = track.get('artist') or 'Unknown Artist'
+            sanitized_title = re.sub(r'[\\/:*?"<>|]', '_', title).strip()
+            sanitized_title = re.sub(r'_{2,}', '_', sanitized_title)
+            mp3_file_name_pattern = f"{re.escape(sanitized_title)}\.mp3"
+            fallback_name_pattern = f"{re.escape(artist)} - {re.escape(sanitized_title)}\.mp3"
+
+            found_mp3 = None
+            for path in all_files:
+                base = os.path.basename(path)
+                if re.fullmatch(mp3_file_name_pattern, base, re.IGNORECASE):
+                    found_mp3 = path
+                    break
+            if not found_mp3:
+                for path in all_files:
+                    base = os.path.basename(path)
+                    if re.fullmatch(fallback_name_pattern, base, re.IGNORECASE):
+                        found_mp3 = path
+                        break
+            # Fuzzy-normalized match (handles trailing underscores/punctuation)
+            if not found_mp3:
+                exp1 = _norm(sanitized_title)
+                exp2 = _norm(f"{artist} - {sanitized_title}")
+                exp3 = _norm(title)
+                exp4 = _norm(f"{artist} - {title}")
+                for path in all_files:
+                    base_no_ext = os.path.splitext(os.path.basename(path))[0]
+                    nb = _norm(base_no_ext)
+                    if nb in (exp1, exp2, exp3, exp4):
+                        found_mp3 = path
+                        break
+
+            duration_sec = None
+            has_lyrics = None
+            if found_mp3 and os.path.exists(found_mp3):
+                # Duration via mutagen (fast)
+                try:
+                    from mutagen import File as MutagenFile  # type: ignore
+                    mf = MutagenFile(found_mp3)
+                    info = getattr(mf, 'info', None)
+                    length = getattr(info, 'length', None)
+                    if length:
+                        duration_sec = float(length)
+                except Exception:
+                    # If mutagen fails, leave duration None
+                    pass
+                try:
+                    lyr = self._lyrics_svc.extract_lyrics_from_audio(found_mp3)
+                    has_lyrics = bool(lyr and lyr.strip())
+                except Exception:
+                    has_lyrics = None
+            else:
+                missing.append({
+                    'index': idx,
+                    'title': title,
+                    'artist': artist,
+                    'expected': [f"{sanitized_title}.mp3", f"{artist} - {sanitized_title}.mp3"],
+                })
+
+            # Duration fallback from saved metadata if not determined from file
+            if duration_sec is None and saved_meta_tracks and len(saved_meta_tracks) >= idx:
+                try:
+                    raw = saved_meta_tracks[idx - 1]
+                    ms = raw.get('duration_ms')
+                    if isinstance(ms, (int, float)) and ms > 0:
+                        duration_sec = float(ms) / 1000.0
+                except Exception:
+                    pass
+
+            track_plans.append({
+                'index': idx,
+                'title': title,
+                'artist': artist,
+                'file': found_mp3,
+                'duration_sec': None if duration_sec is None else round(duration_sec, 2),
+                'has_embedded_lyrics': has_lyrics,
+            })
+
+            if duration_sec:
+                total_seconds += float(duration_sec)
+
+        # Find stray audio files not referenced by metadata
+        referenced = {os.path.basename(t['file']) for t in track_plans if t.get('file')}
+        stray_audio: List[str] = []
+        for path in all_files:
+            base = os.path.basename(path)
+            low = base.lower()
+            if low.endswith(('.mp3', '.flac', '.wav', '.ogg', '.m4a')):
+                if base not in referenced:
+                    stray_audio.append(path)
+
+        # Capacity checks using configured capacities
+        try:
+            primary_min = int(getattr(Config, 'CD_CAPACITY_MINUTES', 80) or 80)
+        except Exception:
+            primary_min = 80
+        try:
+            secondary_min = int(getattr(Config, 'CD_ALT_CAPACITY_MINUTES', 74) or 0)
+        except Exception:
+            secondary_min = 0
+
+        cap_primary_sec = max(1, primary_min) * 60
+        cap_secondary_sec = max(0, secondary_min) * 60 if secondary_min else 0
+
+        fits_primary = total_seconds <= cap_primary_sec
+        fits_secondary = (total_seconds <= cap_secondary_sec) if cap_secondary_sec else None
+
+        # Legacy flags maintained for compatibility (based on 74/80 mins)
+        fits_74 = total_seconds <= 74 * 60
+        fits_80 = total_seconds <= 80 * 60
+
+        # CD-Text composition
+        album_cdtext = {'title': disc_title}
+        if album_artist:
+            album_cdtext['artist'] = album_artist
+        elif tracks_data:
+            album_cdtext['artist'] = tracks_data[0].get('artist')
+
+        per_track_cdtext = [
+            {'title': t.get('title'), 'artist': t.get('artist')}
+            for t in tracks_data
+        ]
+
+        status = 'ok' if not missing else 'incomplete'
+        warnings = []
+        if not fits_primary:
+            warnings.append(f'Total duration exceeds {primary_min}-minute CD capacity')
+        elif cap_secondary_sec and not fits_secondary:
+            warnings.append(f'Total duration exceeds {secondary_min}-minute CD, but fits {primary_min}-minute CD')
+
+        # Try to include raw tracks from saved metadata for UI richness
+        raw_tracks = None
+        try:
+            if isinstance(meta.get('tracks'), list):
+                raw_tracks = meta['tracks']
+        except Exception:
+            pass
+
+        plan = {
+            'status': status,
+            'disc_title': disc_title,
+            'album_title': album_title or disc_title,
+            'album_artist': album_cdtext.get('artist'),
+            'content_dir': content_dir,
+            'track_count': len(track_plans),
+            'tracks': track_plans,
+            'raw_tracks': raw_tracks,
+            'missing_tracks': missing,
+            'stray_audio_files': stray_audio,
+            'total_duration_sec': round(total_seconds, 2),
+            # Legacy
+            'fits_74_min_cd': fits_74,
+            'fits_80_min_cd': fits_80,
+            # Dynamic capacities
+            'capacity_primary_min': primary_min,
+            'capacity_secondary_min': secondary_min if cap_secondary_sec else None,
+            'fits_primary': fits_primary,
+            'fits_secondary': fits_secondary,
+            'time_left_primary_sec': round(cap_primary_sec - total_seconds, 2),
+            'time_left_secondary_sec': round(cap_secondary_sec - total_seconds, 2) if cap_secondary_sec else None,
+            'cd_text': {
+                'album': album_cdtext,
+                'per_track': per_track_cdtext,
+            },
+            'warnings': warnings,
+        }
+        return plan
 
     def _convert_mp3_to_wav(self, content_dir, tracks_data, temp_wav_dir, *, session: BurnSession, cancel_event: Optional[threading.Event] = None, publisher: Optional[ProgressPublisher] = None):
         """
@@ -260,6 +529,22 @@ class CDBurningService:
         # pydub.AudioSegment.ffmpeg = self.ffmpeg_path # Can explicitly set if needed
 
         conv_start = time.perf_counter()
+        # Normalization helper shared with preview
+        def _norm_conv(s: str) -> str:
+            s = (s or "").lower()
+            s = s.replace('’', "'")
+            s = re.sub(r"[\\/:*?\"<>|.,!()\[\]{}]", "", s)
+            s = s.replace('_', '')
+            s = re.sub(r"\s+", "", s)
+            return s
+
+        # Build recursive file list to handle nested directories
+        all_files = []
+        for root, _, files in os.walk(content_dir):
+            for n in files:
+                if n.lower().endswith('.mp3'):
+                    all_files.append(os.path.join(root, n))
+
         for i, track in enumerate(tracks_data):
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Burn canceled during audio conversion")
@@ -273,18 +558,33 @@ class CDBurningService:
             mp3_file_name_pattern = f"{re.escape(sanitized_title)}\.mp3"
             found_mp3_path = None
 
-            # Search for the MP3 file in the content_dir
-            for f_name in os.listdir(content_dir):
-                if re.fullmatch(mp3_file_name_pattern, f_name, re.IGNORECASE):
-                    found_mp3_path = os.path.join(content_dir, f_name)
+            # Search exact sanitized in recursive list
+            for f_path in all_files:
+                base = os.path.basename(f_path)
+                if re.fullmatch(mp3_file_name_pattern, base, re.IGNORECASE):
+                    found_mp3_path = f_path
                     break
 
             # Fallback for "Artist - Title.mp3" format if initial match fails
             if not found_mp3_path:
                 fallback_name_pattern = f"{re.escape(track['artist'])} - {re.escape(sanitized_title)}\.mp3"
-                for f_name in os.listdir(content_dir):
-                    if re.fullmatch(fallback_name_pattern, f_name, re.IGNORECASE):
-                        found_mp3_path = os.path.join(content_dir, f_name)
+                for f_path in all_files:
+                    base = os.path.basename(f_path)
+                    if re.fullmatch(fallback_name_pattern, base, re.IGNORECASE):
+                        found_mp3_path = f_path
+                        break
+
+            # Fuzzy-normalized match (handles trailing underscores/punctuation)
+            if not found_mp3_path:
+                exp1 = _norm_conv(sanitized_title)
+                exp2 = _norm_conv(f"{track['artist']} - {sanitized_title}")
+                exp3 = _norm_conv(track['title'])
+                exp4 = _norm_conv(f"{track['artist']} - {track['title']}")
+                for f_path in all_files:
+                    base_no_ext = os.path.splitext(os.path.basename(f_path))[0]
+                    nb = _norm_conv(base_no_ext)
+                    if nb in (exp1, exp2, exp3, exp4):
+                        found_mp3_path = f_path
                         break
 
             if not found_mp3_path:

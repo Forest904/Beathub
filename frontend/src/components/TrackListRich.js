@@ -53,6 +53,9 @@ const TrackListRich = ({ tracks }) => {
                     {track.title}
                   </span>
                   {track.local_lyrics_path && <Badge color="green">Lyrics</Badge>}
+                  {(track._missing || track.missing || track.file_missing || track.local_path === null || track.local_path === undefined) && (
+                    <Badge color="red">Missing</Badge>
+                  )}
                 </div>
               </td>
               <td className="px-2 py-2 text-gray-300 truncate max-w-[32ch]" title={(track.artists || []).join(', ')}>

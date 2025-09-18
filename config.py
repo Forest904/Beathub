@@ -76,4 +76,10 @@ class Config:
     # Control console logging; when disabled, logs go only to file
     ENABLE_CONSOLE_LOGS = _get_bool('ENABLE_CONSOLE_LOGS', False)
 
+    # CD capacity configuration (minutes)
+    # Primary target capacity (e.g., 80 for 80-min CD-R)
+    CD_CAPACITY_MINUTES = _get_int('CD_CAPACITY_MINUTES', 80)
+    # Optional secondary capacity to display (e.g., 74 for older 74-min discs). Set 0 to hide.
+    CD_ALT_CAPACITY_MINUTES = _get_int('CD_ALT_CAPACITY_MINUTES', 74)
+
 

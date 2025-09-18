@@ -116,6 +116,38 @@ def start_cd_burn():
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 
+@cd_burning_bp.route('/preview', methods=['POST'])
+def preview_burn_plan():
+    """Generate a burn preview/plan for a downloaded item without burning.
+
+    Payload: { "download_item_id": int }
+    Returns: JSON plan with track order, resolved files, durations, lyrics presence, and CD-Text.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        download_item_id = data.get('download_item_id')
+        if not download_item_id:
+            return jsonify({"error": "Missing 'download_item_id' in request payload."}), 400
+
+        downloaded_item = db.session.get(DownloadedItem, download_item_id)
+        if not downloaded_item:
+            return jsonify({"error": f"Downloaded item with ID {download_item_id} not found."}), 404
+
+        content_dir = downloaded_item.local_path
+        if not content_dir or not os.path.isdir(content_dir):
+            return jsonify({"error": "Associated content directory not found or is invalid."}), 404
+
+        cd_burner = current_app.extensions.get('cd_burning_service')
+        if not cd_burner:
+            return jsonify({"error": "CD Burning Service not available"}), 503
+
+        plan = cd_burner.generate_burn_plan(content_dir, disc_title=downloaded_item.title)
+        return jsonify(plan), 200
+    except Exception as e:
+        logger.exception("Failed to generate burn preview")
+        return jsonify({"error": str(e)}), 500
+
+
 @cd_burning_bp.route('/devices', methods=['GET'])
 def list_devices():
     """List optical recorders with dynamic media status (Windows/IMAPI2)."""
