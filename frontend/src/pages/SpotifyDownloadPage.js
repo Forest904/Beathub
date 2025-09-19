@@ -7,6 +7,7 @@ import ProgressPanel from '../components/ProgressPanel';
 import TrackListRich from '../components/TrackListRich';
 import { AlbumCardVariant } from '../components/AlbumCard';
 import Message from '../components/Message';
+import LyricsPanel from '../components/LyricsPanel';
 
 const SpotifyDownloadPage = () => {
   const location = useLocation();
@@ -18,6 +19,8 @@ const SpotifyDownloadPage = () => {
   const [hasActiveDownload, setHasActiveDownload] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [lyricsVisible, setLyricsVisible] = useState(false);
+  const [lyricsTrack, setLyricsTrack] = useState(null);
   const autoDownloadAttempted = useRef(false);
   const historySectionRef = useRef(null);
 
@@ -137,6 +140,8 @@ const SpotifyDownloadPage = () => {
 
   useEffect(() => {
     const handleDocumentClick = (event) => {
+      // Keep album selection when lyrics panel is open
+      if (lyricsVisible) return;
       const node = historySectionRef.current;
       if (!node || node.contains(event.target)) {
         return;
@@ -149,7 +154,7 @@ const SpotifyDownloadPage = () => {
 
     document.addEventListener('click', handleDocumentClick);
     return () => document.removeEventListener('click', handleDocumentClick);
-  }, [selectedAlbumId]);
+  }, [selectedAlbumId, lyricsVisible]);
 
   const sortedTracks = useMemo(() => {
     const tracks = richMetadata?.tracks || [];
@@ -168,6 +173,11 @@ const SpotifyDownloadPage = () => {
     const discs = new Set((sortedTracks || []).map((t) => Number(t?.disc_number ?? 1)));
     return discs.size > 1;
   }, [sortedTracks]);
+
+  const handleLyricsClick = useCallback((track) => {
+    setLyricsTrack(track || null);
+    setLyricsVisible(true);
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -230,11 +240,19 @@ const SpotifyDownloadPage = () => {
                 showIsrc={false}
                 showDisc={false}
                 showPopularity={false}
+                onLyricsClick={handleLyricsClick}
               />
             </div>
           )}
         </div>
       </div>
+      <LyricsPanel
+        visible={lyricsVisible}
+        onClose={() => setLyricsVisible(false)}
+        baseUrl={apiBaseUrl}
+        albumId={selectedAlbumId}
+        track={lyricsTrack}
+      />
     </div>
   );
 };

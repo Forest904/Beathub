@@ -23,7 +23,7 @@ Badge.defaultProps = {
   color: 'gray',
 };
 
-const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExplicit, showIsrc, showDisc, showPopularity }) => {
+const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExplicit, showIsrc, showDisc, showPopularity, onLyricsClick }) => {
   if (!tracks || tracks.length === 0) {
     return null;
   }
@@ -81,9 +81,33 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
                       {(() => {
                         const hasLyrics = Boolean(track.local_lyrics_path || track.has_embedded_lyrics);
                         const lyricsKnown = ('local_lyrics_path' in track) || (typeof track.has_embedded_lyrics !== 'undefined');
-                        return lyricsKnown ? (
-                          <Badge color={hasLyrics ? 'green' : 'red'}>Lyrics</Badge>
-                        ) : null;
+                        if (!lyricsKnown) return null;
+                        const handleClick = (e) => {
+                          e.stopPropagation();
+                          if (typeof onLyricsClick === 'function') onLyricsClick(track);
+                        };
+                        if (hasLyrics) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={handleClick}
+                              className="focus:outline-none cursor-pointer"
+                              title="Show lyrics"
+                            >
+                              <Badge color="green">Lyrics</Badge>
+                            </button>
+                          );
+                        }
+                        return (
+                          <button
+                            type="button"
+                            onClick={handleClick}
+                            className="focus:outline-none cursor-pointer"
+                            title="Lyrics not found — open panel"
+                          >
+                            <Badge color="red">Lyrics</Badge>
+                          </button>
+                        );
                       })()}
                       {!compactForBurnPreview && isMissing && <Badge color="red">Missing</Badge>}
                     </div>
@@ -142,6 +166,7 @@ TrackListRich.propTypes = {
   showIsrc: PropTypes.bool,
   showDisc: PropTypes.bool,
   showPopularity: PropTypes.bool,
+  onLyricsClick: PropTypes.func,
 };
 
 TrackListRich.defaultProps = {
@@ -152,6 +177,7 @@ TrackListRich.defaultProps = {
   showIsrc: true,
   showDisc: true,
   showPopularity: true,
+  onLyricsClick: undefined,
 };
 
 export default TrackListRich;

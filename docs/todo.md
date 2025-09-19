@@ -1,10 +1,11 @@
 # TODO
 
 ## Lyrics Component Delivery
-- [ ] Design and build a lyrics display component that opens when the user clicks the green "Lyrics" icon.
-- [ ] Add loading, error, and "not found" states (render a red badge when lyrics are missing).
-- [ ] Connect the component to existing lyrics retrieval APIs.
-- [ ] Show clear fallback messaging when lyrics cannot be retrieved.
+- [x] Design and build a lyrics display component that opens and closes when the user clicks the green "Lyrics" icon.
+- [x] This component should appear as a right sidewindow component.
+- [x] this component shoudh have as a title the song's title and "XXX's lyrics" and below a clear format. 
+- [x] Connect the component to retrieve the lyrics from the already dowloaded files and add the same fuzzy search for similar names used for the burning TrackListRich component.
+- [x] Show clear fallback messaging when lyrics cannot be retrieved.
 
 ## UI Fixes
 - [x] Keep the selected album's `TrackListRich` visible during burning progress.

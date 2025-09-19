@@ -4,6 +4,8 @@ import logging
 from flask import Blueprint, request, jsonify
 import json
 from src.database.db_manager import db, DownloadedItem
+from src.lyrics_service import LyricsService
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -161,3 +163,186 @@ def get_item_metadata_by_spotify(spotify_id: str):
     except Exception as e:
         logger.error("Failed to read metadata for spotify %s: %s", spotify_id, e, exc_info=True)
         return jsonify({'error': 'Failed to read metadata'}), 500
+
+
+@download_bp.route('/items/<int:item_id>/lyrics', methods=['GET'])
+def get_item_lyrics(item_id: int):
+    """Retrieve lyrics for a given downloaded item (album/playlist/track) using fuzzy file matching.
+
+    Query params:
+      - title: track title (required)
+      - artist: primary artist name (optional but recommended)
+
+    Strategy:
+      1) Find the matching audio file in the item's folder using the same fuzzy rules used for burn preview.
+      2) Prefer a .txt lyrics file with the same basename as the audio file (exported by SpotDL pipeline).
+      3) If no .txt found, read embedded lyrics from the audio file via LyricsService.
+      4) If still not found, attempt fuzzy match among .txt basenames.
+    """
+    title = (request.args.get('title') or '').strip()
+    artist = (request.args.get('artist') or '').strip()
+    if not title:
+        return jsonify({'error': 'Missing title parameter'}), 400
+
+    item = DownloadedItem.query.get(item_id)
+    if not item:
+        return jsonify({'error': 'Item not found'}), 404
+    base_dir = item.local_path
+    if not base_dir or not os.path.isdir(base_dir):
+        return jsonify({'error': 'Associated content directory not found or is invalid.'}), 404
+
+    # Gather candidate files
+    audio_exts = ('.mp3', '.flac', '.m4a', '.ogg', '.wav')
+    text_exts = ('.txt',)
+    all_files = []
+    for root, _, files in os.walk(base_dir):
+        for fn in files:
+            low = fn.lower()
+            if low.endswith(audio_exts) or low.endswith(text_exts):
+                all_files.append(os.path.join(root, fn))
+
+    # Normalization helper (mirrors cd_burning_service)
+    def _norm(s: str) -> str:
+        s = (s or '').lower()
+        s = s.replace('\ufffdT', "'")  # best-effort for odd apostrophes
+        s = re.sub(r"[\\/:*?\"<>|.,!()\[\]{}]", '', s)
+        s = s.replace('_', '')
+        s = re.sub(r"\s+", '', s)
+        return s
+
+    # Build expectations
+    sanitized_title = re.sub(r'[\\/:*?"<>|]', '_', title).strip()
+    sanitized_title = re.sub(r'_{2,}', '_', sanitized_title)
+
+    # 1) Try exact filename match for audio
+    found_audio = None
+    mp3_name = f"{sanitized_title}.mp3"
+    fallback_name = f"{artist} - {sanitized_title}.mp3" if artist else None
+    for path in all_files:
+        base = os.path.basename(path)
+        if base.lower() == mp3_name.lower():
+            found_audio = path
+            break
+    if not found_audio and artist:
+        for path in all_files:
+            base = os.path.basename(path)
+            if base.lower() == (fallback_name or '').lower():
+                found_audio = path
+                break
+
+    # 2) Fuzzy-normalized across all audio files
+    if not found_audio:
+        exp1 = _norm(sanitized_title)
+        exp2 = _norm(f"{artist} - {sanitized_title}") if artist else None
+        exp3 = _norm(title)
+        exp4 = _norm(f"{artist} - {title}") if artist else None
+        artist_norm = _norm(artist) if artist else ''
+        for path in all_files:
+            if not path.lower().endswith(audio_exts):
+                continue
+            base_no_ext = os.path.splitext(os.path.basename(path))[0]
+            nb = _norm(base_no_ext)
+            if nb in filter(None, (exp1, exp2, exp3, exp4)):
+                found_audio = path
+                break
+            # Handle trailing feat*
+            if exp1 and nb.startswith(exp1) and nb[len(exp1):].startswith(('feat', 'featuring', 'ft', 'with')):
+                found_audio = path
+                break
+            if exp2 and nb.startswith(exp2) and nb[len(exp2):].startswith(('feat', 'featuring', 'ft', 'with')):
+                found_audio = path
+                break
+            # Accept extra artists before the hyphen
+            tail1 = '-' + exp1 if exp1 else None
+            tail3 = '-' + exp3 if exp3 else None
+            if tail1 and nb.endswith(tail1):
+                left = nb[: -len(tail1)]
+                if not artist_norm or left.startswith(artist_norm):
+                    found_audio = path
+                    break
+            if tail3 and nb.endswith(tail3):
+                left = nb[: -len(tail3)]
+                if not artist_norm or left.startswith(artist_norm):
+                    found_audio = path
+                    break
+
+    # Try matching a .txt with same base as the audio
+    matched_txt = None
+    if found_audio:
+        base_no_ext = os.path.splitext(found_audio)[0]
+        candidate = base_no_ext + '.txt'
+        if os.path.exists(candidate):
+            matched_txt = candidate
+
+    # If no audio match, try fuzzy matching among .txt files directly
+    if not matched_txt and not found_audio:
+        exp1 = _norm(sanitized_title)
+        exp2 = _norm(f"{artist} - {sanitized_title}") if artist else None
+        exp3 = _norm(title)
+        exp4 = _norm(f"{artist} - {title}") if artist else None
+        artist_norm = _norm(artist) if artist else ''
+        for path in all_files:
+            if not path.lower().endswith('.txt'):
+                continue
+            base_no_ext = os.path.splitext(os.path.basename(path))[0]
+            nb = _norm(base_no_ext)
+            if nb in filter(None, (exp1, exp2, exp3, exp4)):
+                matched_txt = path
+                break
+            if exp1 and nb.startswith(exp1) and nb[len(exp1):].startswith(('feat', 'featuring', 'ft', 'with')):
+                matched_txt = path
+                break
+            if exp2 and nb.startswith(exp2) and nb[len(exp2):].startswith(('feat', 'featuring', 'ft', 'with')):
+                matched_txt = path
+                break
+            tail1 = '-' + exp1 if exp1 else None
+            tail3 = '-' + exp3 if exp3 else None
+            if tail1 and nb.endswith(tail1):
+                left = nb[: -len(tail1)]
+                if not artist_norm or left.startswith(artist_norm):
+                    matched_txt = path
+                    break
+            if tail3 and nb.endswith(tail3):
+                left = nb[: -len(tail3)]
+                if not artist_norm or left.startswith(artist_norm):
+                    matched_txt = path
+                    break
+
+    # Read lyrics from .txt or extract from audio
+    lyrics_text = None
+    source = None
+    if matched_txt and os.path.exists(matched_txt):
+        try:
+            with open(matched_txt, 'r', encoding='utf-8', errors='replace') as f:
+                lyrics_text = f.read()
+            source = 'text'
+        except Exception:
+            lyrics_text = None
+            source = None
+    if lyrics_text is None and found_audio and os.path.exists(found_audio):
+        try:
+            svc = LyricsService()
+            lyrics_text = svc.extract_lyrics_from_audio(found_audio)
+            if lyrics_text:
+                source = 'embedded'
+        except Exception:
+            lyrics_text = None
+            source = None
+
+    if not lyrics_text:
+        return jsonify({
+            'success': False,
+            'message': 'Lyrics not found for this track.',
+            'matched_audio_path': found_audio,
+            'matched_lyrics_path': matched_txt,
+        }), 404
+
+    return jsonify({
+        'success': True,
+        'lyrics': lyrics_text,
+        'source': source,
+        'matched_audio_path': found_audio,
+        'matched_lyrics_path': matched_txt,
+        'title': title,
+        'artist': artist,
+    }), 200
