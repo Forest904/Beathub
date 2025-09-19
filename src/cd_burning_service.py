@@ -124,6 +124,68 @@ class CDBurningService:
         self._imapi_recorder_id = None
         return True
 
+    # --- Filename matching helpers ---
+    def _sanitize_title_for_filename(self, title: str) -> str:
+        """Mimic spotDL's basic sanitization we expect in filenames."""
+        sanitized = re.sub(r'[\\/:*?\"<>|]', '_', title or '')
+        sanitized = sanitized.strip()
+        sanitized = re.sub(r'_{2,}', '_', sanitized)
+        return sanitized
+
+    def _norm_for_match(self, s: str) -> str:
+        """Normalization used for fuzzy comparisons (case/space/punct insensitive)."""
+        s = (s or '').lower()
+        s = s.replace('�?T', "'")
+        s = re.sub(r"[\\/:*?\"<>|.,!()\[\]{}]", "", s)
+        s = s.replace('_', '')
+        s = re.sub(r"\s+", "", s)
+        return s
+
+    def _find_mp3_for_track(self, all_files: List[str], *, artist: str, title: str) -> Optional[str]:
+        """
+        Find the matching MP3 path for a given artist/title, tolerating filenames that include
+        optional "(feat …)" suffixes and the common "Artist - Title" prefix form.
+
+        Checks exact patterns first, then applies a constrained fuzzy match that only accepts
+        surplus segments starting with feat/featuring/ft/with after the expected prefix.
+        """
+        sanitized_title = self._sanitize_title_for_filename(title)
+        title_re = re.escape(sanitized_title)
+        artist_re = re.escape(artist or '')
+
+        # Common explicit patterns
+        patterns = [
+            rf"^{title_re}\.mp3$",
+            rf"^{title_re}\s*\((?:feat\.?|featuring|ft\.?|with)\s+[^)]*\)\.mp3$",
+            rf"^{artist_re}\s*-\s*{title_re}\.mp3$",
+            rf"^{artist_re}\s*-\s*{title_re}\s*\((?:feat\.?|featuring|ft\.?|with)\s+[^)]*\)\.mp3$",
+        ]
+
+        # Fast pass on explicit regexes
+        for path in all_files:
+            base = os.path.basename(path)
+            for pat in patterns:
+                if re.fullmatch(pat, base, flags=re.IGNORECASE):
+                    return path
+
+        # Constrained fuzzy match: allow only extra 'feat*' tail after expected normalized base
+        exp1 = self._norm_for_match(sanitized_title)
+        exp2 = self._norm_for_match(f"{artist} - {sanitized_title}")
+        for path in all_files:
+            base_no_ext = os.path.splitext(os.path.basename(path))[0]
+            nb = self._norm_for_match(base_no_ext)
+            if nb == exp1 or nb == exp2:
+                return path
+            if nb.startswith(exp1):
+                rest = nb[len(exp1):]
+                if rest and re.match(r"^(feat|featuring|ft|with)[a-z0-9].*", rest):
+                    return path
+            if nb.startswith(exp2):
+                rest = nb[len(exp2):]
+                if rest and re.match(r"^(feat|featuring|ft|with)[a-z0-9].*", rest):
+                    return path
+        return None
+
     def check_disc_status(self, session: BurnSession):
         """Check disc presence/writability using IMAPI2 audio format."""
         if not self._imapi or not self._imapi_recorder:
@@ -375,7 +437,13 @@ class CDBurningService:
                 for path in all_files:
                     base_no_ext = os.path.splitext(os.path.basename(path))[0]
                     nb = _norm(base_no_ext)
-                    if nb in (exp1, exp2, exp3, exp4):
+                    # Accept exact normalized matches, or normalized names that start with the expected
+                    # title/artist-title followed by a 'feat*' suffix (to handle e.g. "(feat. X)").
+                    if (
+                        nb in (exp1, exp2, exp3, exp4)
+                        or (nb.startswith(exp1) and nb[len(exp1):].startswith(('feat', 'featuring', 'ft', 'with')))
+                        or (nb.startswith(exp2) and nb[len(exp2):].startswith(('feat', 'featuring', 'ft', 'with')))
+                    ):
                         found_mp3 = path
                         break
 
@@ -403,7 +471,12 @@ class CDBurningService:
                     'index': idx,
                     'title': title,
                     'artist': artist,
-                    'expected': [f"{sanitized_title}.mp3", f"{artist} - {sanitized_title}.mp3"],
+                    'expected': [
+                        f"{sanitized_title}.mp3",
+                        f"{sanitized_title} (feat. ...).mp3",
+                        f"{artist} - {sanitized_title}.mp3",
+                        f"{artist} - {sanitized_title} (feat. ...).mp3",
+                    ],
                 })
 
             # Duration fallback from saved metadata if not determined from file
@@ -583,12 +656,23 @@ class CDBurningService:
                 for f_path in all_files:
                     base_no_ext = os.path.splitext(os.path.basename(f_path))[0]
                     nb = _norm_conv(base_no_ext)
-                    if nb in (exp1, exp2, exp3, exp4):
+                    # Accept exact normalized matches, or normalized names that start with the expected
+                    # title/artist-title followed by a 'feat*' suffix (to handle e.g. "(feat. X)").
+                    if (
+                        nb in (exp1, exp2, exp3, exp4)
+                        or (nb.startswith(exp1) and nb[len(exp1):].startswith(('feat', 'featuring', 'ft', 'with')))
+                        or (nb.startswith(exp2) and nb[len(exp2):].startswith(('feat', 'featuring', 'ft', 'with')))
+                    ):
                         found_mp3_path = f_path
                         break
 
             if not found_mp3_path:
-                error_msg = f"MP3 file not found for track: '{track['title']}' (expected: {sanitized_title}.mp3 or {track['artist']} - {sanitized_title}.mp3). Aborting conversion."
+                error_msg = (
+                    f"MP3 file not found for track: '{track['title']}' (expected one of: "
+                    f"{sanitized_title}.mp3, {sanitized_title} (feat. ...).mp3, "
+                    f"{track['artist']} - {sanitized_title}.mp3, {track['artist']} - {sanitized_title} (feat. ...).mp3). "
+                    "Aborting conversion."
+                )
                 self.logger.error(error_msg)
                 session.set_error(error_msg)
                 raise FileNotFoundError(error_msg)
