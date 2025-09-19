@@ -56,6 +56,7 @@ const DeviceCard = ({ device, onSelect, disabled }) => {
         <div className="mt-4 flex items-center justify-between">
           <CdRomIcon className="w-24 h-24 text-blue-400 drop-shadow" aria-hidden="true" />
           <div className="flex flex-col gap-2 text-sm text-gray-200 items-end">
+            {isActive && <StatusPill ok label="In Use" className="!bg-amber-600 !text-black" />}
             <StatusPill ok={Boolean(device.present)} label={device.present ? 'Disc Present' : 'No Disc'} />
             <StatusPill ok={Boolean(device.writable)} label={device.writable ? 'Writable' : 'Not Writable'} />
           </div>

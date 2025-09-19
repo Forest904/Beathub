@@ -7,12 +7,18 @@
 - [ ] Show clear fallback messaging when lyrics cannot be retrieved.
 
 ## UI Fixes
-- [ ] Keep the selected album's `TrackListRich` visible during burning progress.
-- [ ] Move the "don't change page while burning" message to the top of the page, make it visually prominent, and hide it when burning completes.
-- [ ] Add an "In Use" `StatusPill` to the device card while the device is actively burning.
-- [ ] In Burn Preview:
-  - [ ] Make song titles red instead of showing a "Missing" badge.
-  - [ ] Remove Explicit, ISRC, and Popularity columns.
+- [x] Keep the selected album's `TrackListRich` visible during burning progress.
+- [x] Move the "don't change page while burning" message to the top of the page, make it visually prominent, and hide it when burning completes.
+- [x] Add an "In Use" `StatusPill` to the device card while the device is actively burning.
+- [x] In Burn Preview:
+  - [x] Make song titles red instead of showing a "Missing" badge.
+  - [x] Remove Explicit, ISRC, and Popularity columns.
+ - [x] On Download page `TrackListRich`:
+   - [x] Show the album title instead of "Downloaded Tracks".
+   - [x] List songs in disc/track-number order.
+   - [x] Show disc headers when multiple discs are present.
+   - [x] Hide ISRC, Disc, and Popularity columns.
+   - [x] Show a red "Lyrics" badge when lyrics are not found.
 
 ## Artist Best-Of Playlist
 - [ ] Place a single `AlbumCard` on the artist page, to the right of the artist info in the same row.
@@ -32,6 +38,7 @@
 - [x] Fix burn preview logic to correctly match tracks with "(feat XXX)" in filenames, including these patterns:
   - `Eyes Closed (feat. J Balvin).mp3`
   - `Imagine Dragons - Eyes Closed (feat. J Balvin).mp3`
+ - [x] Also match files with multiple artists before the hyphen (e.g., `Artist, Other - Title(.mp3)`), while keeping the primary artist check.
 
 ## Make Your Compilation Feature
 - [ ] Add a "Make Your Own CD Remix" button on the DiscoverArtists page.
@@ -50,6 +57,7 @@
 - [ ] Display the player bar whenever a song is playing and hide it when playback stops.
 
 ## CD Burning Audit
+- [x] Ensure burn order matches the preview order using `disc_number` and `track_number` from metadata.
 - [ ] Log start and end time of each burn session.
 - [ ] Log each track written, including success/failure status and file path.
 - [ ] Include error codes and messages for any failed burns.

@@ -94,7 +94,11 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
       const bt = Number(b.track_number || 0);
       return at - bt;
     });
-    return sorted.map((t, i) => ({ ...t, _missing: !(planList[i] && planList[i].file) }));
+    return sorted.map((t, i) => ({
+      ...t,
+      _missing: !(planList[i] && planList[i].file),
+      has_embedded_lyrics: planList[i] && typeof planList[i].has_embedded_lyrics !== 'undefined' ? planList[i].has_embedded_lyrics : undefined,
+    }));
   }, [plan]);
 
   return (
@@ -159,7 +163,7 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
         </div>
       )}
 
-      <TrackListRich tracks={enrichedTracks} />
+      <TrackListRich tracks={enrichedTracks} compactForBurnPreview />
 
       <div className="mt-6 flex flex-col items-center justify-center gap-2">
         {inProgress ? (
@@ -189,4 +193,3 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
 };
 
 export default BurnPreview;
-

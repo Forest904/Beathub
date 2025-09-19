@@ -171,6 +171,8 @@ class CDBurningService:
         # Constrained fuzzy match: allow only extra 'feat*' tail after expected normalized base
         exp1 = self._norm_for_match(sanitized_title)
         exp2 = self._norm_for_match(f"{artist} - {sanitized_title}")
+        exp_title = self._norm_for_match(title)
+        artist_norm = self._norm_for_match(artist or '')
         for path in all_files:
             base_no_ext = os.path.splitext(os.path.basename(path))[0]
             nb = self._norm_for_match(base_no_ext)
@@ -183,6 +185,17 @@ class CDBurningService:
             if nb.startswith(exp2):
                 rest = nb[len(exp2):]
                 if rest and re.match(r"^(feat|featuring|ft|with)[a-z0-9].*", rest):
+                    return path
+            # Accept additional artists before the hyphen, e.g., "Artist, Other - Title"
+            tail1 = '-' + exp1
+            tail2 = '-' + exp_title
+            if nb.endswith(tail1):
+                left = nb[: -len(tail1)]
+                if not artist_norm or left.startswith(artist_norm):
+                    return path
+            if nb.endswith(tail2):
+                left = nb[: -len(tail2)]
+                if not artist_norm or left.startswith(artist_norm):
                     return path
         return None
 
@@ -307,7 +320,12 @@ class CDBurningService:
                 else:
                     artist = t.get('album_artist') or 'Unknown Artist'
                 if title:
-                    tracks_data.append({'title': title, 'artist': artist})
+                    tracks_data.append({
+                        'title': title,
+                        'artist': artist,
+                        'track_number': t.get('track_number'),
+                        'disc_number': t.get('disc_number'),
+                    })
 
         # 2) Raw Spotify format: album/playlist with tracks.items
         elif 'tracks' in metadata and isinstance(metadata['tracks'], dict) and 'items' in metadata['tracks']:
@@ -321,7 +339,12 @@ class CDBurningService:
                         first = arts[0]
                         artist = first.get('name') if isinstance(first, dict) else str(first)
                     if title:
-                        tracks_data.append({'title': title, 'artist': artist or 'Unknown Artist'})
+                        tracks_data.append({
+                            'title': title,
+                            'artist': artist or 'Unknown Artist',
+                            'track_number': track_info.get('track_number'),
+                            'disc_number': track_info.get('disc_number'),
+                        })
 
         # 3) Single track objects (raw or saved)
         elif (metadata.get('type') == 'track') or (metadata.get('item_type') == 'track'):
@@ -331,12 +354,33 @@ class CDBurningService:
             if isinstance(arts, list) and arts:
                 first = arts[0]
                 artist = first.get('name') if isinstance(first, dict) else str(first)
-            tracks_data.append({'title': title or 'Unknown Title', 'artist': artist or 'Unknown Artist'})
+            tracks_data.append({
+                'title': title or 'Unknown Title',
+                'artist': artist or 'Unknown Artist',
+                'track_number': metadata.get('track_number'),
+                'disc_number': metadata.get('disc_number'),
+            })
         else:
             raise ValueError("Unsupported spotify_metadata.json format. Expected list 'tracks', album/playlist or track.")
 
         if not tracks_data:
             raise ValueError("No tracks found in spotify_metadata.json to burn.")
+
+        # Sort by disc_number then track_number when available to enforce expected order
+        def _key(t: dict):
+            try:
+                d = int(t.get('disc_number') or 1)
+            except Exception:
+                d = 1
+            try:
+                n = int(t.get('track_number') or 0)
+            except Exception:
+                n = 0
+            return (d, n)
+
+        # Only sort if at least one entry has a track_number/disc_number
+        if any(t.get('track_number') is not None or t.get('disc_number') is not None for t in tracks_data):
+            tracks_data.sort(key=_key)
 
         self.logger.info(f"Found {len(tracks_data)} tracks in metadata.")
         return tracks_data
@@ -393,9 +437,22 @@ class CDBurningService:
 
         # Prepare saved metadata tracks list if present for duration fallback
         saved_meta_tracks = None
+        duration_by_num: Dict[tuple, float] = {}
         try:
             if isinstance(meta.get('tracks'), list):
                 saved_meta_tracks = meta['tracks']
+                for rt in saved_meta_tracks:
+                    try:
+                        dn = int(rt.get('disc_number') or 1)
+                    except Exception:
+                        dn = 1
+                    try:
+                        tn = int(rt.get('track_number') or 0)
+                    except Exception:
+                        tn = 0
+                    ms = rt.get('duration_ms')
+                    if isinstance(ms, (int, float)) and ms > 0:
+                        duration_by_num[(dn, tn)] = float(ms) / 1000.0
         except Exception:
             saved_meta_tracks = None
 
@@ -434,6 +491,7 @@ class CDBurningService:
                 exp2 = _norm(f"{artist} - {sanitized_title}")
                 exp3 = _norm(title)
                 exp4 = _norm(f"{artist} - {title}")
+                artist_norm = _norm(artist)
                 for path in all_files:
                     base_no_ext = os.path.splitext(os.path.basename(path))[0]
                     nb = _norm(base_no_ext)
@@ -446,6 +504,19 @@ class CDBurningService:
                     ):
                         found_mp3 = path
                         break
+                    # Also accept extra artists before the hyphen, e.g., "Artist, Other - Title"
+                    tail1 = '-' + exp1
+                    tail3 = '-' + exp3
+                    if nb.endswith(tail1):
+                        left = nb[: -len(tail1)]
+                        if not artist_norm or left.startswith(artist_norm):
+                            found_mp3 = path
+                            break
+                    if nb.endswith(tail3):
+                        left = nb[: -len(tail3)]
+                        if not artist_norm or left.startswith(artist_norm):
+                            found_mp3 = path
+                            break
 
             duration_sec = None
             has_lyrics = None
@@ -480,14 +551,25 @@ class CDBurningService:
                 })
 
             # Duration fallback from saved metadata if not determined from file
-            if duration_sec is None and saved_meta_tracks and len(saved_meta_tracks) >= idx:
+            if duration_sec is None and saved_meta_tracks:
                 try:
-                    raw = saved_meta_tracks[idx - 1]
-                    ms = raw.get('duration_ms')
-                    if isinstance(ms, (int, float)) and ms > 0:
-                        duration_sec = float(ms) / 1000.0
+                    dn = int(track.get('disc_number') or 1)
                 except Exception:
-                    pass
+                    dn = 1
+                try:
+                    tn = int(track.get('track_number') or 0)
+                except Exception:
+                    tn = 0
+                if (dn, tn) in duration_by_num:
+                    duration_sec = duration_by_num[(dn, tn)]
+                elif len(saved_meta_tracks) >= idx:
+                    try:
+                        raw = saved_meta_tracks[idx - 1]
+                        ms = raw.get('duration_ms')
+                        if isinstance(ms, (int, float)) and ms > 0:
+                            duration_sec = float(ms) / 1000.0
+                    except Exception:
+                        pass
 
             track_plans.append({
                 'index': idx,

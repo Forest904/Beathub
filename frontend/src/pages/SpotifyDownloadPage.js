@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import DownloadForm from '../components/DownloadForm';
@@ -151,6 +151,24 @@ const SpotifyDownloadPage = () => {
     return () => document.removeEventListener('click', handleDocumentClick);
   }, [selectedAlbumId]);
 
+  const sortedTracks = useMemo(() => {
+    const tracks = richMetadata?.tracks || [];
+    return [...tracks].sort((a, b) => {
+      const ad = Number(a?.disc_number ?? 1);
+      const bd = Number(b?.disc_number ?? 1);
+      if (Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd) return ad - bd;
+      const at = Number(a?.track_number ?? 0);
+      const bt = Number(b?.track_number ?? 0);
+      if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+      return 0;
+    });
+  }, [richMetadata?.tracks]);
+
+  const hasMultipleDiscs = useMemo(() => {
+    const discs = new Set((sortedTracks || []).map((t) => Number(t?.disc_number ?? 1)));
+    return discs.size > 1;
+  }, [sortedTracks]);
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="container mx-auto p-4">
@@ -200,8 +218,19 @@ const SpotifyDownloadPage = () => {
           )}
           {richMetadata && selectedAlbumId && (
             <div className="mt-6">
-              <h3 className="text-xl font-semibold mb-2">Downloaded Tracks</h3>
-              <TrackListRich tracks={richMetadata.tracks || []} />
+              {(() => {
+                const albumTitle =
+                  (richMetadata && (richMetadata.name || (richMetadata.album && richMetadata.album.name) || richMetadata.title)) ||
+                  'Downloaded Tracks';
+                return <h3 className="text-xl font-semibold mb-2">{albumTitle}</h3>;
+              })()}
+              <TrackListRich
+                tracks={sortedTracks}
+                showDiscHeaders={hasMultipleDiscs}
+                showIsrc={false}
+                showDisc={false}
+                showPopularity={false}
+              />
             </div>
           )}
         </div>

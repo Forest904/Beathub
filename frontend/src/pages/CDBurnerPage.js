@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+/* eslint-disable unicode-bom */
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
 import { AlbumCardVariant } from '../components/AlbumCard';
@@ -240,7 +241,6 @@ const CDBurnerPage = () => {
     return null;
   }, [burnerStatus.is_burning, isBurningInitiating, selectedDevice, selectedItem]);
   
-  const burnEnabled = !disableReason;
   const canStartByDevice = Boolean(selectedDevice && selectedDevice.present && selectedDevice.writable && !burnerStatus.is_burning);
 
   const fetchPreview = useCallback(async () => {
@@ -284,6 +284,19 @@ const CDBurnerPage = () => {
     <div className="min-h-screen bg-gray-900 text-white">
       <main className="container mx-auto p-6">
         <h1 className="text-3xl font-bold mb-6 text-center">CD Burner</h1>
+        {(burnerStatus.is_burning || isBurningInitiating) && (
+          <div className="sticky top-0 z-40">
+            <div
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="mx-auto my-4 w-full rounded-md bg-amber-400 text-black ring-1 ring-amber-500/70 px-4 py-3 shadow-lg flex items-center justify-center gap-3"
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-black text-sm font-extrabold">!</span>
+              <span className="text-sm font-semibold">CD burn in progress — do not navigate away.</span>
+            </div>
+          </div>
+        )}
 
         {message && (
           <div className="mb-4">
@@ -350,7 +363,7 @@ const CDBurnerPage = () => {
           </div>
         )}
 
-        {selectedItem && selectedDevice && !burnerStatus.is_burning && (
+        {selectedItem && selectedDevice && (
           <div className="w-full">
             {previewLoading && (
               <div className="mt-4 text-gray-300 text-sm">Generating preview…</div>
@@ -377,13 +390,6 @@ const CDBurnerPage = () => {
           sessionId={activeSessionId}
           onClose={() => setShowBurnProgress(false)}
         />
-        {(burnerStatus.is_burning || isBurningInitiating) && (
-          <div className="fixed inset-x-0 bottom-0 z-40">
-            <div className="mx-auto mb-4 w-[96%] max-w-3xl rounded-lg bg-slate-800/95 p-3 text-center text-sm text-slate-200 ring-1 ring-slate-600">
-              Stay on this page while burning. Navigation is temporarily disabled until completion.
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
