@@ -30,3 +30,50 @@ __pycache__/
 coverage.xml
 htmlcov/
 
+
+# Python build artifacts
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+__pypackages__/
+
+# Compiled extensions
+*.so
+*.pyd
+
+# Additional coverage/test outputs
+.coverage.*
+nosetests.xml
+
+# Additional tool caches
+.ruff_cache/
+.pytype/
+.pyre/
+
+# Editors/IDEs and OS files
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Env files (broader)
+*.env
+.env.*
+!.env.example*
+
+# Docs build outputs
+docs/_build/
+site/
+
+# Frontend fallbacks (root-level)
+frontend/node_modules/
+frontend/build/
+
+# SQLite defaults
+db.sqlite3
+db.sqlite3-journal

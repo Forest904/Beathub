@@ -106,6 +106,12 @@ On first run, the SQLite DB and tables are created automatically.
 - Do not commit the SQLite DB or `downloads/` directory
 - Environment variables are loaded via `python-dotenv` from `.env`
 
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Structure](docs/structure.md)
+- [TODO / Roadmap](docs/todo.md)
+
 ## License
 
 No license specified. Add one if you plan to distribute.
