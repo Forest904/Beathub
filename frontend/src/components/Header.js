@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, NavLink } from 'react-router-dom';
+import ThemeToggle from './ThemeToggle.jsx';
 
 const NAV_LINKS = [
   { label: 'Artists', to: '/browse' },
@@ -8,27 +9,23 @@ const NAV_LINKS = [
 ];
 
 const Header = () => (
-  <header className="relative isolate overflow-hidden bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800 text-white shadow-lg">
-    <div
-      className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.28),transparent_60%)]"
-      aria-hidden
-    />
-    <div className="container relative z-10 mx-auto px-4">
-      <div className="flex flex-col gap-6 py-6 md:flex-row md:items-center md:justify-between">
-        <div>
+  <header className="relative bg-white text-slate-900 shadow dark:bg-slate-950 dark:text-slate-100 border-b border-brand-100 dark:border-transparent">
+    <div className="container mx-auto px-4">
+      <div className="flex items-center justify-between py-6">
+        {/* Left: Brand */}
+        <div className="min-w-0">
           <Link
             to="/"
-            className="group inline-flex items-center gap-3 text-3xl font-semibold tracking-tight text-white transition hover:text-sky-200"
+            className="inline-flex items-center gap-3 text-3xl font-semibold tracking-tight text-brand-800 transition hover:text-brand-700 dark:text-slate-100 dark:hover:text-slate-300"
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-500/15 text-2xl text-sky-300 ring-1 ring-inset ring-sky-400/40 transition group-hover:bg-sky-500/25">
-              💿
-            </span>
-            <span>CD Collector</span>
+            <span>Spinventory</span>
           </Link>
         </div>
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-8">
+
+        {/* Center: Navigation */}
+        <div className="mx-4 flex flex-1 justify-center">
           <nav aria-label="Primary">
-            <ul className="flex flex-col gap-2 text-sm font-medium md:flex-row md:items-center md:gap-4 md:text-base">
+            <ul className="flex items-center gap-2 text-sm font-medium md:gap-4 md:text-base">
               {NAV_LINKS.map((link) => (
                 <li key={link.to}>
                   <NavLink
@@ -36,8 +33,8 @@ const Header = () => (
                     className={({ isActive }) =>
                       `block rounded-full px-4 py-2 transition duration-200 ${
                         isActive
-                          ? 'bg-slate-800/90 text-sky-200 ring-1 ring-sky-400/60'
-                          : 'text-slate-200 hover:bg-slate-800/60 hover:text-white'
+                          ? 'bg-brand-100 text-brand-800 ring-1 ring-brand-300 dark:bg-brandDark-900/50 dark:text-brandDark-200 dark:ring-brandDark-400/40'
+                          : 'text-slate-700 hover:bg-brand-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
                       }`
                     }
                   >
@@ -48,12 +45,13 @@ const Header = () => (
             </ul>
           </nav>
         </div>
+
+        {/* Right: Theme toggle */}
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+        </div>
       </div>
     </div>
-    <div
-      className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent"
-      aria-hidden
-    />
   </header>
 );
 

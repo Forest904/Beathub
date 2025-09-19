@@ -281,7 +281,7 @@ const CDBurnerPage = () => {
   }, [selectedItem?.id, selectedDevice?.id]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen">
       <main className="container mx-auto p-6">
         <h1 className="text-3xl font-bold mb-6 text-center">CD Burner</h1>
         {(burnerStatus.is_burning || isBurningInitiating) && (
@@ -290,7 +290,7 @@ const CDBurnerPage = () => {
               role="status"
               aria-live="polite"
               aria-atomic="true"
-              className="mx-auto my-4 w-full rounded-md bg-amber-400 text-black ring-1 ring-amber-500/70 px-4 py-3 shadow-lg flex items-center justify-center gap-3"
+              className="mx-auto my-4 w-full rounded-md bg-brandWarning-400 text-black ring-1 ring-brandWarning-500/70 px-4 py-3 shadow-lg flex items-center justify-center gap-3"
             >
               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/10 text-black text-sm font-extrabold">!</span>
               <span className="text-sm font-semibold">CD burn in progress — do not navigate away.</span>
@@ -304,16 +304,16 @@ const CDBurnerPage = () => {
           </div>
         )}
 
-        <section className="bg-gray-800 rounded-lg shadow-md p-6 mb-8">
+        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8 ring-1 ring-brand-100 dark:ring-0">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h2 className="text-xl font-semibold">Devices</h2>
           </div>
           {loadingDevices ? (
-            <p className="text-gray-400">Scanning devices...</p>
+            <p className="text-slate-600 dark:text-gray-400">Scanning devices...</p>
           ) : (
             <>
               {devices.length === 0 ? (
-                <p className="text-gray-400">No connected burner detected.</p>
+                <p className="text-slate-600 dark:text-gray-400">No connected burner detected.</p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {devices.map((device) => (
@@ -332,15 +332,15 @@ const CDBurnerPage = () => {
 
         {/* Checklist panel removed; guidance will appear inline with the preview/start area */}
 
-        <div className="bg-gray-800 rounded-lg shadow-md p-6 mb-8">
+        <div className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8 ring-1 ring-brand-100 dark:ring-0">
           <h2 className="text-xl font-semibold mb-4">Music</h2>
           {isLoadingItems ? (
-            <p className="text-gray-400">Loading downloaded items...</p>
+            <p className="text-slate-600 dark:text-gray-400">Loading downloaded items...</p>
           ) : downloadedItems.length === 0 ? (
-            <p className="text-gray-400">Download some music first.</p>
+            <p className="text-slate-600 dark:text-gray-400">Download some music first.</p>
           ) : (
             <>
-              <p className="text-gray-300 mb-4">Click an album, playlist, or track to select it for burning.</p>
+              <p className="text-slate-600 dark:text-gray-300 mb-4">Click an album, playlist, or track to select it for burning.</p>
               <AlbumGallery
                 albums={downloadedItems}
                 onSelect={handleSelectItem}
@@ -356,7 +356,7 @@ const CDBurnerPage = () => {
             <button
               type="button"
               onClick={handleCancelBurn}
-              className="py-3 px-6 rounded-lg text-lg font-bold bg-red-700 hover:bg-red-800 text-white"
+              className="py-3 px-6 rounded-lg text-lg font-bold bg-brandError-700 hover:bg-brandError-800 text-white"
             >
               Cancel Burn
             </button>
@@ -366,10 +366,10 @@ const CDBurnerPage = () => {
         {selectedItem && selectedDevice && (
           <div className="w-full">
             {previewLoading && (
-              <div className="mt-4 text-gray-300 text-sm">Generating preview…</div>
+              <div className="mt-4 text-slate-600 dark:text-gray-300 text-sm">Generating preview…</div>
             )}
             {previewError && (
-              <div className="mt-4 text-red-400 text-sm">{previewError}</div>
+              <div className="mt-4 text-brandError-600 dark:text-brandError-400 text-sm">{previewError}</div>
             )}
             {previewPlan && !previewLoading && !previewError && (
               <BurnPreview

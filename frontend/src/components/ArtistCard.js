@@ -9,25 +9,25 @@ const ArtistCard = ({ artist }) => {
 
   return (
     <Link to={`/artist/${artist.id}`} className="block transform transition-transform duration-200 hover:scale-105">
-      <div className="bg-gray-800 rounded-lg shadow-md overflow-hidden flex flex-col h-full">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden flex flex-col h-full ring-1 ring-brand-100 dark:ring-0">
         <div className="relative w-full h-48 sm:h-56 md:h-64 overflow-hidden">
           <img src={imageUrl} alt={artist.name} className="w-full h-full object-cover" />
         </div>
         <div className="p-4 flex flex-col justify-between flex-grow">
-          <h3 className="text-xl font-semibold text-white truncate mb-2">{artist.name}</h3>
+          <h3 className="text-xl font-semibold text-slate-900 dark:text-white truncate mb-2">{artist.name}</h3>
           {artist.genres?.length > 0 && (
-            <p className="text-sm text-gray-300 mb-1">
+            <p className="text-sm text-slate-600 dark:text-gray-300 mb-1">
               <span className="font-medium">Genres:</span> {artist.genres.slice(0, 2).join(', ')}
               {artist.genres.length > 2 && '...'}
             </p>
           )}
           {typeof artist.followers === 'number' && (
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-slate-600 dark:text-gray-300">
               <span className="font-medium">Followers:</span> {artist.followers.toLocaleString()}
             </p>
           )}
           {typeof artist.popularity === 'number' && (
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-slate-600 dark:text-gray-300">
               <span className="font-medium">Popularity:</span> {artist.popularity}
             </p>
           )}

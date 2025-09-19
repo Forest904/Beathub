@@ -88,30 +88,30 @@ const AlbumDetailsPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <p className="text-xl">Loading album details...</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-xl text-slate-900 dark:text-white">Loading album details...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <p className="text-xl text-red-400">{error}</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-xl text-brandError-600 dark:text-brandError-400">{error}</p>
       </div>
     );
   }
 
   if (!albumDetails) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <p className="text-xl text-gray-400">Album not found.</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-xl text-slate-600 dark:text-gray-400">Album not found.</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen">
       <div className="container mx-auto p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-6 md:space-y-0 md:space-x-8">
           <div className="w-full md:w-1/6 lg:w-1/6 max-w-xs md:max-w-sm md:flex md:items-center">
@@ -125,11 +125,11 @@ const AlbumDetailsPage = () => {
           </div>
 
           <div className="w-full md:flex-1 md:mx-8 flex flex-col justify-center text-center md:text-center md:items-center">
-            <h1 className="text-4xl font-bold mb-2">{albumDetails.title}</h1>
-            <p className="text-xl text-gray-400 mb-2">by {albumDetails.artist}</p>
-            <p className="text-md text-gray-500 mb-1">Release Date: {releaseDateLabel}</p>
-            <p className="text-md text-gray-500">Total Tracks: {albumDetails.total_tracks}</p>
-            {copyFeedback && <p className="text-green-400 mt-4 text-sm">{copyFeedback}</p>}
+            <h1 className="text-4xl font-bold mb-2 text-slate-900 dark:text-white">{albumDetails.title}</h1>
+            <p className="text-xl text-slate-600 dark:text-gray-400 mb-2">by {albumDetails.artist}</p>
+            <p className="text-md text-slate-500 dark:text-gray-500 mb-1">Release Date: {releaseDateLabel}</p>
+            <p className="text-md text-slate-500 dark:text-gray-500">Total Tracks: {albumDetails.total_tracks}</p>
+            {copyFeedback && <p className="text-brandSuccess-400 mt-4 text-sm">{copyFeedback}</p>}
           </div>
 
           <div className="w-full md:w-auto md:flex md:items-center">
@@ -137,7 +137,7 @@ const AlbumDetailsPage = () => {
               <button
                 type="button"
                 onClick={() => albumDetails.spotify_url && window.open(albumDetails.spotify_url, '_blank', 'noopener,noreferrer')}
-                className="w-full md:w-auto bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
+                className="w-full md:w-auto bg-brandSuccess-600 hover:bg-brandSuccess-700 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
                 disabled={!albumDetails.spotify_url}
               >
                 Listen on Spotify
@@ -145,14 +145,14 @@ const AlbumDetailsPage = () => {
               <button
                 type="button"
                 onClick={handleCopySpotifyLink}
-                className="w-full md:w-auto bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
+                className="w-full md:w-auto bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
               >
                 Copy Spotify Link
               </button>
               <button
                 type="button"
                 onClick={handleDirectDownload}
-                className="w-full md:w-auto bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
+                className="w-full md:w-auto bg-brand-700 hover:bg-brand-800 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
               >
                 Direct Download
               </button>
@@ -161,24 +161,24 @@ const AlbumDetailsPage = () => {
         </div>
 
         <div className="mt-12">
-          <h2 className="text-3xl font-semibold mb-6 text-center md:text-left">Tracks</h2>
+          <h2 className="text-3xl font-semibold mb-6 text-center md:text-left text-slate-900 dark:text-white">Tracks</h2>
           {albumDetails.tracks?.length ? (
             <ul className="space-y-2">
               {albumDetails.tracks.map((track, index) => (
                 <li
                   key={track.spotify_id || index}
-                  className="bg-gray-800 p-4 rounded-lg shadow flex flex-col sm:flex-row justify-between items-center"
+                  className="bg-brand-50 dark:bg-gray-800 p-4 rounded-lg shadow flex flex-col sm:flex-row justify-between items-center ring-1 ring-brand-100 dark:ring-0"
                 >
                   <div className="flex-1 text-left mb-2 sm:mb-0">
-                    <p className="text-lg font-medium">{track.track_number}. {track.title}</p>
-                    <p className="text-sm text-gray-400">{(track.artists || []).join(', ')}</p>
+                    <p className="text-lg font-medium text-slate-900 dark:text-white">{track.track_number}. {track.title}</p>
+                    <p className="text-sm text-slate-600 dark:text-gray-400">{(track.artists || []).join(', ')}</p>
                   </div>
-                  <p className="text-gray-400 text-sm">{formatDuration(track.duration_ms)}</p>
+                  <p className="text-slate-600 dark:text-gray-400 text-sm">{formatDuration(track.duration_ms)}</p>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-gray-500 text-lg">No tracks found for this album.</p>
+            <p className="text-slate-600 dark:text-gray-500 text-lg">No tracks found for this album.</p>
           )}
         </div>
       </div>

@@ -170,12 +170,12 @@ const SpotifyDownloadPage = () => {
   }, [sortedTracks]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen">
       <div className="container mx-auto p-4">
-        <h1 className="text-4xl font-bold text-center mb-8">My Spotify Downloader</h1>
+        <h1 className="text-4xl font-bold text-center mb-8 text-slate-900 dark:text-white">My Spotify Downloader</h1>
 
-        <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
-          <h2 className="text-2xl font-semibold text-white mb-4">Download from Spotify</h2>
+        <div className="bg-brand-50 dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-8 ring-1 ring-brand-100 dark:ring-0">
+          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-4">Download from Spotify</h2>
           <DownloadForm onSubmit={handleDownload} loading={loading} />
           {errorMessage && <Message type="error" text={errorMessage} />}
           {hasActiveDownload && (
@@ -183,7 +183,7 @@ const SpotifyDownloadPage = () => {
               <button
                 type="button"
                 onClick={() => setProgressVisible((prev) => !prev)}
-                className="text-sm px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-200"
+                className="text-sm px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200"
               >
                 {progressVisible ? 'Hide Progress' : 'Show Progress'}
               </button>
@@ -198,15 +198,15 @@ const SpotifyDownloadPage = () => {
           />
         </div>
 
-        <div ref={historySectionRef} className="bg-gray-800 p-6 rounded-lg shadow-lg">
-          <h2 className="text-2xl font-semibold text-white mb-4">My Previous Downloads</h2>
+        <div ref={historySectionRef} className="bg-brand-50 dark:bg-gray-800 p-6 rounded-lg shadow-lg ring-1 ring-brand-100 dark:ring-0">
+          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-4">My Previous Downloads</h2>
           {loading && !initialFetchComplete ? (
             <div className="text-center mt-4">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto" />
-              <p className="text-gray-300 mt-2">Loading albums...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brandDark-500 mx-auto" />
+              <p className="text-slate-600 dark:text-gray-300 mt-2">Loading albums...</p>
             </div>
           ) : albums.length === 0 && initialFetchComplete ? (
-            <p className="text-gray-300 text-center">No downloads yet. Add some!</p>
+            <p className="text-slate-600 dark:text-gray-300 text-center">No downloads yet. Add some!</p>
           ) : (
             <AlbumGallery
               albums={albums}
@@ -222,7 +222,7 @@ const SpotifyDownloadPage = () => {
                 const albumTitle =
                   (richMetadata && (richMetadata.name || (richMetadata.album && richMetadata.album.name) || richMetadata.title)) ||
                   'Downloaded Tracks';
-                return <h3 className="text-xl font-semibold mb-2">{albumTitle}</h3>;
+                return <h3 className="text-xl font-semibold mb-2 text-slate-900 dark:text-white">{albumTitle}</h3>;
               })()}
               <TrackListRich
                 tracks={sortedTracks}

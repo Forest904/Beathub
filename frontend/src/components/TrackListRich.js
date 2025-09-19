@@ -3,11 +3,11 @@ import PropTypes from 'prop-types';
 import { formatDuration } from '../utils/helpers';
 
 const BADGE_VARIANTS = {
-  gray: 'bg-gray-700 text-gray-200',
-  red: 'bg-red-700 text-white',
-  blue: 'bg-blue-700 text-white',
-  green: 'bg-green-700 text-white',
-  yellow: 'bg-yellow-600 text-black',
+  gray: 'bg-slate-200 text-slate-700 dark:bg-gray-700 dark:text-gray-200',
+  red: 'bg-brandError-600 text-white dark:bg-brandError-700',
+  blue: 'bg-brand-600 text-white dark:bg-brandDark-700',
+  green: 'bg-brandSuccess-600 text-white dark:bg-brandSuccess-700',
+  yellow: 'bg-brandWarning-500 text-black dark:bg-brandWarning-600',
 };
 
 const Badge = ({ children, color }) => (
@@ -32,7 +32,7 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
         <thead>
-          <tr className="text-left text-gray-300">
+          <tr className="text-left text-brand-800 dark:text-gray-300">
             <th className="px-2 py-2">#</th>
             <th className="px-2 py-2">Title</th>
             <th className="px-2 py-2">Artists</th>
@@ -58,8 +58,8 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
               );
               if (showDiscHeaders && lastDisc !== discNum) {
                 rows.push(
-                  <tr key={`disc-${discNum}`} className="border-t border-gray-700 bg-gray-800/70">
-                    <td className="px-2 py-2 text-sm font-semibold text-sky-300" colSpan={colSpan}>
+                  <tr key={`disc-${discNum}`} className="border-t border-brand-100 dark:border-gray-700 bg-brand-50 dark:bg-gray-800/70">
+                    <td className="px-2 py-2 text-sm font-semibold text-brand-700 dark:text-brandDark-300" colSpan={colSpan}>
                       Disc {discNum}
                     </td>
                   </tr>,
@@ -68,12 +68,12 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
               }
 
               rows.push(
-                <tr key={track.spotify_id || `${discNum}-${index}`} className="border-t border-gray-700">
-                  <td className="px-2 py-2 text-gray-400">{track.track_number ?? index + 1}</td>
-                  <td className="px-2 py-2 text-white">
+                <tr key={track.spotify_id || `${discNum}-${index}`} className="border-t border-slate-200 dark:border-gray-700">
+                  <td className="px-2 py-2 text-slate-600 dark:text-gray-400">{track.track_number ?? index + 1}</td>
+                  <td className="px-2 py-2 text-slate-900 dark:text-white">
                     <div className="flex items-center gap-2">
                     <span
-                      className={`truncate max-w-[28ch] ${compactForBurnPreview && isMissing ? 'text-red-400' : ''}`}
+                      className={`truncate max-w-[28ch] ${compactForBurnPreview && isMissing ? 'text-brandError-600 dark:text-brandError-400' : ''}`}
                       title={track.title}
                     >
                       {track.title}
@@ -88,26 +88,26 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
                       {!compactForBurnPreview && isMissing && <Badge color="red">Missing</Badge>}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-gray-300 truncate max-w-[32ch]" title={(track.artists || []).join(', ')}>
+                  <td className="px-2 py-2 text-slate-600 dark:text-gray-300 truncate max-w-[32ch]" title={(track.artists || []).join(', ')}>
                     {(track.artists || []).join(', ')}
                   </td>
-                  <td className="px-2 py-2 text-gray-300">{formatDuration(track.duration_ms)}</td>
+                  <td className="px-2 py-2 text-slate-600 dark:text-gray-300">{formatDuration(track.duration_ms)}</td>
                   {useShowExplicit && (
-                    <td className="px-2 py-2">{track.explicit ? <Badge color="red">E</Badge> : <span className="text-gray-500">N/A</span>}</td>
+                    <td className="px-2 py-2">{track.explicit ? <Badge color="red">E</Badge> : <span className="text-slate-500 dark:text-gray-500">N/A</span>}</td>
                   )}
                   {useShowIsrc && (
-                    <td className="px-2 py-2 text-gray-300 truncate max-w-[18ch]" title={track.isrc || ''}>
+                    <td className="px-2 py-2 text-slate-600 dark:text-gray-300 truncate max-w-[18ch]" title={track.isrc || ''}>
                       {track.isrc || 'N/A'}
                     </td>
                   )}
                   {showDisc && (
-                    <td className="px-2 py-2 text-gray-300">
+                    <td className="px-2 py-2 text-slate-600 dark:text-gray-300">
                       {track.disc_number}
                       {track.disc_count ? `/${track.disc_count}` : ''}
                     </td>
                   )}
                   {useShowPopularity && (
-                    <td className="px-2 py-2 text-gray-300">{track.popularity ?? 'N/A'}</td>
+                    <td className="px-2 py-2 text-slate-600 dark:text-gray-300">{track.popularity ?? 'N/A'}</td>
                   )}
                 </tr>,
               );

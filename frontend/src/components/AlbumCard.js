@@ -84,10 +84,10 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
   return (
     <div
       onClick={handleCardClick}
-      className={`album-card bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 ${
+      className={`album-card bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-200 ring-1 ring-brand-100 dark:ring-0 ${
         disabled ? 'cursor-not-allowed opacity-70' : 'hover:scale-105 cursor-pointer'
       } ${
-        isSelected ? 'border-4 border-blue-500' : 'border-2 border-transparent'
+        isSelected ? 'border-4 border-brand-500' : 'border-2 border-transparent'
       }`}
     >
       <img
@@ -96,14 +96,14 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
         className="w-full h-auto object-cover"
       />
       <div className="p-4 text-center">
-        <h3 className="text-lg font-semibold text-white mb-1 truncate">{album.name}</h3>
-        <p className="text-sm text-gray-400 mb-3 truncate">{album.title}</p>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1 truncate">{album.name}</h3>
+        <p className="text-sm text-slate-600 dark:text-gray-400 mb-3 truncate">{album.title}</p>
         <div className="flex flex-col space-y-2">
           {variant !== AlbumCardVariant.BURN_SELECTION && album.spotify_url && (
             <button
               type="button"
               onClick={handleCopyLink}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
             >
               Copy Spotify Link
             </button>
@@ -113,7 +113,7 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
             <button
               type="button"
               onClick={handleDirectDownload}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
+              className="bg-brand-700 hover:bg-brand-800 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
             >
               Direct Download
             </button>
@@ -123,7 +123,7 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
             <button
               type="button"
               onClick={handleDelete}
-              className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
+              className="bg-brandError-600 hover:bg-brandError-700 text-white font-medium py-2 px-3 rounded-md transition duration-150 text-sm"
             >
               Delete
             </button>

@@ -2,13 +2,13 @@ import React from 'react';
 import PropTypes from 'prop-types';
 
 const SearchBar = ({ searchTerm, onSearchChange, placeholder }) => (
-  <div className="mb-8 p-4 bg-gray-900 rounded-lg shadow-md">
+  <div className="mb-8 p-4 bg-brand-50 dark:bg-gray-900 rounded-lg shadow-md ring-1 ring-brand-100 dark:ring-0">
     <input
       type="text"
       placeholder={placeholder}
       value={searchTerm}
       onChange={onSearchChange}
-      className="w-full px-5 py-3 bg-gray-700 text-white border border-gray-600 rounded-full text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+      className="w-full px-5 py-3 bg-white text-slate-900 border border-brand-300 rounded-full text-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition duration-200 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:focus:ring-brandDark-500 dark:focus:border-brandDark-500"
     />
   </div>
 );

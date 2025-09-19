@@ -103,28 +103,28 @@ const ProgressPanel = ({ visible, onClose, baseUrl, onComplete, onActiveChange }
   })();
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 shadow-lg mb-6">
+    <div className="bg-brand-50 dark:bg-gray-800 rounded-lg p-4 shadow-lg mb-6 ring-1 ring-brand-100 dark:ring-0">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-lg font-semibold">Download Progress</h3>
-        <button type="button" onClick={onClose} className="text-sm text-gray-300 hover:text-white">
+        <button type="button" onClick={onClose} className="text-sm text-slate-600 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white">
           Hide
         </button>
       </div>
 
       <div className="mb-3">
-        <div className="text-sm text-gray-300">
+        <div className="text-sm text-slate-700 dark:text-gray-300">
           Overall: {state.overall_completed} / {state.overall_total}
         </div>
-        <div className="w-full bg-gray-700 rounded h-3 mt-1">
-          <div className="bg-blue-500 h-3 rounded" style={{ width: `${overallPercentage}%` }} />
+        <div className="w-full bg-brand-200 dark:bg-gray-700 rounded h-3 mt-1">
+          <div className="bg-brand-600 h-3 rounded" style={{ width: `${overallPercentage}%` }} />
         </div>
       </div>
 
       <div className="mt-3">
-        <div className="text-sm text-gray-300">{state.status || 'Waiting...'}</div>
-        <div className="text-sm text-gray-400 truncate">{state.song_display_name || 'Unknown'}</div>
-        <div className="w-full bg-gray-700 rounded h-2 mt-1">
-          <div className="bg-green-500 h-2 rounded" style={{ width: `${state.progress || 0}%` }} />
+        <div className="text-sm text-slate-700 dark:text-gray-300">{state.status || 'Waiting...'}</div>
+        <div className="text-sm text-slate-600 dark:text-gray-400 truncate">{state.song_display_name || 'Unknown'}</div>
+        <div className="w-full bg-brand-200 dark:bg-gray-700 rounded h-2 mt-1">
+          <div className="bg-brandSuccess-500 h-2 rounded" style={{ width: `${state.progress || 0}%` }} />
         </div>
       </div>
     </div>

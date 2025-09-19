@@ -4,7 +4,7 @@ import TrackListRich from './TrackListRich';
 const Flag = ({ ok, label }) => (
   <span
     className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold mr-2 mb-2 ${
-      ok ? 'bg-green-700 text-white' : 'bg-red-700 text-white'
+      ok ? 'bg-brandSuccess-700 text-white' : 'bg-brandError-700 text-white'
     }`}
     title={label}
   >
@@ -61,11 +61,11 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
     const usedPct = (cap) => Math.min(100, Math.max(0, (total / cap) * 100));
     const barClass = (l) => {
       const c = color(l);
-      return c === 'red' ? 'bg-red-500' : c === 'yellow' ? 'bg-yellow-400' : 'bg-green-500';
+      return c === 'red' ? 'bg-brandError-500' : c === 'yellow' ? 'bg-brandWarning-400' : 'bg-brandSuccess-500';
     };
     const textClass = (l) => {
       const c = color(l);
-      return c === 'red' ? 'text-red-400' : c === 'yellow' ? 'text-yellow-300' : 'text-green-400';
+      return c === 'red' ? 'text-brandError-400' : c === 'yellow' ? 'text-brandWarning-300' : 'text-brandSuccess-400';
     };
     const lP = left(capP);
     const lS = capS !== null ? left(capS) : null;
@@ -102,11 +102,11 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
   }, [plan]);
 
   return (
-    <section className="w-full bg-gray-800 rounded-lg shadow-md p-6 mt-6">
+    <section className="w-full bg-brand-50 dark:bg-gray-800 rounded-lg shadow-md p-6 mt-6 ring-1 ring-brand-100 dark:ring-0">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-semibold">Burn Preview</h3>
-          <p className="text-sm text-gray-300">
+          <p className="text-sm text-slate-700 dark:text-gray-300">
             {summary.title}
             {summary.artist ? ` — ${summary.artist}` : ''} • {summary.count} tracks • {summary.totalFmt}
           </p>
@@ -124,10 +124,10 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
 
       <div className="mb-3 text-sm">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-gray-300">{capacity.primaryMin}-min CD</span>
+          <span className="text-slate-700 dark:text-gray-300">{capacity.primaryMin}-min CD</span>
           <span className={capacity.textPrimary}>{capacity.labelPrimary}</span>
         </div>
-        <div className="h-2 rounded bg-gray-700 overflow-hidden">
+        <div className="h-2 rounded bg-brand-200 dark:bg-gray-700 overflow-hidden">
           <div className={`h-2 ${capacity.barPrimary}`} style={{ width: `${capacity.usedPrimary}%` }} />
         </div>
       </div>
@@ -135,17 +135,17 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
       {capacity.secondaryMin && (
         <div className="mb-4 text-sm">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-gray-300">{capacity.secondaryMin}-min CD</span>
+            <span className="text-slate-700 dark:text-gray-300">{capacity.secondaryMin}-min CD</span>
             <span className={capacity.textSecondary}>{capacity.labelSecondary}</span>
           </div>
-          <div className="h-2 rounded bg-gray-700 overflow-hidden">
+          <div className="h-2 rounded bg-brand-200 dark:bg-gray-700 overflow-hidden">
             <div className={`h-2 ${capacity.barSecondary}`} style={{ width: `${capacity.usedSecondary}%` }} />
           </div>
         </div>
       )}
 
       {plan?.warnings?.length > 0 && (
-        <div className="mb-4 text-yellow-300 text-sm">
+        <div className="mb-4 text-brandWarning-700 dark:text-brandWarning-300 text-sm">
           {plan.warnings.map((w, i) => (
             <div key={i}>⚠ {w}</div>
           ))}
@@ -153,7 +153,7 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
       )}
 
       {(plan?.missing_tracks?.length || 0) > 0 && (
-        <div className="mb-4 text-red-300 text-sm">
+        <div className="mb-4 text-brandError-600 dark:text-brandError-300 text-sm">
           <div className="font-semibold mb-1">Missing Tracks:</div>
           {plan.missing_tracks.map((m) => (
             <div key={m.index}>
@@ -167,7 +167,7 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
 
       <div className="mt-6 flex flex-col items-center justify-center gap-2">
         {inProgress ? (
-          <div className="text-gray-300 text-sm">Burn in progress…</div>
+          <div className="text-slate-700 dark:text-gray-300 text-sm">Burn in progress…</div>
         ) : (
           <>
             <button
@@ -176,14 +176,14 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
               disabled={!(previewOk && canStart) || initiating}
               className={`py-3 px-8 rounded-lg text-lg font-bold transition duration-200 ${
                 !(previewOk && canStart) || initiating
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
+                  ? 'bg-slate-200 text-slate-400 dark:bg-gray-600 dark:text-gray-400 cursor-not-allowed'
+                  : 'bg-brandSuccess-600 hover:bg-brandSuccess-700 text-white'
               }`}
             >
               {initiating ? 'Initiating Burn…' : 'Start CD Burn'}
             </button>
             {disabledReason && (!(previewOk && canStart) || initiating) && (
-              <div className="text-gray-400 text-sm">{disabledReason}</div>
+              <div className="text-slate-700 dark:text-gray-400 text-sm">{disabledReason}</div>
             )}
           </>
         )}

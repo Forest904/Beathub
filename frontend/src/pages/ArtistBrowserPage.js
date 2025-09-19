@@ -64,36 +64,36 @@ const ArtistBrowserPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen">
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl font-bold text-center text-white mb-10">Discover Artists</h1>
+        <h1 className="text-4xl font-bold text-center text-slate-900 dark:text-white mb-10">Discover Artists</h1>
 
         <SearchBar searchTerm={searchTerm} onSearchChange={handleSearchChange} placeholder="Search for your favorite artists..." />
 
-        {loading && <p className="text-center text-blue-400 text-xl mt-8">Loading artists...</p>}
+        {loading && <p className="text-center text-brand-600 dark:text-brandDark-400 text-xl mt-8">Loading artists...</p>}
 
-        {error && <p className="text-center text-red-400 text-xl mt-8">{error}</p>}
+        {error && <p className="text-center text-brandError-600 dark:text-brandError-400 text-xl mt-8">{error}</p>}
 
         {!loading && !error && (
           <>
             {searchTerm ? (
               <section className="mb-12">
-                <h2 className="text-3xl font-semibold text-white mb-6 text-center">
+                <h2 className="text-3xl font-semibold text-slate-900 dark:text-white mb-6 text-center">
                   Search Results {artists.length > 0 && `(${artists.length})`}
                 </h2>
                 {artists.length > 0 ? (
                   <ArtistGallery artists={artists} />
                 ) : (
-                  <p className="text-center text-gray-400 text-lg">No artists found for "{searchTerm}".</p>
+                  <p className="text-center text-slate-500 dark:text-gray-400 text-lg">No artists found for "{searchTerm}".</p>
                 )}
               </section>
             ) : (
               <section>
-                <h2 className="text-3xl font-semibold text-white mb-6 text-center">Famous Artists</h2>
+                <h2 className="text-3xl font-semibold text-slate-900 dark:text-white mb-6 text-center">Famous Artists</h2>
                 {famousArtists.length > 0 ? (
                   <ArtistGallery artists={famousArtists} />
                 ) : (
-                  <p className="text-center text-gray-400 text-lg">No famous artists to display.</p>
+                  <p className="text-center text-slate-500 dark:text-gray-400 text-lg">No famous artists to display.</p>
                 )}
               </section>
             )}

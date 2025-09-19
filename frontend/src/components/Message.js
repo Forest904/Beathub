@@ -2,10 +2,10 @@ import React from 'react';
 import PropTypes from 'prop-types';
 
 const MESSAGE_STYLES = {
-  success: 'bg-green-700 text-green-100',
-  error: 'bg-red-700 text-red-100',
-  info: 'bg-blue-700 text-blue-100',
-  warning: 'bg-yellow-600 text-yellow-100',
+  success: 'bg-brandSuccess-100 text-brandSuccess-800 dark:bg-brandSuccess-700 dark:text-brandSuccess-100',
+  error: 'bg-brandError-100 text-brandError-800 dark:bg-brandError-700 dark:text-brandError-100',
+  info: 'bg-brand-100 text-brand-800 dark:bg-brandDark-700 dark:text-brandDark-100',
+  warning: 'bg-brandWarning-100 text-brandWarning-800 dark:bg-brandWarning-600 dark:text-brandWarning-100',
 };
 
 const Message = ({ type, text }) => {

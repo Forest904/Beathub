@@ -31,8 +31,8 @@
 - [ ] Reset pagination to page 1 when filters are updated.
 
 ## Header Restyle
-- [ ] Remove the gradient background and CD icon.
-- [ ] Replace "CD Collector" text with a funnier, more engaging name.
+- [x] Remove the gradient background and CD icon.
+- [x] Replace "CD Collector" text with a funnier, more engaging name.
 
 ## Missing Tracks Bug
 - [x] Fix burn preview logic to correctly match tracks with "(feat XXX)" in filenames, including these patterns:
@@ -63,9 +63,15 @@
 - [ ] Include error codes and messages for any failed burns.
 - [ ] Audit the CD Burning pipeline for possible break points.
 
+## Theme toggle light/dark
+1. [x] Review frontend structure to allow for global theme toggle.
+2. [x] Add theme toggle switch to the header far right and move the navigation links in the center.
+3. [x] Refactor frontend for global theme acceptance.
+4. [x] Choose a simple light blue palette for the light theme and a dark blue palette for dark theme.
+
+
 ## Steps for onine publication 
 
 ## Steps for .exe packaging
 
 ## Steps for telegram bot
-

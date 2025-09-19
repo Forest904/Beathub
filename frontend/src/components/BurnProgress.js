@@ -121,21 +121,21 @@ const BurnProgress = ({ visible, baseUrl, sessionId, onClose }) => {
   }
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 shadow-lg mb-6">
+    <div className="bg-brand-50 dark:bg-gray-800 rounded-lg p-4 shadow-lg mb-6 ring-1 ring-brand-100 dark:ring-0">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-lg font-semibold">Burn Progress</h3>
-        <button type="button" onClick={onClose} className="text-sm text-gray-300 hover:text-white">
+        <button type="button" onClick={onClose} className="text-sm text-slate-600 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white">
           Hide
         </button>
       </div>
-      <div className="text-sm text-gray-300 mb-1">{state.message || state.status}</div>
-      <div className="text-xs text-gray-400 mb-2">
+      <div className="text-sm text-slate-700 dark:text-gray-300 mb-1">{state.message || state.status}</div>
+      <div className="text-xs text-slate-600 dark:text-gray-400 mb-2">
         Phase: {phaseLabel(state.phase)}
         {state.trackIndex && state.trackTotal ? ` - Track ${state.trackIndex}/${state.trackTotal}` : ''}
         {typeof state.elapsedSec === 'number' ? ` - ${state.elapsedSec}s` : ''}
       </div>
-      <div className="w-full bg-gray-700 rounded h-3 mt-1">
-        <div className="bg-red-500 h-3 rounded" style={{ width: `${state.progress || 0}%` }} />
+      <div className="w-full bg-brand-200 dark:bg-gray-700 rounded h-3 mt-1">
+        <div className="bg-brand-600 h-3 rounded" style={{ width: `${state.progress || 0}%` }} />
       </div>
     </div>
   );
