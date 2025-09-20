@@ -246,7 +246,7 @@ class IMAPI2AudioBurner:
     - Publish progress via IMAPI2 events and support cancellation
     """
 
-    def __init__(self, logger: Optional[logging.Logger] = None, client_name: str = "CD-Collector"):
+    def __init__(self, logger: Optional[logging.Logger] = None, client_name: str = "BeatHub"):
         _ensure_imapi_available()
         _ensure_com_initialized()
         self._logger = logger or logging.getLogger(self.__class__.__name__)

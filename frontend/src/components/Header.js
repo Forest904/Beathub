@@ -18,7 +18,7 @@ const Header = () => (
             to="/"
             className="inline-flex items-center gap-3 text-3xl font-semibold tracking-tight text-brand-800 transition hover:text-brand-700 dark:text-slate-100 dark:hover:text-slate-300"
           >
-            <span>Spinventory</span>
+            <span>BeatHub</span>
           </Link>
         </div>
 

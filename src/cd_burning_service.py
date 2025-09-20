@@ -65,7 +65,7 @@ class CDBurningService:
 
             if self._imapi is None:
                 try:
-                    self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="CD-Collector")
+                    self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="BeatHub")
                 except IMAPIUnavailableError as e:
                     session.update_burner_state(detected=False, present=False, blank_or_erasable=False)
                     session.set_error(str(e))
@@ -104,7 +104,7 @@ class CDBurningService:
             return False
         if self._imapi is None:
             try:
-                self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="CD-Collector")
+                self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="BeatHub")
             except Exception as e:
                 self.logger.error("IMAPI2 init failed for device select: %s", e)
                 return False
@@ -237,7 +237,7 @@ class CDBurningService:
 
         if self._imapi is None:
             try:
-                self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="CD-Collector")
+                self._imapi = IMAPI2AudioBurner(logger=self.logger, client_name="BeatHub")
             except IMAPIUnavailableError as exc:
                 msg = f"IMAPI2 initialization failed: {exc}"
                 self.logger.error(msg)

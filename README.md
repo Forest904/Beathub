@@ -1,6 +1,6 @@
-# CD-Collector
+# BeatHub
 
-CD-Collector is a full-stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
+BeatHub is a full-stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
 
 ## Features
 
@@ -15,7 +15,7 @@ CD-Collector is a full-stack app to search artists and albums on Spotify, downlo
 
 - Backend: `Python 3.11+`, `Flask`, `Flask-SQLAlchemy`, `flask-cors`
 - Integrations: `spotipy` (Spotify Web API), `spotdl`, `pydub`/`ffmpeg`
-- DB: SQLite (file at `database/instance/cd_collector.db`)
+- DB: SQLite (file at `src/database/instance/beathub.db`)
 - Frontend: React (CRA), `axios`, Tailwind (optional)
 
 ## Prerequisites

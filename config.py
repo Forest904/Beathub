@@ -33,9 +33,10 @@ def _get_csv_list(name: str, default: str) -> List[str]:
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your_super_secret_key_lmao'
 
-    # Database
+    # Database (BeatHub)
+    # Always use the new DB filename; the app creates it and tables at startup.
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///' + os.path.join(basedir, 'src', 'database', 'instance', 'cd_collector.db')
+        'sqlite:///' + os.path.join(basedir, 'src', 'database', 'instance', 'beathub.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Spotify API
