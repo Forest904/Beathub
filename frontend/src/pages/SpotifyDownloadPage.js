@@ -135,6 +135,23 @@ const SpotifyDownloadPage = () => {
     fetchAlbums();
   }, [fetchAlbums]);
 
+  // If instructed, show the progress panel immediately (e.g., from compilation sidebar)
+  useEffect(() => {
+    if (location.state && location.state.showProgressPanel) {
+      setProgressVisible(true);
+    }
+  }, [location.state]);
+
+  // If a spotify id to select is provided, select matching item when albums list loads
+  useEffect(() => {
+    const target = location.state && location.state.selectSpotifyId;
+    if (!target || albums.length === 0) return;
+    const match = albums.find((a) => a.spotify_id === target);
+    if (match) {
+      setSelectedAlbumId(match.id);
+    }
+  }, [albums, location.state]);
+
   useEffect(() => {
     if (!location.state?.spotifyLinkToDownload || autoDownloadAttempted.current) {
       return;

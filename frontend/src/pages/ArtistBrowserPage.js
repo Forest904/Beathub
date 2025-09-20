@@ -132,7 +132,9 @@ const ArtistBrowserPage = () => {
   return (
     <div className="min-h-screen">
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl font-bold text-center text-slate-900 dark:text-white mb-10">Discover Artists</h1>
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-4xl font-bold text-slate-900 dark:text-white">Discover Artists</h1>
+        </div>
 
         <SearchBar searchTerm={searchTerm} onSearchChange={handleSearchChange} placeholder="Search for your favorite artists..." />
 

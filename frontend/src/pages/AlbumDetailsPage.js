@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import { formatDuration } from '../utils/helpers';
+// import { formatDuration } from '../utils/helpers';
+import TrackListDiscovery from '../components/TrackListDiscovery.jsx';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/300x300.png?text=No+Cover';
 
@@ -91,6 +92,11 @@ const AlbumDetailsPage = () => {
     return new Date(albumDetails.release_date).toLocaleDateString();
   }, [albumDetails]);
 
+  const enrichedTracks = useMemo(() => {
+    const list = albumDetails?.tracks || [];
+    return list.map((t) => ({ ...t, albumId }));
+  }, [albumDetails, albumId]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -178,21 +184,8 @@ const AlbumDetailsPage = () => {
 
         <div className="mt-12">
           <h2 className="text-3xl font-semibold mb-6 text-center md:text-left text-slate-900 dark:text-white">Tracks</h2>
-          {albumDetails.tracks?.length ? (
-            <ul className="space-y-2">
-              {albumDetails.tracks.map((track, index) => (
-                <li
-                  key={track.spotify_id || index}
-                  className="bg-brand-50 dark:bg-gray-800 p-4 rounded-lg shadow flex flex-col sm:flex-row justify-between items-center ring-1 ring-brand-100 dark:ring-0"
-                >
-                  <div className="flex-1 text-left mb-2 sm:mb-0">
-                    <p className="text-lg font-medium text-slate-900 dark:text-white">{track.track_number}. {track.title}</p>
-                    <p className="text-sm text-slate-600 dark:text-gray-400">{(track.artists || []).join(', ')}</p>
-                  </div>
-                  <p className="text-slate-600 dark:text-gray-400 text-sm">{formatDuration(track.duration_ms)}</p>
-                </li>
-              ))}
-            </ul>
+          {enrichedTracks.length > 0 ? (
+            <TrackListDiscovery tracks={enrichedTracks} />
           ) : (
             <p className="text-slate-600 dark:text-gray-500 text-lg">No tracks found for this album.</p>
           )}

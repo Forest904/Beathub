@@ -1,6 +1,7 @@
 import React from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle.jsx';
+import CompilationToggle from '../compilation/CompilationToggle.jsx';
 
 const NAV_LINKS = [
   { label: 'Artists', to: '/browse' },
@@ -8,7 +9,11 @@ const NAV_LINKS = [
   { label: 'Burner', to: '/burn-cd' },
 ];
 
-const Header = () => (
+const Header = () => {
+  const location = useLocation();
+  const pathname = location.pathname || '';
+  const showCompilation = /^\/(?:$|browse|artist\/|album\/)/.test(pathname);
+  return (
   <header className="relative bg-white text-slate-900 shadow dark:bg-slate-950 dark:text-slate-100 border-b border-brand-100 dark:border-transparent">
     <div className="container mx-auto px-4">
       <div className="flex items-center justify-between py-6">
@@ -46,13 +51,15 @@ const Header = () => (
           </nav>
         </div>
 
-        {/* Right: Theme toggle */}
+        {/* Right: Compilation (discovery only) + Theme toggle */}
         <div className="flex items-center gap-3">
+          {showCompilation && <CompilationToggle />}
           <ThemeToggle />
         </div>
       </div>
     </div>
   </header>
 );
+}
 
 export default Header;
