@@ -104,6 +104,11 @@ const SpotifyDownloadPage = () => {
     setHasActiveDownload(Boolean(active));
   }, []);
 
+  // Ensure progress panel becomes visible whenever an active download starts
+  useEffect(() => {
+    if (hasActiveDownload) setProgressVisible(true);
+  }, [hasActiveDownload]);
+
   const handleProgressComplete = useCallback(() => {
     setProgressVisible(false);
     setHasActiveDownload(false);
@@ -190,7 +195,7 @@ const SpotifyDownloadPage = () => {
             onSubmit={handleDownload}
             loading={loading}
             rightAction={
-              hasActiveDownload ? (
+              hasActiveDownload || progressVisible ? (
                 <button
                   type="button"
                   onClick={() => setProgressVisible((prev) => !prev)}

@@ -50,7 +50,9 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
 
         const total = Number(next.overall_total || 0);
         const done = Number(next.overall_completed || 0);
-        const isComplete = next.status === 'Complete' || (total > 0 && done >= total);
+        // Consider complete only when server reports 'Complete' or clearly finished counts with 100%
+        const isComplete =
+          next.status === 'Complete' || (total > 0 && done >= total && Number(next.progress || 0) >= 100);
 
         if (typeof onActiveChange === 'function') {
           onActiveChange(!isComplete);
@@ -70,11 +72,8 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
     };
 
     const handleError = (error) => {
-      console.warn('Download progress stream error', error);
-      eventSource.close();
-      if (esRef.current === eventSource) {
-        esRef.current = null;
-      }
+      // Let EventSource attempt auto-reconnect; do not close explicitly
+      console.warn('Download progress stream error (auto-reconnecting)', error);
     };
 
     eventSource.addEventListener('message', handleMessage);
