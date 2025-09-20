@@ -56,6 +56,10 @@ class CDBurningService:
     def scan_for_burner(self, session: BurnSession):
         """Enumerate burners via IMAPI2 and select the first available recorder on Windows."""
         self.logger.info("Scanning for CD/DVD burners (IMAPI2)...")
+        try:
+            session.log_event('scan_for_burner_start')
+        except Exception:
+            pass
         session.update_status("Scanning Burner...")
         try:
             if sys.platform != 'win32' or IMAPI2AudioBurner is None:
@@ -90,6 +94,10 @@ class CDBurningService:
             self._imapi_recorder = rec
             self._imapi_recorder_id = rec_id
             self.logger.info("Selected recorder: %s (%s %s)", rec_id, devices[0].get('vendor_id', ''), devices[0].get('product_id', ''))
+            try:
+                session.log_event('burner_selected', recorder_id=rec_id)
+            except Exception:
+                pass
             session.update_burner_state(detected=True, present=False, blank_or_erasable=False)
             return True
         except Exception as e:
@@ -212,6 +220,10 @@ class CDBurningService:
         try:
             present, writable = self._imapi.check_audio_disc_ready(self._imapi_recorder)
             session.update_burner_state(detected=True, present=present, blank_or_erasable=writable)
+            try:
+                session.log_event('disc_status', present=bool(present), writable=bool(writable))
+            except Exception:
+                pass
             return bool(present and writable)
         except Exception as e:
             self.logger.exception("IMAPI2 disc status check failed: %s", e)
@@ -685,6 +697,10 @@ class CDBurningService:
         # pydub.AudioSegment.ffmpeg = self.ffmpeg_path # Can explicitly set if needed
 
         conv_start = time.perf_counter()
+        try:
+            session.log_event('conversion_start', track_total=total_tracks)
+        except Exception:
+            pass
         # Normalization helper shared with preview
         def _norm_conv(s: str) -> str:
             s = (s or "").lower()
@@ -782,6 +798,10 @@ class CDBurningService:
                 elapsed = time.perf_counter() - t0
                 self.logger.info(f"Converted track {i+1}/{total_tracks} in {elapsed:.2f}s: {os.path.basename(wav_output_path)}")
                 wav_file_paths.append(wav_output_path)
+                try:
+                    session.log_event('track_converted', index=i+1, total=total_tracks, source_path=found_mp3_path, wav_path=wav_output_path, elapsed_sec=round(elapsed, 2))
+                except Exception:
+                    pass
                 # Conversion takes 45% of overall progress (5-50%)
                 progress = 5 + int(((i + 1) / total_tracks) * 45)
                 session.update_status(f"Converting WAVs ({i+1}/{total_tracks})", progress)
@@ -802,10 +822,18 @@ class CDBurningService:
                         pass
             except Exception as e:
                 self.logger.exception(f"Error converting MP3 '{found_mp3_path}' to WAV: {e}")
+                try:
+                    session.log_event('track_convert_error', index=i+1, source_path=found_mp3_path, title=track.get('title'), artist=track.get('artist'), error=str(e))
+                except Exception:
+                    pass
                 raise RuntimeError(f"Failed to convert '{track['title']}' to WAV: {e}")
 
         total_elapsed = time.perf_counter() - conv_start
         self.logger.info(f"Finished converting {len(wav_file_paths)} tracks to WAV in {total_elapsed:.2f}s.")
+        try:
+            session.log_event('conversion_complete', track_count=len(wav_file_paths), elapsed_sec=round(total_elapsed, 2))
+        except Exception:
+            pass
         if publisher is not None:
             try:
                 publisher.publish({
@@ -829,6 +857,10 @@ class CDBurningService:
             raise ValueError("No WAV files provided for burning. Burn cannot proceed.")
 
         self.logger.info("Starting IMAPI2 Audio CD burn with title '%s'...", disc_title)
+        try:
+            session.log_event('burn_start', recorder_id=self._imapi_recorder_id, track_count=len(wav_file_paths), disc_title=disc_title)
+        except Exception:
+            pass
         session.update_status("Burning Disc...", progress=60)
         if publisher is not None:
             try:
@@ -860,6 +892,13 @@ class CDBurningService:
                 publisher=publisher,
                 cancel_flag=cancel_flag,
             )
+            # Mark tracks as written successfully for audit
+            try:
+                for i, p in enumerate(wav_file_paths, start=1):
+                    session.log_event('track_written', index=i, wav_path=p, status='success')
+                session.log_event('burn_complete', status='success')
+            except Exception:
+                pass
             if publisher is not None:
                 try:
                     publisher.publish({'event': 'cd_burn_complete', 'status': 'completed', 'phase': 'completed', 'progress': 100, 'session_id': session.id})
@@ -867,6 +906,23 @@ class CDBurningService:
                     pass
         except Exception as e:
             self.logger.exception("IMAPI2 burn failed: %s", e)
+            # Extract HRESULT-like code if present
+            err_msg = str(e)
+            code = None
+            try:
+                import re as _re
+                m = _re.search(r"0x([0-9A-Fa-f]{8})", err_msg)
+                if m:
+                    code = '0x' + m.group(1).upper()
+            except Exception:
+                pass
+            try:
+                session.log_event('burn_error', error_message=err_msg, error_code=code)
+                # Mark tracks as not written due to failure
+                for i, p in enumerate(wav_file_paths, start=1):
+                    session.log_event('track_written', index=i, wav_path=p, status='failed')
+            except Exception:
+                pass
             raise RuntimeError(f"CD burning failed: {e}")
 
 
@@ -892,6 +948,10 @@ class CDBurningService:
         try:
             self.logger.info(f"Starting CD burn process for content from: {content_dir}")
             session.start(status=f"Preparing to burn '{item_title}'...", progress=0)
+            try:
+                session.log_event('burn_session_info', content_dir=content_dir, item_title=item_title)
+            except Exception:
+                pass
             if publisher is not None:
                 try:
                     publisher.publish({
@@ -984,10 +1044,37 @@ class CDBurningService:
         except (FileNotFoundError, ValueError, RuntimeError) as e:
             # Catch specific errors from internal methods
             self.logger.error(f"CD burning process failed due to: {e}")
+            # Extract HRESULT-like code if present
+            err_msg = str(e)
+            code = None
+            try:
+                import re as _re
+                m = _re.search(r"0x([0-9A-Fa-f]{8})", err_msg)
+                if m:
+                    code = '0x' + m.group(1).upper()
+            except Exception:
+                pass
+            try:
+                session.log_event('burn_failed', error_message=err_msg, error_code=code)
+            except Exception:
+                pass
             session.set_error(f"Burning Failed: {e}")
         except Exception as e:
             # Catch any other unexpected errors
             self.logger.exception("An unhandled error occurred during CD burning process.")
+            err_msg = str(e)
+            code = None
+            try:
+                import re as _re
+                m = _re.search(r"0x([0-9A-Fa-f]{8})", err_msg)
+                if m:
+                    code = '0x' + m.group(1).upper()
+            except Exception:
+                pass
+            try:
+                session.log_event('burn_failed', error_message=err_msg, error_code=code)
+            except Exception:
+                pass
             session.set_error(f"Unexpected Error during burn: {str(e)}")
         finally:
             # Always attempt to clean up temporary WAV directory

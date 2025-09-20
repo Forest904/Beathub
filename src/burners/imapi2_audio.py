@@ -611,6 +611,11 @@ class IMAPI2AudioBurner:
                     else:
                         stream = _create_stream_on_file(stream_path)
                     fmt.AddAudioTrack(stream)
+                    # Audit: track staged for burning
+                    try:
+                        session.log_event('track_staged', index=i + 1, wav_path=p)
+                    except Exception:
+                        pass
                     # Update conversion -> preparation progress: 50% + small step
                     prep_prog = 50 + int((i + 1) / max(1, len(wav_paths)) * 10)
                     session.update_status(f"Staging tracks ({i+1}/{len(wav_paths)})", progress=prep_prog)

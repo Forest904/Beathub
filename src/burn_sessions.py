@@ -1,6 +1,7 @@
 import threading
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
+import time
 
 
 @dataclass
@@ -19,6 +20,11 @@ class BurnSession:
     disc_present: bool = False
     disc_blank_or_erasable: bool = False
 
+    # Audit fields
+    started_at: Optional[float] = None  # epoch seconds
+    ended_at: Optional[float] = None    # epoch seconds
+    events: List[Dict[str, Any]] = field(default_factory=list)
+
     def to_dict(self) -> dict:
         with self._lock:
             return {
@@ -31,6 +37,9 @@ class BurnSession:
                 "burner_detected": self.burner_detected,
                 "disc_present": self.disc_present,
                 "disc_blank_or_erasable": self.disc_blank_or_erasable,
+                "started_at": self.started_at,
+                "ended_at": self.ended_at,
+                "events": list(self.events),
             }
 
     # --- Mutators ---
@@ -40,6 +49,14 @@ class BurnSession:
             self.current_status = status
             self.progress_percentage = progress
             self.last_error = None
+            self.started_at = time.time()
+            # First audit event
+            self.events.append({
+                "ts": self.started_at,
+                "type": "session_start",
+                "status": status,
+                "progress": progress,
+            })
 
     def update_status(self, status: str, progress: Optional[int] = None) -> None:
         with self._lock:
@@ -52,6 +69,13 @@ class BurnSession:
             self.is_burning = False
             self.current_status = "Error"
             self.last_error = message
+            self.ended_at = time.time()
+            self.events.append({
+                "ts": self.ended_at,
+                "type": "session_end",
+                "result": "error",
+                "error_message": message,
+            })
 
     def complete(self) -> None:
         with self._lock:
@@ -59,6 +83,12 @@ class BurnSession:
             self.current_status = "Completed"
             self.progress_percentage = 100
             self.last_error = None
+            self.ended_at = time.time()
+            self.events.append({
+                "ts": self.ended_at,
+                "type": "session_end",
+                "result": "success",
+            })
 
     def update_burner_state(self, *, detected: bool, present: bool, blank_or_erasable: bool) -> None:
         with self._lock:
@@ -73,6 +103,15 @@ class BurnSession:
                 self.current_status = "No Disc"
             else:
                 self.current_status = "No Burner Detected"
+
+    # --- Audit helpers ---
+    def log_event(self, event_type: str, **details: Any) -> None:
+        with self._lock:
+            self.events.append({
+                "ts": time.time(),
+                "type": event_type,
+                **details,
+            })
 
 
 class BurnSessionManager:

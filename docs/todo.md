@@ -26,9 +26,9 @@
 
 ## CD Burning Audit
 - [x] Ensure burn order matches the preview order using `disc_number` and `track_number` from metadata.
-- [ ] Log start and end time of each burn session.
-- [ ] Log each track written, including success/failure status and file path.
-- [ ] Include error codes and messages for any failed burns.
+- [x] Log start and end time of each burn session.
+- [x] Log each track written, including success/failure status and file path.
+- [x] Include error codes and messages for any failed burns in the log.
 - [ ] Audit the CD Burning pipeline for possible break points.
 
 ## Steps for onine publication 
