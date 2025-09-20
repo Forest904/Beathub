@@ -12,7 +12,7 @@
 - [ ] Add a quick-play button to preview tracks inline.
 
 ## Song Player Feature
-- [ ] Add a play button between track number and title in `TrackListRich` on the Download page after album download completes.
+- [ ] Add a play button between track number and song title in `TrackListRich` on the Download page after album download completes.
 - [ ] Create a fixed bottom player bar  component with play, pause, and skip controls.
 - [ ] Display the player bar whenever a song is playing and hide it when playback stops.
 

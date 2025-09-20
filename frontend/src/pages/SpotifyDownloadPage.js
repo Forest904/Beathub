@@ -8,9 +8,11 @@ import TrackListRich from '../components/TrackListRich';
 import { AlbumCardVariant } from '../components/AlbumCard';
 import Message from '../components/Message';
 import LyricsPanel from '../components/LyricsPanel';
+import { usePlayer } from '../player/PlayerContext';
 
 const SpotifyDownloadPage = () => {
   const location = useLocation();
+  const player = usePlayer();
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(false);
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
@@ -147,6 +149,9 @@ const SpotifyDownloadPage = () => {
     const handleDocumentClick = (event) => {
       // Keep album selection when lyrics panel is open
       if (lyricsVisible) return;
+      // Ignore clicks within the PlayerBar so selection doesn't clear
+      const playerBar = document.getElementById('player-bar-root');
+      if (playerBar && playerBar.contains(event.target)) return;
       const node = historySectionRef.current;
       if (!node || node.contains(event.target)) {
         return;
@@ -183,6 +188,26 @@ const SpotifyDownloadPage = () => {
     setLyricsTrack(track || null);
     setLyricsVisible(true);
   }, []);
+
+  const buildAudioUrl = useCallback((track) => {
+    if (!track || !selectedAlbumId) return null;
+    const primaryArtist = Array.isArray(track.artists) && track.artists.length > 0 ? track.artists[0] : '';
+    const params = new URLSearchParams({ title: track.title || '', artist: primaryArtist || '' });
+    return `${apiBaseUrl}/api/items/${selectedAlbumId}/audio?${params.toString()}`;
+  }, [apiBaseUrl, selectedAlbumId]);
+
+  const handlePlayTrack = useCallback((track, index) => {
+    if (!player || !sortedTracks || sortedTracks.length === 0) return;
+    const queue = sortedTracks.map((t) => ({
+      title: t.title,
+      artists: t.artists || [],
+      audioUrl: buildAudioUrl(t),
+      albumId: selectedAlbumId,
+      // preserve minimal data for lyrics panel
+      artist: Array.isArray(t.artists) && t.artists.length > 0 ? t.artists[0] : '',
+    }));
+    player.playQueue(queue, index);
+  }, [player, sortedTracks, buildAudioUrl]);
 
   return (
     <div className="min-h-screen">
@@ -249,6 +274,8 @@ const SpotifyDownloadPage = () => {
                 showDisc={false}
                 showPopularity={false}
                 onLyricsClick={handleLyricsClick}
+                enablePlay
+                onPlayTrack={handlePlayTrack}
               />
             </div>
           )}

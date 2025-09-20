@@ -23,7 +23,7 @@ Badge.defaultProps = {
   color: 'gray',
 };
 
-const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExplicit, showIsrc, showDisc, showPopularity, onLyricsClick }) => {
+const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExplicit, showIsrc, showDisc, showPopularity, onLyricsClick, enablePlay, onPlayTrack }) => {
   if (!tracks || tracks.length === 0) {
     return null;
   }
@@ -34,6 +34,7 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
         <thead>
           <tr className="text-left text-brand-800 dark:text-gray-300">
             <th className="px-2 py-2">#</th>
+            {(!compactForBurnPreview && enablePlay) && <th className="px-2 py-2 w-12"></th>}
             <th className="px-2 py-2">Title</th>
             <th className="px-2 py-2">Artists</th>
             <th className="px-2 py-2">Duration</th>
@@ -48,7 +49,8 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
             const useShowExplicit = !compactForBurnPreview && showExplicit;
             const useShowIsrc = !compactForBurnPreview && showIsrc;
             const useShowPopularity = !compactForBurnPreview && showPopularity;
-            const colSpan = 4 + (useShowExplicit ? 1 : 0) + (useShowIsrc ? 1 : 0) + (showDisc ? 1 : 0) + (useShowPopularity ? 1 : 0);
+            const useEnablePlay = !compactForBurnPreview && enablePlay;
+            const colSpan = 4 + (useEnablePlay ? 1 : 0) + (useShowExplicit ? 1 : 0) + (useShowIsrc ? 1 : 0) + (showDisc ? 1 : 0) + (useShowPopularity ? 1 : 0);
             let lastDisc = null;
             const rows = [];
             tracks.forEach((track, index) => {
@@ -70,6 +72,19 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
               rows.push(
                 <tr key={track.spotify_id || `${discNum}-${index}`} className="border-t border-slate-200 dark:border-gray-700">
                   <td className="px-2 py-2 text-slate-600 dark:text-gray-400">{track.track_number ?? index + 1}</td>
+                  {useEnablePlay && (
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        disabled={isMissing || typeof onPlayTrack !== 'function'}
+                        onClick={(e) => { e.stopPropagation(); if (typeof onPlayTrack === 'function') onPlayTrack(track, index); }}
+                        className={`px-2 py-1 rounded ${isMissing ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-brand-600 text-white hover:bg-brand-700 dark:bg-brandDark-600 dark:hover:bg-brandDark-500'}`}
+                        title={isMissing ? 'Audio missing' : 'Play'}
+                      >
+                        ▶
+                      </button>
+                    </td>
+                  )}
                   <td className="px-2 py-2 text-slate-900 dark:text-white">
                     <div className="flex items-center gap-2">
                     <span
@@ -167,6 +182,8 @@ TrackListRich.propTypes = {
   showDisc: PropTypes.bool,
   showPopularity: PropTypes.bool,
   onLyricsClick: PropTypes.func,
+  enablePlay: PropTypes.bool,
+  onPlayTrack: PropTypes.func,
 };
 
 TrackListRich.defaultProps = {
@@ -178,6 +195,8 @@ TrackListRich.defaultProps = {
   showDisc: true,
   showPopularity: true,
   onLyricsClick: undefined,
+  enablePlay: false,
+  onPlayTrack: undefined,
 };
 
 export default TrackListRich;

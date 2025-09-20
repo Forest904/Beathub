@@ -1,7 +1,7 @@
 import os
 import shutil
 import logging
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 import json
 from src.database.db_manager import db, DownloadedItem
 from src.lyrics_service import LyricsService
@@ -346,3 +346,114 @@ def get_item_lyrics(item_id: int):
         'title': title,
         'artist': artist,
     }), 200
+
+
+@download_bp.route('/items/<int:item_id>/audio', methods=['GET'])
+def stream_item_audio(item_id: int):
+    """Stream a matched audio file for a downloaded item using fuzzy matching.
+
+    Query params:
+      - title: track title (required)
+      - artist: primary artist name (optional)
+    """
+    title = (request.args.get('title') or '').strip()
+    artist = (request.args.get('artist') or '').strip()
+    if not title:
+        return jsonify({'error': 'Missing title parameter'}), 400
+
+    item = DownloadedItem.query.get(item_id)
+    if not item:
+        return jsonify({'error': 'Item not found'}), 404
+    base_dir = item.local_path
+    if not base_dir or not os.path.isdir(base_dir):
+        return jsonify({'error': 'Associated content directory not found or is invalid.'}), 404
+
+    # Gather candidate audio files only
+    audio_exts = ('.mp3', '.flac', '.m4a', '.ogg', '.wav')
+    all_audio_files = []
+    for root, _, files in os.walk(base_dir):
+        for fn in files:
+            low = fn.lower()
+            if low.endswith(audio_exts):
+                all_audio_files.append(os.path.join(root, fn))
+
+    # Normalization helper (mirrors cd_burning_service)
+    def _norm(s: str) -> str:
+        s = (s or '').lower()
+        s = s.replace('\ufffdT', "'")  # best-effort for odd apostrophes
+        s = re.sub(r"[\\/:*?\"<>|.,!()\[\]{}]", '', s)
+        s = s.replace('_', '')
+        s = re.sub(r"\s+", '', s)
+        return s
+
+    # Build expectations
+    sanitized_title = re.sub(r'[\\/:*?"<>|]', '_', title).strip()
+    sanitized_title = re.sub(r'_{2,}', '_', sanitized_title)
+
+    found_audio = None
+    mp3_name = f"{sanitized_title}.mp3"
+    fallback_name = f"{artist} - {sanitized_title}.mp3" if artist else None
+    for path in all_audio_files:
+        base = os.path.basename(path)
+        if base.lower() == mp3_name.lower():
+            found_audio = path
+            break
+    if not found_audio and artist:
+        for path in all_audio_files:
+            base = os.path.basename(path)
+            if base.lower() == (fallback_name or '').lower():
+                found_audio = path
+                break
+
+    # Fuzzy-normalized across all audio files
+    if not found_audio:
+        exp1 = _norm(sanitized_title)
+        exp2 = _norm(f"{artist} - {sanitized_title}") if artist else None
+        exp3 = _norm(title)
+        exp4 = _norm(f"{artist} - {title}") if artist else None
+        artist_norm = _norm(artist) if artist else ''
+        for path in all_audio_files:
+            base_no_ext = os.path.splitext(os.path.basename(path))[0]
+            nb = _norm(base_no_ext)
+            if nb in filter(None, (exp1, exp2, exp3, exp4)):
+                found_audio = path
+                break
+            # Handle trailing feat*
+            if exp1 and nb.startswith(exp1) and nb[len(exp1):].startswith(('feat', 'featuring', 'ft', 'with')):
+                found_audio = path
+                break
+            if exp2 and nb.startswith(exp2) and nb[len(exp2):].startswith(('feat', 'featuring', 'ft', 'with')):
+                found_audio = path
+                break
+            # Accept extra artists before the hyphen
+            tail1 = '-' + exp1 if exp1 else None
+            tail3 = '-' + exp3 if exp3 else None
+            if tail1 and nb.endswith(tail1):
+                left = nb[: -len(tail1)]
+                if not artist_norm or left.startswith(artist_norm):
+                    found_audio = path
+                    break
+            if tail3 and nb.endswith(tail3):
+                left = nb[: -len(tail3)]
+                if not artist_norm or left.startswith(artist_norm):
+                    found_audio = path
+                    break
+
+    if not found_audio or not os.path.exists(found_audio):
+        return jsonify({'error': 'Audio file not found for this track.'}), 404
+
+    # Infer MIME type from extension
+    ext = os.path.splitext(found_audio)[1].lower()
+    mimetype = {
+        '.mp3': 'audio/mpeg',
+        '.m4a': 'audio/mp4',
+        '.flac': 'audio/flac',
+        '.ogg': 'audio/ogg',
+        '.wav': 'audio/wav',
+    }.get(ext, 'application/octet-stream')
+
+    try:
+        return send_file(found_audio, mimetype=mimetype, as_attachment=False, conditional=True)
+    except Exception:
+        logger.exception("Failed to stream audio file: %s", found_audio)
+        return jsonify({'error': 'Failed to stream audio file.'}), 500
