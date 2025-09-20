@@ -345,6 +345,132 @@ class SpotifyContentDownloader:
         self._popular_artists_cache.set(cache_key, result)
         return result
 
+    def build_best_of_album_details(self, artist_id: str, market: str = 'US') -> Optional[Dict[str, Any]]:
+        """
+        Build a synthetic "Best Of" album for a given artist by selecting the most
+        popular tracks that fit within the configured CD capacity.
+
+        Returns a structure compatible with /api/album_details payloads.
+        """
+        if not self.sp:
+            logger.error('Spotipy client not initialized. Cannot build Best Of album.')
+            return None
+
+        # Obtain artist profile for name and image
+        artist = self.fetch_artist_details(artist_id)
+        if not artist:
+            logger.warning('Artist not found for Best Of build: %s', artist_id)
+            return None
+
+        try:
+            primary_min = int(getattr(Config, 'CD_CAPACITY_MINUTES', 80) or 80)
+        except Exception:
+            primary_min = 80
+        capacity_ms = max(1, primary_min) * 60 * 1000
+
+        candidates_map: Dict[str, Any] = {}
+
+        # 1) Start with Spotify's top tracks (up to 10)
+        try:
+            top_resp = self.sp.artist_top_tracks(artist_id, country=market) or {}
+            for t in top_resp.get('tracks', []) or []:
+                tid = t.get('id')
+                if not tid or tid in candidates_map:
+                    continue
+                candidates_map[tid] = t
+        except Exception as exc:
+            logger.warning('Failed to fetch artist top tracks for %s: %s', artist_id, exc)
+
+        # 2) Broaden with a search for the artist's tracks (to have popularity values)
+        artist_name = artist.get('name') or ''
+        if artist_name:
+            query = f'artist:"{artist_name}"'
+            try:
+                search_resp = self.sp.search(q=query, type='track', market=market, limit=50)
+                # Iterate through pages up to ~200 candidates
+                while True:
+                    tracks_page = (search_resp.get('tracks') or {})
+                    for t in tracks_page.get('items', []) or []:
+                        tid = t.get('id')
+                        if tid and tid not in candidates_map:
+                            candidates_map[tid] = t
+                            if len(candidates_map) >= 200:
+                                break
+                    if len(candidates_map) >= 200:
+                        break
+                    next_url = tracks_page.get('next')
+                    if not next_url:
+                        break
+                    try:
+                        search_resp = self.sp.next(tracks_page)
+                    except Exception as exc:
+                        logger.warning('Pagination failed during track search for %s: %s', artist_name, exc)
+                        break
+            except Exception as exc:
+                logger.warning('Search for artist tracks failed for %s: %s', artist_name, exc)
+
+        candidates = list(candidates_map.values())
+        if not candidates:
+            logger.warning('No candidate tracks available for Best Of build for %s', artist_name or artist_id)
+            return None
+
+        # Sort by popularity (desc), then by duration to prefer longer tracks when ties
+        candidates.sort(key=lambda t: ((t.get('popularity') or 0), (t.get('duration_ms') or 0)), reverse=True)
+
+        # Accumulate tracks until capacity is reached
+        selected: List[Dict[str, Any]] = []
+        total_ms = 0
+        for t in candidates:
+            dur = t.get('duration_ms') or 0
+            if dur <= 0:
+                continue
+            if total_ms + dur > capacity_ms:
+                continue
+            selected.append(t)
+            total_ms += dur
+            if total_ms >= capacity_ms * 0.98:
+                break
+
+        # Fallback: ensure we have at least some tracks even if capacity logic excludes all
+        if not selected:
+            selected = candidates[: min(len(candidates), 10)]
+            total_ms = sum((t.get('duration_ms') or 0) for t in selected)
+
+        # Normalize into album_details payload shape
+        tracks_list: List[Dict[str, Any]] = []
+        track_no = 1
+        for t in selected:
+            artists = [a.get('name') for a in (t.get('artists') or []) if a.get('name')]
+            album_obj = t.get('album') or {}
+            album_imgs = album_obj.get('images') or []
+            album_img_url = album_imgs[0]['url'] if album_imgs else None
+            tracks_list.append({
+                'spotify_id': t.get('id'),
+                'title': t.get('name'),
+                'artists': artists,
+                'duration_ms': t.get('duration_ms'),
+                'track_number': track_no,
+                'disc_number': 1,
+                'explicit': t.get('explicit'),
+                'spotify_url': (t.get('external_urls') or {}).get('spotify'),
+                'album_name': album_obj.get('name'),
+                'album_spotify_id': album_obj.get('id'),
+                'album_image_url': album_img_url,
+            })
+            track_no += 1
+
+        result = {
+            'spotify_id': f'bestof:{artist_id}',
+            'title': f'The Best Of {artist.get("name")}',
+            'artist': artist.get('name'),
+            'image_url': artist.get('image'),
+            'spotify_url': None,
+            'release_date': None,
+            'total_tracks': len(tracks_list),
+            'tracks': tracks_list,
+        }
+        return result
+
 
     def download_spotify_content(self, spotify_link):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""

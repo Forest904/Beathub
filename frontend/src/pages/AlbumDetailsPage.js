@@ -12,6 +12,7 @@ const AlbumDetailsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState('');
+  const isBestOf = String(albumId || '').startsWith('bestof:');
 
   useEffect(() => {
     if (!albumId) {
@@ -134,21 +135,25 @@ const AlbumDetailsPage = () => {
 
           <div className="w-full md:w-auto md:flex md:items-center">
             <div className="flex flex-col gap-3 md:h-auto">
-              <button
-                type="button"
-                onClick={() => albumDetails.spotify_url && window.open(albumDetails.spotify_url, '_blank', 'noopener,noreferrer')}
-                className="w-full md:w-auto bg-brandSuccess-600 hover:bg-brandSuccess-700 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
-                disabled={!albumDetails.spotify_url}
-              >
-                Listen on Spotify
-              </button>
-              <button
-                type="button"
-                onClick={handleCopySpotifyLink}
-                className="w-full md:w-auto bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
-              >
-                Copy Spotify Link
-              </button>
+              {!isBestOf && (
+                <button
+                  type="button"
+                  onClick={() => albumDetails.spotify_url && window.open(albumDetails.spotify_url, '_blank', 'noopener,noreferrer')}
+                  className="w-full md:w-auto bg-brandSuccess-600 hover:bg-brandSuccess-700 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
+                  disabled={!albumDetails.spotify_url}
+                >
+                  Listen on Spotify
+                </button>
+              )}
+              {!isBestOf && (
+                <button
+                  type="button"
+                  onClick={handleCopySpotifyLink}
+                  className="w-full md:w-auto bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
+                >
+                  Copy Spotify Link
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleDirectDownload}

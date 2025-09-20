@@ -17,6 +17,15 @@ def get_album_details(album_id):
     """
     spotify_downloader = get_spotify_downloader()
     try:
+        # Synthetic "Best Of" album for an artist: album_id format 'bestof:<artist_id>'
+        if album_id.startswith('bestof:'):
+            artist_id = album_id.split(':', 1)[1]
+            best_of = spotify_downloader.build_best_of_album_details(artist_id)
+            if not best_of:
+                logger.warning(f"Best-Of album could not be built for artist: {artist_id}")
+                return jsonify({"error": "Best-Of not available"}), 404
+            return jsonify(best_of), 200
+
         # Assuming metadata_service is an attribute of SpotifyContentDownloader
         # and has get_album_by_id and get_tracks_details methods.
         album_metadata = spotify_downloader.metadata_service.get_album_by_id(album_id)

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
-import { AlbumCardVariant } from '../components/AlbumCard';
+import AlbumCard, { AlbumCardVariant } from '../components/AlbumCard';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/200?text=No+Image';
 
@@ -69,6 +69,18 @@ const ArtistDetailsPage = () => {
     return artistDetails.genres.join(', ');
   }, [artistDetails]);
 
+  // Precompute Best-Of album card data (must be declared before any early returns)
+  const bestOfAlbum = useMemo(() => {
+    if (!artistDetails) return null;
+    return {
+      id: `bestof:${artistDetails.id || artistId}`,
+      name: `The Best Of ${artistDetails.name}`,
+      title: artistDetails.name,
+      image_url: artistDetails.image || FALLBACK_IMAGE,
+      spotify_url: null,
+    };
+  }, [artistDetails, artistId]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -97,7 +109,7 @@ const ArtistDetailsPage = () => {
   return (
     <div className="min-h-screen">
       <div className="container mx-auto px-4 py-8">
-        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-center md:justify-center gap-6 max-w-5xl mx-auto ring-1 ring-brand-100 dark:ring-0">
+        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-center md:justify-between gap-6 max-w-5xl mx-auto ring-1 ring-brand-100 dark:ring-0">
           <div className="flex-shrink-0 md:mr-10">
             <img
               src={artistDetails.image || FALLBACK_IMAGE}
@@ -136,6 +148,11 @@ const ArtistDetailsPage = () => {
               </a>
             )}
           </div>
+          {bestOfAlbum && (
+            <div className="w-full md:w-64 lg:w-72 md:ml-4">
+              <AlbumCard album={bestOfAlbum} variant={AlbumCardVariant.DISCOVERY} />
+            </div>
+          )}
         </section>
 
         <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 ring-1 ring-brand-100 dark:ring-0">
