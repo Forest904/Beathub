@@ -366,7 +366,10 @@ class SpotifyContentDownloader:
             primary_min = int(getattr(Config, 'CD_CAPACITY_MINUTES', 80) or 80)
         except Exception:
             primary_min = 80
-        capacity_ms = max(1, primary_min) * 60 * 1000
+        # Leave a safety buffer for Best-Of selection to avoid overfilling discs at burn time.
+        # Use 2 minutes less than the configured capacity for selection purposes only.
+        effective_min = max(1, primary_min - 2)
+        capacity_ms = effective_min * 60 * 1000
 
         candidates_map: Dict[str, Any] = {}
 
@@ -465,6 +468,7 @@ class SpotifyContentDownloader:
             'artist': artist.get('name'),
             'image_url': artist.get('image'),
             'spotify_url': None,
+            # Report the configured capacity to the UI; selection used a reduced effective capacity.
             'capacity_minutes': primary_min,
             'release_date': None,
             'total_tracks': len(tracks_list),

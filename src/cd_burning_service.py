@@ -547,6 +547,7 @@ class CDBurningService:
                         f"{sanitized_title} (feat. ...).mp3",
                         f"{artist} - {sanitized_title}.mp3",
                         f"{artist} - {sanitized_title} (feat. ...).mp3",
+                        f"{artist}, ... - {sanitized_title}.mp3",
                     ],
                 })
 
@@ -748,11 +749,20 @@ class CDBurningService:
                         found_mp3_path = f_path
                         break
 
+            # Final fallback: use robust fuzzy matching that tolerates multi-artist prefixes
+            if not found_mp3_path:
+                found_mp3_path = self._find_mp3_for_track(
+                    all_files,
+                    artist=track.get('artist') or '',
+                    title=track.get('title') or '',
+                )
+
             if not found_mp3_path:
                 error_msg = (
                     f"MP3 file not found for track: '{track['title']}' (expected one of: "
                     f"{sanitized_title}.mp3, {sanitized_title} (feat. ...).mp3, "
-                    f"{track['artist']} - {sanitized_title}.mp3, {track['artist']} - {sanitized_title} (feat. ...).mp3). "
+                    f"{track['artist']} - {sanitized_title}.mp3, {track['artist']} - {sanitized_title} (feat. ...).mp3, "
+                    f"{track['artist']}, ... - {sanitized_title}.mp3). "
                     "Aborting conversion."
                 )
                 self.logger.error(error_msg)

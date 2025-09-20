@@ -121,6 +121,13 @@ const CDBurnerPage = () => {
     };
   }, [fetchDownloadedItems, pollBurnerStatus, fetchDevices]);
 
+  // Ensure BurnProgress does not linger when no burn is active
+  useEffect(() => {
+    if (!burnerStatus.is_burning && !isBurningInitiating) {
+      setShowBurnProgress(false);
+    }
+  }, [burnerStatus.is_burning, isBurningInitiating]);
+
   // Prevent accidental navigation/refresh while burning or initiating
   useEffect(() => {
     const shouldBlock = burnerStatus.is_burning || isBurningInitiating;
@@ -385,7 +392,7 @@ const CDBurnerPage = () => {
         )}
 
         <BurnProgress
-          visible={showBurnProgress || burnerStatus.is_burning}
+          visible={showBurnProgress || isBurningInitiating || burnerStatus.is_burning}
           baseUrl={apiBaseUrl}
           sessionId={activeSessionId}
           onClose={() => setShowBurnProgress(false)}
