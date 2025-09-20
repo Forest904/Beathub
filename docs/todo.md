@@ -27,9 +27,11 @@
 - [ ] Make the card clickable and behave like any other album/playlist.
 
 ## Artist Discovery Enhancements
-- [ ] Add pagination with forward/back buttons and current page number at the bottom of the page.
-- [ ] Create a `searchFilters` component to filter artists.
-- [ ] Reset pagination to page 1 when filters are updated.
+- [x] Add pagination with forward/back buttons.
+- [x] Add an Arrows component for page navigation and display the page number.
+- [x] Make the pagination logic reside in the backend.
+- [x] Have the page URL always reflect the status.
+- [x] Reset pagination to page 1 when the user leaves the page.
 
 ## Header Restyle
 - [x] Remove the gradient background and CD icon.
