@@ -108,16 +108,16 @@ const ArtistDetailsPage = () => {
 
   return (
     <div className="min-h-screen">
-      <div className="container mx-auto px-4 py-8">
-        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-center md:justify-between gap-6 max-w-5xl mx-auto ring-1 ring-brand-100 dark:ring-0">
-          <div className="flex-shrink-0 md:mr-10">
+      <div className="container max-w-7xl mx-auto px-4 py-8">
+        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-center md:justify-between gap-6 ring-1 ring-brand-100 dark:ring-0">
+          <div className="flex-shrink-0 md:mr-6">
             <img
               src={artistDetails.image || FALLBACK_IMAGE}
               alt={artistDetails.name}
               className="w-48 h-48 md:w-64 md:h-64 rounded-full object-cover shadow-md"
             />
           </div>
-          <div className="text-center md:text-left flex-grow">
+          <div className="flex-1 flex flex-col items-center text-center px-2">
             <h1 className="text-5xl font-extrabold text-slate-900 dark:text-white mb-2">{artistDetails.name}</h1>
             {genresLabel && (
               <p className="text-lg text-slate-600 dark:text-gray-300 mb-2">
@@ -149,7 +149,7 @@ const ArtistDetailsPage = () => {
             )}
           </div>
           {bestOfAlbum && (
-            <div className="w-full md:w-64 lg:w-72 md:ml-4">
+            <div className="w-full md:w-64 lg:w-72 md:ml-6">
               <AlbumCard album={bestOfAlbum} variant={AlbumCardVariant.DISCOVERY} />
             </div>
           )}

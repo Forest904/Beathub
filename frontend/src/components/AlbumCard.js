@@ -98,7 +98,9 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
       />
       <div className="p-4 text-center">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1 truncate">{album.name}</h3>
-        <p className="text-sm text-slate-600 dark:text-gray-400 mb-3 truncate">{album.title}</p>
+        {!isBestOf && (
+          <p className="text-sm text-slate-600 dark:text-gray-400 mb-3 truncate">{album.title}</p>
+        )}
         <div className="flex flex-col space-y-2">
           {variant !== AlbumCardVariant.BURN_SELECTION && album.spotify_url && !isBestOf && (
             <button
