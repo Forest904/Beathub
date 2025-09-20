@@ -2,11 +2,11 @@
 
 
 ## Artist Best-Of Playlist
-- [ ] Place a single `AlbumCard` on the artist page, to the right of the artist info in the same row.
-- [ ] Make the album conver the artist image.
-- [ ] Make the album title "The Best Of XXX "
-- [ ] Populate the card with the most popular N tracks for that artist (fit to CD duration).
-- [ ] Make the card clickable and behave like any other album/playlist.
+- [x] Place a single `AlbumCard` on the artist page, to the right of the artist info in the same row.
+- [x] Make the album conver the artist image.
+- [x] Make the album title "The Best Of XXX "
+- [x] Populate the card with the most popular N tracks for that artist (fit to CD duration).
+- [x] Make the card clickable and behave like any other album/playlist.
 
 ## Make Your Compilation Feature
 - [ ] Add a "Make Your Own CD Remix" button on the DiscoverArtists page.

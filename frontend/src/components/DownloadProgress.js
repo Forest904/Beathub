@@ -11,7 +11,7 @@ const INITIAL_STATE = {
 
 const resolveStreamUrl = (baseUrl) => (baseUrl ? `${baseUrl}/api/progress/stream` : '/api/progress/stream');
 
-const ProgressPanel = ({ visible, onClose, baseUrl, onComplete, onActiveChange }) => {
+const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChange }) => {
   const esRef = useRef(null);
   const completionNotified = useRef(false);
   const [state, setState] = useState(INITIAL_STATE);
@@ -106,9 +106,6 @@ const ProgressPanel = ({ visible, onClose, baseUrl, onComplete, onActiveChange }
     <div className="bg-brand-50 dark:bg-gray-800 rounded-lg p-4 shadow-lg mb-6 ring-1 ring-brand-100 dark:ring-0">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-lg font-semibold">Download Progress</h3>
-        <button type="button" onClick={onClose} className="text-sm text-slate-600 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white">
-          Hide
-        </button>
       </div>
 
       <div className="mb-3">
@@ -131,7 +128,7 @@ const ProgressPanel = ({ visible, onClose, baseUrl, onComplete, onActiveChange }
   );
 };
 
-ProgressPanel.propTypes = {
+DownloadProgress.propTypes = {
   visible: PropTypes.bool,
   onClose: PropTypes.func.isRequired,
   baseUrl: PropTypes.string,
@@ -139,11 +136,11 @@ ProgressPanel.propTypes = {
   onActiveChange: PropTypes.func,
 };
 
-ProgressPanel.defaultProps = {
+DownloadProgress.defaultProps = {
   visible: false,
   baseUrl: undefined,
   onComplete: undefined,
   onActiveChange: undefined,
 };
 
-export default ProgressPanel;
+export default DownloadProgress;

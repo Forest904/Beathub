@@ -73,6 +73,10 @@ const AlbumDetailsPage = () => {
   };
 
   const handleDirectDownload = () => {
+    if (isBestOf) {
+      navigate('/download', { state: { spotifyLinkToDownload: albumId } });
+      return;
+    }
     if (!albumDetails?.spotify_url) {
       setCopyFeedback('Spotify link unavailable.');
       return;
@@ -127,8 +131,15 @@ const AlbumDetailsPage = () => {
 
           <div className="w-full md:flex-1 md:mx-8 flex flex-col justify-center text-center md:text-center md:items-center">
             <h1 className="text-4xl font-bold mb-2 text-slate-900 dark:text-white">{albumDetails.title}</h1>
+            {isBestOf && (
+              <div className="inline-flex items-center px-3 py-1 rounded-full bg-brand-100 text-brand-800 dark:bg-slate-700 dark:text-slate-200 text-xs font-medium mb-2">
+                Generated Best-Of • {(albumDetails?.capacity_minutes || 80)}-min CD
+              </div>
+            )}
             <p className="text-xl text-slate-600 dark:text-gray-400 mb-2">by {albumDetails.artist}</p>
-            <p className="text-md text-slate-500 dark:text-gray-500 mb-1">Release Date: {releaseDateLabel}</p>
+            {!isBestOf && (
+              <p className="text-md text-slate-500 dark:text-gray-500 mb-1">Release Date: {releaseDateLabel}</p>
+            )}
             <p className="text-md text-slate-500 dark:text-gray-500">Total Tracks: {albumDetails.total_tracks}</p>
             {copyFeedback && <p className="text-brandSuccess-400 mt-4 text-sm">{copyFeedback}</p>}
           </div>

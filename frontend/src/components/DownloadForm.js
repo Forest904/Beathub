@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 
-const DownloadForm = ({ onSubmit, loading }) => {
+const DownloadForm = ({ onSubmit, loading, rightAction }) => {
   const [spotifyLink, setSpotifyLink] = useState('');
 
   const handleSubmit = (event) => {
@@ -32,20 +32,23 @@ const DownloadForm = ({ onSubmit, loading }) => {
           disabled={loading}
         />
       </div>
-      <button
-        type="submit"
-        className="w-full flex items-center justify-center bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2 px-4 rounded-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        disabled={loading || !spotifyLink.trim()}
-      >
-        {loading ? (
-          <>
-            <span className="w-5 h-5 border-2 border-white border-t-brand-500 dark:border-t-brandDark-400 rounded-full animate-spin mr-2" />
-            Downloading...
-          </>
-        ) : (
-          'Download'
-        )}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          className="flex-1 flex items-center justify-center bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2 px-4 rounded-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={loading || !spotifyLink.trim()}
+        >
+          {loading ? (
+            <>
+              <span className="w-5 h-5 border-2 border-white border-t-brand-500 dark:border-t-brandDark-400 rounded-full animate-spin mr-2" />
+              Downloading...
+            </>
+          ) : (
+            'Download'
+          )}
+        </button>
+        {rightAction}
+      </div>
     </form>
   );
 };
@@ -53,10 +56,12 @@ const DownloadForm = ({ onSubmit, loading }) => {
 DownloadForm.propTypes = {
   onSubmit: PropTypes.func.isRequired,
   loading: PropTypes.bool,
+  rightAction: PropTypes.node,
 };
 
 DownloadForm.defaultProps = {
   loading: false,
+  rightAction: null,
 };
 
 export default DownloadForm;

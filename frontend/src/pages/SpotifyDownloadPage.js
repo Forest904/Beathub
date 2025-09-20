@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import DownloadForm from '../components/DownloadForm';
 import AlbumGallery from '../components/AlbumGallery';
-import ProgressPanel from '../components/ProgressPanel';
+import DownloadProgress from '../components/DownloadProgress';
 import TrackListRich from '../components/TrackListRich';
 import { AlbumCardVariant } from '../components/AlbumCard';
 import Message from '../components/Message';
@@ -186,20 +186,23 @@ const SpotifyDownloadPage = () => {
 
         <div className="bg-brand-50 dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-8 ring-1 ring-brand-100 dark:ring-0">
           <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-4">Download from Spotify</h2>
-          <DownloadForm onSubmit={handleDownload} loading={loading} />
+          <DownloadForm
+            onSubmit={handleDownload}
+            loading={loading}
+            rightAction={
+              hasActiveDownload ? (
+                <button
+                  type="button"
+                  onClick={() => setProgressVisible((prev) => !prev)}
+                  className="text-sm px-3 py-2 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 whitespace-nowrap dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200"
+                >
+                  {progressVisible ? 'Hide Panel' : 'Show Panel'}
+                </button>
+              ) : null
+            }
+          />
           {errorMessage && <Message type="error" text={errorMessage} />}
-          {hasActiveDownload && (
-            <div className="mt-3 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setProgressVisible((prev) => !prev)}
-                className="text-sm px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200"
-              >
-                {progressVisible ? 'Hide Progress' : 'Show Progress'}
-              </button>
-            </div>
-          )}
-          <ProgressPanel
+          <DownloadProgress
             visible={progressVisible}
             onClose={() => setProgressVisible(false)}
             baseUrl={apiBaseUrl}

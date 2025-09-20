@@ -465,15 +465,211 @@ class SpotifyContentDownloader:
             'artist': artist.get('name'),
             'image_url': artist.get('image'),
             'spotify_url': None,
+            'capacity_minutes': primary_min,
             'release_date': None,
             'total_tracks': len(tracks_list),
             'tracks': tracks_list,
         }
         return result
 
+    def _download_best_of_album(self, artist_id: str) -> Dict[str, Any]:
+        """Download pipeline for synthetic Best-Of albums using SpotDL on per-track URLs."""
+        # Resolve progress publisher (same behavior as main pipeline)
+        publisher = self.progress_publisher
+        if publisher is None:
+            try:
+                from flask import current_app  # type: ignore
+                broker = current_app.extensions.get('progress_broker')
+                if broker is not None:
+                    from .progress import BrokerPublisher
+                    publisher = BrokerPublisher(broker)
+            except Exception:
+                publisher = None
+
+        # Build details and track list
+        details = self.build_best_of_album_details(artist_id)
+        if not details:
+            return {"status": "error", "error_code": "metadata_unavailable", "message": "Could not build Best-Of album for this artist."}
+
+        artist_name = details.get('artist') or 'Unknown Artist'
+        title_name = details.get('title') or f'Best Of {artist_name}'
+        image_url_from_metadata = details.get('image_url')
+        spotify_url = None
+        item_type = 'album'
+        spotify_id = details.get('spotify_id') or f'bestof:{artist_id}'
+
+        # Prepare output directory and cover art
+        item_specific_output_dir = self.file_manager.create_item_output_directory(artist_name, title_name)
+        if not item_specific_output_dir:
+            return {"status": "error", "message": f"Could not create output directory for {title_name}."}
+
+        local_cover_image_path = self.audio_cover_download_service.download_cover_image(
+            image_url_from_metadata,
+            item_specific_output_dir
+        )
+
+        # Resolve SpotDL client and search per-track Spotify URLs
+        spotdl_client = self._resolve_spotdl_client()
+        if not spotdl_client:
+            return {"status": "error", "error_code": "search_unavailable", "message": "SpotDL client unavailable."}
+
+        track_urls = [t.get('spotify_url') for t in (details.get('tracks') or []) if t.get('spotify_url')]
+        if not track_urls:
+            return {"status": "error", "error_code": "no_tracks", "message": "No tracks available for Best-Of album."}
+
+        try:
+            songs = spotdl_client.search(track_urls)
+        except Exception as e:
+            return {"status": "error", "error_code": "search_failed", "message": f"SpotDL search failed: {e}"}
+
+        if not songs:
+            return {"status": "error", "error_code": "no_results", "message": "SpotDL returned no songs for Best-Of selection."}
+
+        # Inform UI that we are starting a multi-track job
+        if publisher is not None:
+            try:
+                publisher.publish({
+                    'song_display_name': title_name,
+                    'status': 'Starting download',
+                    'progress': 0,
+                    'overall_completed': 0,
+                    'overall_total': len(songs),
+                    'overall_progress': 0,
+                })
+            except Exception:
+                pass
+
+        # Configure output template and download
+        results_map: Dict[str, Optional[str]] = {}
+        try:
+            sanitized_title = self.file_manager.sanitize_filename(title_name)
+            output_template = os.path.join(item_specific_output_dir, f"{sanitized_title}")
+            spotdl_client.set_output_template(output_template)
+            results = spotdl_client.download_songs(songs)
+            audio_failed = False
+            error_result = None
+            for song, p in results:
+                results_map[getattr(song, 'url', None)] = str(p) if p else None
+                if p is None:
+                    audio_failed = True
+            if audio_failed:
+                error_result = {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
+                return error_result
+        except Exception as e:
+            try:
+                from spotdl.download.downloader import DownloaderError  # type: ignore
+                from spotdl.providers.audio.base import AudioProviderError  # type: ignore
+            except Exception:
+                DownloaderError = Exception  # type: ignore
+                AudioProviderError = Exception  # type: ignore
+            if isinstance(e, AudioProviderError):
+                return {"status": "error", "error_code": "provider_error", "message": str(e)}
+            if isinstance(e, DownloaderError):
+                return {"status": "error", "error_code": "downloader_error", "message": str(e)}
+            return {"status": "error", "error_code": "internal_error", "message": f"SpotDL API download failed: {e}"}
+
+        # Build TrackDTOs and override numbering to reflect Best-Of ordering
+        track_dtos: List[TrackDTO] = []
+        for index, s in enumerate(songs, start=1):
+            dto = song_to_track_dto(s)
+            dto.local_path = results_map.get(getattr(s, 'url', None))
+            # Force disc/track numbers sequentially so the generated album looks like a real album
+            dto.disc_number = 1
+            dto.track_number = index
+            track_dtos.append(dto)
+
+        # Lyrics export phase
+        if True:
+            total_tracks = len(track_dtos)
+            exported_count = 0
+            for t in track_dtos:
+                if t.local_path and not t.local_lyrics_path:
+                    try:
+                        exported = self.lyrics_service.export_embedded_lyrics(t.local_path)
+                    except Exception:
+                        exported = None
+                    t.local_lyrics_path = exported
+                exported_count += 1
+                if publisher is not None:
+                    try:
+                        publisher.publish({
+                            'song_display_name': t.title,
+                            'status': f'Exporting lyrics ({exported_count}/{total_tracks})',
+                            'progress': 100 if t.local_lyrics_path else 0,
+                            'overall_completed': exported_count,
+                            'overall_total': total_tracks,
+                            'overall_progress': int((exported_count / max(1, total_tracks)) * 100),
+                        })
+                    except Exception:
+                        pass
+            if publisher is not None:
+                try:
+                    publisher.publish({
+                        'song_display_name': title_name,
+                        'status': 'Complete',
+                        'progress': 100,
+                        'overall_completed': total_tracks,
+                        'overall_total': total_tracks,
+                        'overall_progress': 100,
+                    })
+                except Exception:
+                    pass
+
+        # Persist track rows
+        try:
+            self.repo.save_tracks(track_dtos)
+        except Exception:
+            pass
+
+        # Save metadata JSON
+        meta_tracks = [t.model_dump() for t in track_dtos]
+        comprehensive_metadata_to_save = {
+            'spotify_id': spotify_id,
+            'title': title_name,
+            'artist': artist_name,
+            'image_url': image_url_from_metadata,
+            'spotify_url': spotify_url,
+            'item_type': item_type,
+            'local_output_directory': item_specific_output_dir,
+            'local_cover_image_path': local_cover_image_path,
+            'tracks': meta_tracks,
+        }
+        metadata_json_path = self.file_manager.save_metadata_json(
+            item_specific_output_dir,
+            comprehensive_metadata_to_save
+        )
+
+        simplified_tracks_info_for_return = []
+        for t in track_dtos:
+            simplified_tracks_info_for_return.append({
+                'title': t.title,
+                'artists': t.artists,
+                'cover_url': t.cover_url or image_url_from_metadata,
+                'local_lyrics_path': t.local_lyrics_path,
+            })
+
+        return {
+            "status": "success",
+            "message": f"Successfully processed {item_type}: {title_name}",
+            "item_name": title_name,
+            "item_type": item_type,
+            "spotify_id": spotify_id,
+            "artist": artist_name,
+            "spotify_url": spotify_url,
+            "output_directory": item_specific_output_dir,
+            "cover_art_url": image_url_from_metadata,
+            "local_cover_image_path": local_cover_image_path,
+            "tracks": simplified_tracks_info_for_return,
+            "metadata_file_path": metadata_json_path
+        }
+
 
     def download_spotify_content(self, spotify_link):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""
+        # Synthetic Best-Of album support: treat 'bestof:<artist_id>' like a container
+        if isinstance(spotify_link, str) and spotify_link.startswith('bestof:'):
+            artist_id = spotify_link.split(':', 1)[1]
+            return self._download_best_of_album(artist_id)
         # Progress publisher for SSE/clients (compat: fall back to broker in app context)
         publisher = self.progress_publisher
         if publisher is None:
