@@ -1,7 +1,5 @@
 ﻿# TODO
 
-
-
 ### Completed (Covers and Selection)
 - [x] Frontend: Album cards render covers in a fixed 1:1 square (object-cover) with 640×640 hints.
 - [x] Frontend: Download page toggles selection off when clicking the already-selected album card.
@@ -31,15 +29,13 @@ Batch 1 â€” Backend preview proxy
 - [ ] Errors: 404 when no preview_url, 502 on remote stream error, 429 with basic rate-limiter if needed.
 
 Batch 2 â€” Frontend integration
-- [ ] Album details: Render `TrackListRich` with `enablePlay` and provide `onPlayTrack` that builds preview URLs: `/api/preview/${track.spotify_id}`.
+- [ ] Album details: Render `TrackListDiscovery` with `enablePlay` and provide `onPlayTrack` that builds preview URLs: `/api/preview/${track.spotify_id}`.
 - [ ] Artist details: Add a "Top Tracks" section above discography using Spotipy `artist_top_tracks` (new endpoint) and the same preview handling.
 - [ ] Player: No code changes expected; it plays any `audioUrl`. Ensure player state distinguishes preview vs local by title suffix or metadata flag (optional).
 - [ ] Visuals: Show a small "Preview" badge when the audio source is a preview.
 
 Batch 3 â€” UX polish and fallback
-- [ ] Gracefully hide play buttons when `HEAD /api/preview/:id` responds 404 for many tracks.
 - [ ] Preload small batches of availability (HEAD) to avoid click-time delays; cache on client.
-- [ ] Optional future: add YT Music short-clip fallback for tracks without Spotify previews.
 
 # TODO IN THE FUTURE
 

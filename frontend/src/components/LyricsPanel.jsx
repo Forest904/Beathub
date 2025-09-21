@@ -67,6 +67,20 @@ const LyricsPanel = ({ visible, onClose, baseUrl, albumId, track }) => {
     }
   }, [visible]);
 
+  // Close on Escape when panel is visible
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Escape' && visible) {
+        if (onClose) onClose();
+      }
+    };
+    if (visible) {
+      document.addEventListener('keydown', handler);
+      return () => document.removeEventListener('keydown', handler);
+    }
+    return undefined;
+  }, [visible, onClose]);
+
   const handleCopy = async () => {
     if (!lyrics) return;
     try {
