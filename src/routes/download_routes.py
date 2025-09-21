@@ -71,7 +71,8 @@ def download_spotify_item_api():
                         spotify_id=spotify_id,
                         title=title,
                         artist=artist,
-                        image_url=image_url,
+                        image_url=(f"/api/items/by-spotify/{spotify_id}/cover" if result.get('local_cover_image_path') else image_url),
+
                         spotify_url=spotify_url,
                         local_path=local_path,
                         item_type=item_type
@@ -457,3 +458,79 @@ def stream_item_audio(item_id: int):
     except Exception:
         logger.exception("Failed to stream audio file: %s", found_audio)
         return jsonify({'error': 'Failed to stream audio file.'}), 500
+
+@download_bp.route('/items/by-spotify/<string:spotify_id>/cover', methods=['GET'])
+def get_item_cover_by_spotify(spotify_id: str):
+    """Serve the cover image for an item. Falls back to a generated SVG.
+
+    Returns 200 with image/jpeg|image/png if present as cover.jpg/cover.png in the item's folder.
+    If not present, generates an SVG placeholder with the item title centered.
+    """
+    item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
+    if not item:
+        return jsonify({'error': 'Item not found'}), 404
+    base_dir = item.local_path
+    if not base_dir or not os.path.isdir(base_dir):
+        return jsonify({'error': 'Associated content directory not found or is invalid.'}), 404
+
+    jpg = os.path.join(base_dir, 'cover.jpg')
+    png = os.path.join(base_dir, 'cover.png')
+    svg = os.path.join(base_dir, 'cover.svg')
+
+    try:
+        if os.path.exists(jpg):
+            return send_file(jpg, mimetype='image/jpeg', as_attachment=False, conditional=True)
+        if os.path.exists(png):
+            return send_file(png, mimetype='image/png', as_attachment=False, conditional=True)
+        if os.path.exists(svg):
+            return send_file(svg, mimetype='image/svg+xml', as_attachment=False, conditional=True)
+
+        # Generate a default SVG dynamically and return (also persist for next time)
+        title = (item.title or 'Compilation').strip()
+        # naive wrap around ~24 chars per line
+        lines = []
+        line = ''
+        for word in title.split():
+            if len(line) + len(word) + 1 <= 24:
+                line = (line + ' ' + word).strip()
+            else:
+                if line:
+                    lines.append(line)
+                line = word
+        if line:
+            lines.append(line)
+        if len(lines) > 5:
+            lines = lines[:5]
+            lines[-1] += 'â€¦'
+        dy = 0
+        if lines:
+            total = (len(lines) - 1) * 1.3
+            dy = -total / 2.0
+        text_elems = '\n'.join([
+            f"<text x='50%' y='50%' dy='{(i*1.3)+dy}em' text-anchor='middle' dominant-baseline='middle' font-family='Segoe UI, Arial, sans-serif' font-size='36' fill='#0b1727'>{line}</text>"
+            for i, line in enumerate(lines)
+        ])
+        svg_content = f"""
+<svg xmlns='http://www.w3.org/2000/svg' width='640' height='640' viewBox='0 0 640 640'>
+  <defs>
+    <linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'>
+      <stop offset='0%' stop-color='#a7c5eb'/>
+      <stop offset='100%' stop-color='#74b9ff'/>
+    </linearGradient>
+  </defs>
+  <rect width='100%' height='100%' fill='url(#bg)'/>
+  {text_elems}
+</svg>
+""".strip()
+        try:
+            with open(svg, 'w', encoding='utf-8') as f:
+                f.write(svg_content)
+        except Exception:
+            pass
+        from flask import Response
+        return Response(svg_content, mimetype='image/svg+xml')
+    except Exception:
+        logger.exception('Failed to serve cover for %s', spotify_id)
+        return jsonify({'error': 'Failed to serve cover image'}), 500
+
+

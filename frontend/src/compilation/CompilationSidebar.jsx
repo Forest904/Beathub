@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useCompilation } from './CompilationContext.jsx';
 import { formatDuration } from '../utils/helpers';
@@ -186,7 +186,7 @@ const SidebarContent = () => {
                           className={`rounded border px-2 py-1 text-xs ${canUp ? 'border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800' : 'border-slate-200 text-slate-300 dark:border-slate-700 dark:text-slate-600 cursor-not-allowed'}`}
                           title="Move up"
                         >
-                          ↑
+                          â†‘
                         </button>
                         <button
                           type="button"
@@ -195,7 +195,7 @@ const SidebarContent = () => {
                           className={`rounded border px-2 py-1 text-xs ${canDown ? 'border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800' : 'border-slate-200 text-slate-300 dark:border-slate-700 dark:text-slate-600 cursor-not-allowed'}`}
                           title="Move down"
                         >
-                          ↓
+                          â†“
                         </button>
                       </div>
                     </div>
@@ -249,7 +249,7 @@ const SidebarContent = () => {
               if (!confirmed || items.length === 0) return;
               setSubmitting(true);
               try {
-                const payload = { name, tracks: items, async: true };
+                const payload = { name, tracks: items, async: true, cover_data_url: coverDataUrl };
                 const res = await axios.post('/api/compilations/download', payload);
                 const compId = res.data?.compilation_spotify_id;
                 clear();
@@ -265,7 +265,7 @@ const SidebarContent = () => {
             }}
             className={`rounded-md px-3 py-1.5 text-sm font-medium ${submitting || !confirmed || items.length === 0 || !name || !name.trim() ? 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600' : 'bg-brand-600 text-white hover:bg-brand-700 dark:bg-brandDark-600 dark:hover:bg-brandDark-500'}`}
           >
-            {submitting ? 'Starting…' : 'Direct Download'}
+            {submitting ? 'Startingâ€¦' : 'Direct Download'}
           </button>
           </div>
         </div>
@@ -280,3 +280,4 @@ const CompilationSidebar = () => {
 };
 
 export default CompilationSidebar;
+

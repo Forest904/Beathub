@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
@@ -668,7 +668,7 @@ class SpotifyContentDownloader:
         }
 
 
-    def download_compilation(self, tracks: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    def download_compilation(self, tracks: List[Dict[str, Any]], name: str, cover_data_url: Optional[str] = None) -> Dict[str, Any]:
         """Download an ad-hoc compilation of tracks into a dedicated folder.
 
         Args:
@@ -704,6 +704,38 @@ class SpotifyContentDownloader:
         except Exception as e:
             return {"status": "error", "message": f"Failed to create compilation directory: {e}"}
 
+        
+        # Determine existing or provided cover path (if any)
+        local_cover_image_path = None
+        try:
+            jpg = os.path.join(comp_dir, 'cover.jpg')
+            png = os.path.join(comp_dir, 'cover.png')
+            svg = os.path.join(comp_dir, 'cover.svg')
+            if os.path.exists(jpg):
+                local_cover_image_path = jpg
+            elif os.path.exists(png):
+                local_cover_image_path = png
+            elif os.path.exists(svg):
+                local_cover_image_path = svg
+            elif isinstance(cover_data_url, str) and cover_data_url and cover_data_url.startswith('data:image/') and ';base64,' in cover_data_url:
+                # Save provided data URL (fallback path if route didn't pre-save)
+                head, b64 = cover_data_url.split(',', 1)
+                ext = 'jpg'
+                if 'image/png' in head:
+                    ext = 'png'
+                elif 'image/jpeg' in head or 'image/jpg' in head:
+                    ext = 'jpg'
+                target = os.path.join(comp_dir, f'cover.{ext}')
+                import base64 as _b64
+                try:
+                    raw = _b64.b64decode(b64)
+                    with open(target, 'wb') as f:
+                        f.write(raw)
+                    local_cover_image_path = target
+                except Exception:
+                    local_cover_image_path = None
+        except Exception:
+            local_cover_image_path = None
         # Search and download songs
         try:
             songs = spotdl_client.search(queries)
@@ -809,7 +841,7 @@ class SpotifyContentDownloader:
                 'spotify_url': None,
                 'item_type': 'compilation',
                 'local_output_directory': comp_dir,
-                'local_cover_image_path': None,
+                'local_cover_image_path': local_cover_image_path,
                 'tracks': [t.model_dump() for t in track_dtos],
             }
             with open(os.path.join(comp_dir, 'spotify_metadata.json'), 'w', encoding='utf-8') as f:
@@ -843,7 +875,7 @@ class SpotifyContentDownloader:
             'spotify_url': None,
             'output_directory': comp_dir,
             'cover_art_url': None,
-            'local_cover_image_path': None,
+            'local_cover_image_path': local_cover_image_path,
             'tracks': [
                 {
                     'title': t.title,
@@ -1099,5 +1131,6 @@ class SpotifyContentDownloader:
             "tracks": simplified_tracks_info_for_return,
             "metadata_file_path": metadata_json_path
         }
+
 
 

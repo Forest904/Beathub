@@ -1,4 +1,4 @@
-﻿import React, { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 
@@ -91,16 +91,11 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
         isSelected ? 'border-4 border-brand-500' : 'border-2 border-transparent'
       }`}
     >
-      <div className="w-full aspect-square overflow-hidden">
-        <img
-          src={album.image_url || FALLBACK_IMAGE}
-          alt={`${album.name} Album Cover`}
-          className="w-full h-full object-cover"
-          width="640"
-          height="640"
-          loading="lazy"
-        />
-      </div>
+      <img
+        src={album.image_url || FALLBACK_IMAGE}
+        alt={`${album.name} Album Cover`}
+        className="w-full h-auto object-cover"
+      />
       <div className="p-4 text-center">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1 truncate">{album.name}</h3>
         {!isBestOf && (

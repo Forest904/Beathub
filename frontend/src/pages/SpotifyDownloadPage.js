@@ -118,18 +118,26 @@ const SpotifyDownloadPage = () => {
   }, [fetchAlbums]);
 
   const handleSelectAlbum = useCallback(
-    async (album) => {
-      setSelectedAlbumId(album.id);
+  async (album) => {
+    if (!album) return;
+    const isSame = selectedAlbumId === album.id;
+    if (isSame) {
+      // Toggle off when clicking the already-selected card
+      setSelectedAlbumId(null);
       setRichMetadata(null);
-      try {
-        const metadataResponse = await axios.get(`${apiBaseUrl}/api/items/${album.id}/metadata`);
-        setRichMetadata(metadataResponse.data);
-      } catch (error) {
-        console.warn('Failed to fetch selected album metadata', error);
-      }
-    },
-    [apiBaseUrl],
-  );
+      return;
+    }
+    setSelectedAlbumId(album.id);
+    setRichMetadata(null);
+    try {
+      const metadataResponse = await axios.get(`${apiBaseUrl}/api/items/${album.id}/metadata`);
+      setRichMetadata(metadataResponse.data);
+    } catch (error) {
+      console.warn('Failed to fetch selected album metadata', error);
+    }
+  },
+  [apiBaseUrl, selectedAlbumId],
+);
 
   useEffect(() => {
     fetchAlbums();
