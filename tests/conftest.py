@@ -19,9 +19,17 @@ def _isolate_env(monkeypatch, tmp_path_factory):
     """Ensure a clean env for tests with per-test sqlite files."""
     db_dir = tmp_path_factory.mktemp("db")
     db_path = Path(db_dir) / "test.sqlite"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+    database_uri = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", database_uri)
     monkeypatch.setenv("SPOTIPY_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("SPOTIPY_CLIENT_SECRET", "test-client-secret")
+
+    # Ensure the config class also reflects the per-test database URI. The Config
+    # attributes are evaluated at import time, so updating the environment alone
+    # is not enough when tests run sequentially.
+    import config as cfg
+
+    monkeypatch.setattr(cfg.Config, "SQLALCHEMY_DATABASE_URI", database_uri, raising=False)
     yield
 
 

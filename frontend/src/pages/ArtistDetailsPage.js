@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
 import AlbumCard, { AlbumCardVariant } from '../components/AlbumCard';
+import TrackListDiscovery from '../components/TrackListDiscovery.jsx';
+import usePreviewPlayback from '../hooks/usePreviewPlayback';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/200?text=No+Image';
 
@@ -11,6 +13,7 @@ const ArtistDetailsPage = () => {
   const navigate = useNavigate();
   const [artistDetails, setArtistDetails] = useState(null);
   const [discography, setDiscography] = useState([]);
+  const [topTracks, setTopTracks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -25,9 +28,10 @@ const ArtistDetailsPage = () => {
 
     const loadArtist = async () => {
       try {
-        const [detailsResponse, discographyResponse] = await Promise.all([
+        const [detailsResponse, discographyResponse, topTracksResponse] = await Promise.all([
           axios.get(`/api/artist_details/${artistId}`),
           axios.get(`/api/artist_discography/${artistId}`),
+          axios.get(`/api/artist_top_tracks/${artistId}`),
         ]);
 
         if (cancelled) {
@@ -36,6 +40,7 @@ const ArtistDetailsPage = () => {
 
         setArtistDetails(detailsResponse.data);
         setDiscography(discographyResponse.data.discography);
+        setTopTracks(topTracksResponse.data?.tracks || []);
         setError(null);
       } catch (requestError) {
         console.error('Failed to load artist profile', requestError);
@@ -43,6 +48,7 @@ const ArtistDetailsPage = () => {
           setError('We could not load this artist right now. Please try again later.');
           setArtistDetails(null);
           setDiscography([]);
+          setTopTracks([]);
         }
       } finally {
         if (!cancelled) {
@@ -80,6 +86,20 @@ const ArtistDetailsPage = () => {
       spotify_url: null,
     };
   }, [artistDetails, artistId]);
+
+  const normalizedTopTracks = useMemo(
+    () => topTracks.map((track) => ({ ...track, albumId: track.album_id || track.albumId || null })),
+    [topTracks],
+  );
+
+  const {
+    availability: previewAvailability,
+    playTrack: playPreviewTrack,
+    prefetchTrack,
+    currentPreviewId,
+    isPreviewPlaying,
+    isPreviewPaused,
+  } = usePreviewPlayback(normalizedTopTracks, { resetKey: artistId });
 
   if (loading) {
     return (
@@ -152,6 +172,24 @@ const ArtistDetailsPage = () => {
             <div className="w-full md:w-64 lg:w-72 md:ml-6">
               <AlbumCard album={bestOfAlbum} variant={AlbumCardVariant.DISCOVERY} />
             </div>
+          )}
+        </section>
+
+        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 ring-1 ring-brand-100 dark:ring-0 mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-6 text-center">Top Tracks</h2>
+          {normalizedTopTracks.length > 0 ? (
+            <TrackListDiscovery
+              tracks={normalizedTopTracks}
+              enablePlay
+              onPlayTrack={(track) => playPreviewTrack(track)}
+              onPrefetchTrack={(track) => prefetchTrack(track)}
+              previewAvailability={previewAvailability}
+              activePreviewId={currentPreviewId}
+              isPreviewPlaying={isPreviewPlaying}
+              isPreviewPaused={isPreviewPaused}
+            />
+          ) : (
+            <p className="text-center text-slate-600 dark:text-gray-400 text-lg">Top tracks are unavailable for this artist.</p>
           )}
         </section>
 

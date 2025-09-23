@@ -153,3 +153,19 @@ def get_artist_discography(artist_id):
     except Exception as e:
         logger.error(f"Error fetching artist discography for ID {artist_id}: {e}", exc_info=True)
         return jsonify({"error": "Failed to retrieve artist discography"}), 500
+
+
+@artist_bp.route('/artist_top_tracks/<string:artist_id>', methods=['GET'])
+def get_artist_top_tracks(artist_id):
+    spotify_downloader = get_spotify_downloader()
+    sp = spotify_downloader.get_spotipy_instance()
+    if not sp:
+        return jsonify({"error": "Spotify API not initialized"}), 500
+
+    market = request.args.get('market', 'US')
+    try:
+        tracks = spotify_downloader.fetch_artist_top_tracks(artist_id, market=market)
+        return jsonify({"tracks": tracks}), 200
+    except Exception as e:
+        logger.error(f"Error fetching artist top tracks for ID {artist_id}: {e}", exc_info=True)
+        return jsonify({"error": "Failed to retrieve artist top tracks"}), 500

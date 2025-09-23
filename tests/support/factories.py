@@ -1,5 +1,3 @@
-"""Factory Boy factories for database models used in tests."""
-
 import factory
 from factory.alchemy import SQLAlchemyModelFactory
 

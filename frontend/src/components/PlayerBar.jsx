@@ -28,6 +28,7 @@ const PlayerBar = () => {
     volume,
     setVolume,
   } = usePlayer() || {};
+  const isPreviewTrack = Boolean(currentTrack?.isPreview);
   const [lyricsVisible, setLyricsVisible] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -166,6 +167,13 @@ const PlayerBar = () => {
         <div className="min-w-0 text-center px-1">
           <div className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={title}>{title}</div>
           {artists && <div className="text-xs text-slate-600 dark:text-gray-400 truncate" title={artists}>{artists}</div>}
+          {isPreviewTrack && (
+            <div className="mt-1 flex items-center justify-center">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold dark:bg-brandDark-700 dark:text-brandDark-200">
+                Preview
+              </span>
+            </div>
+          )}
         </div>
         </div>
       </div>

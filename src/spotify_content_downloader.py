@@ -89,6 +89,7 @@ class SpotifyContentDownloader:
         cache_ttl = Config.METADATA_CACHE_TTL_SECONDS
         self._artist_cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
         self._artist_discography_cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
+        self._artist_top_tracks_cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
         self._popular_artists_cache = TTLCache(maxsize=4, ttl=Config.POPULAR_ARTIST_CACHE_TTL_SECONDS)
         self._popular_artist_playlist_ids = Config.POPULAR_ARTIST_PLAYLIST_IDS
         self._popular_artist_limit = Config.POPULAR_ARTIST_LIMIT
@@ -220,9 +221,55 @@ class SpotifyContentDownloader:
             while albums_results.get('next'):
                 albums_results = self.sp.next(albums_results)
                 _ingest(albums_results.get('items', []))
+            self._artist_discography_cache.set(cache_key, discography)
+            return discography
         except Exception as exc:
             logger.error('Error fetching artist discography for %s: %s', artist_id, exc, exc_info=True)
             return []
+
+    def fetch_artist_top_tracks(self, artist_id: str, market: str = 'US') -> List[Dict[str, Any]]:
+        cache_key = (artist_id, market)
+        cached = self._artist_top_tracks_cache.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached
+
+        if not self.sp:
+            logger.error('Spotipy client not initialized. Cannot fetch artist top tracks.')
+            return []
+
+        try:
+            response = self.sp.artist_top_tracks(artist_id, country=market) or {}
+        except Exception as exc:
+            logger.error('Error fetching artist top tracks for %s: %s', artist_id, exc, exc_info=True)
+            return []
+
+        tracks: List[Dict[str, Any]] = []
+        for item in response.get('tracks', []) or []:
+            track_id = item.get('id')
+            if not track_id:
+                continue
+            artists = [a.get('name') for a in item.get('artists', []) if isinstance(a, dict) and a.get('name')]
+            album = item.get('album') or {}
+            images = album.get('images') or []
+            image_url = None
+            if images:
+                image = images[0]
+                if isinstance(image, dict):
+                    image_url = image.get('url')
+            tracks.append({
+                'spotify_id': track_id,
+                'title': item.get('name'),
+                'artists': artists,
+                'duration_ms': item.get('duration_ms'),
+                'explicit': item.get('explicit'),
+                'spotify_url': (item.get('external_urls') or {}).get('spotify'),
+                'album_image_url': image_url,
+                'album_id': album.get('id'),
+                'preview_url': item.get('preview_url'),
+            })
+
+        self._artist_top_tracks_cache.set(cache_key, tracks)
+        return tracks
         self._artist_discography_cache.set(cache_key, discography)
         return discography
 

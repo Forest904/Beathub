@@ -27,6 +27,7 @@ from src.routes.cd_burning_routes import cd_burning_bp
 from src.routes.progress_routes import progress_bp
 from src.routes.config_routes import config_bp
 from src.routes.compilation_routes import compilation_bp
+from src.routes.preview_routes import preview_bp
 from src.progress import ProgressBroker, BrokerPublisher
 from src.repository import DefaultDownloadRepository
 from src.burn_sessions import BurnSessionManager
@@ -166,6 +167,7 @@ def create_app():
     app.register_blueprint(progress_bp)
     app.register_blueprint(config_bp)
     app.register_blueprint(compilation_bp)
+    app.register_blueprint(preview_bp)
     # --- NEW: Register the CD Burning Blueprint ---
     app.register_blueprint(cd_burning_bp)
 

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 // import { formatDuration } from '../utils/helpers';
 import TrackListDiscovery from '../components/TrackListDiscovery.jsx';
+import usePreviewPlayback from '../hooks/usePreviewPlayback';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/300x300.png?text=No+Cover';
 
@@ -97,6 +98,15 @@ const AlbumDetailsPage = () => {
     return list.map((t) => ({ ...t, albumId }));
   }, [albumDetails, albumId]);
 
+  const {
+    availability: previewAvailability,
+    playTrack: playPreviewTrack,
+    prefetchTrack,
+    currentPreviewId,
+    isPreviewPlaying,
+    isPreviewPaused,
+  } = usePreviewPlayback(enrichedTracks, { resetKey: albumId });
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -185,7 +195,16 @@ const AlbumDetailsPage = () => {
         <div className="mt-12">
           <h2 className="text-3xl font-semibold mb-6 text-center md:text-left text-slate-900 dark:text-white">Tracks</h2>
           {enrichedTracks.length > 0 ? (
-            <TrackListDiscovery tracks={enrichedTracks} />
+            <TrackListDiscovery
+              tracks={enrichedTracks}
+              enablePlay
+              onPlayTrack={(track) => playPreviewTrack(track)}
+              onPrefetchTrack={(track) => prefetchTrack(track)}
+              previewAvailability={previewAvailability}
+              activePreviewId={currentPreviewId}
+              isPreviewPlaying={isPreviewPlaying}
+              isPreviewPaused={isPreviewPaused}
+            />
           ) : (
             <p className="text-slate-600 dark:text-gray-500 text-lg">No tracks found for this album.</p>
           )}

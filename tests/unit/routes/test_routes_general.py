@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 
 
 def test_download_route_success_stores_item(app, client, monkeypatch):
@@ -122,8 +123,9 @@ def test_metadata_endpoints_by_id_and_spotify(app, client, tmp_path):
     meta_path.write_text('{"hello": "world"}', encoding='utf-8')
 
     with app.app_context():
+        spotify_id = f"test-{uuid.uuid4().hex}"
         item = DownloadedItem(
-            spotify_id='sp1', title='MT', artist='AR', item_type='album', local_path=str(mdir)
+            spotify_id=spotify_id, title='MT', artist='AR', item_type='album', local_path=str(mdir)
         )
         db.session.add(item)
         db.session.commit()
@@ -135,6 +137,6 @@ def test_metadata_endpoints_by_id_and_spotify(app, client, tmp_path):
     assert r1.get_json().get('hello') == 'world'
 
     # By spotify id
-    r2 = client.get('/api/items/by-spotify/sp1/metadata')
+    r2 = client.get(f'/api/items/by-spotify/{spotify_id}/metadata')
     assert r2.status_code == 200
     assert r2.get_json().get('hello') == 'world'
