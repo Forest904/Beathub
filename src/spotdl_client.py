@@ -114,8 +114,14 @@ class SpotdlClient:
         self._engine_ready.wait(timeout=10)
         if self._spotdl is None:
             if self._engine_error is not None:
-                raise RuntimeError("Failed to initialize SpotDL engine thread") from self._engine_error
-            raise RuntimeError("Failed to initialize SpotDL engine thread")
+                # Surface the root cause in the error to improve diagnostics
+                raise RuntimeError(
+                    f"Failed to initialize SpotDL engine thread: {type(self._engine_error).__name__}: {self._engine_error}"
+                ) from self._engine_error
+            # Unknown failure (thread started but did not set a client); hint common causes
+            raise RuntimeError(
+                "Failed to initialize SpotDL engine thread (unknown cause)."
+            )
 
     # --- Core accessors ---
     @property

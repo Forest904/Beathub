@@ -106,15 +106,31 @@ class JobQueue:
             try:
                 self.logger.info("Processing job %s (attempt %d): %s", job.id, attempt, job.link)
                 result = self.downloader.download_spotify_content(job.link)
-                if isinstance(result, dict) and result.get("status") == "success":
-                    job.result = result
-                    job.status = "completed"
-                    job.event.set()
-                    self.logger.info("Job %s completed", job.id)
-                    return
-                # Map error message for retry decision
-                last_error = (result or {}).get("message", "Unknown error")
-                # On certain errors, retry may help; otherwise fail fast
+                if isinstance(result, dict):
+                    if result.get("status") == "success":
+                        job.result = result
+                        job.status = "completed"
+                        job.event.set()
+                        self.logger.info("Job %s completed", job.id)
+                        return
+                    # Map error code and message for retry decision
+                    err_code = result.get("error_code")
+                    last_error = result.get("message", "Unknown error")
+                    non_retriable = {
+                        "spotdl_unavailable",
+                        "search_unavailable",
+                        "no_results",
+                        "metadata_unavailable",
+                        "no_tracks",
+                    }
+                    if err_code in non_retriable:
+                        self.logger.warning(
+                            "Job %s non-retriable error (%s): %s", job.id, err_code, last_error
+                        )
+                        break
+                else:
+                    # Unexpected orchestrator response shape
+                    last_error = "Unexpected orchestrator response"
             except Exception as e:  # pragma: no cover - defensive
                 last_error = str(e)
 

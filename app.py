@@ -125,7 +125,13 @@ def create_app():
             spotdl_client.spotdl.downloader.settings.get('audio_providers'),
         )
     except Exception as e:
-        app.logger.warning("SpotDL client not initialized; download features unavailable: %s", e)
+        # Log full traceback to aid diagnosing missing deps (ffmpeg/yt-dlp),
+        # credential issues, or Windows event loop quirks.
+        app.logger.warning(
+            "SpotDL client not initialized; download features unavailable: %s",
+            e,
+            exc_info=True,
+        )
 
     # Initialize the main orchestrator (SpotifyContentDownloader) with DI
     spotify_downloader = SpotifyContentDownloader(
