@@ -1,44 +1,20 @@
 ﻿# TODO
 
-### Completed (Covers and Selection)
-- [x] Frontend: Album cards render covers in a fixed 1:1 square (object-cover) with 640×640 hints.
-- [x] Frontend: Download page toggles selection off when clicking the already-selected album card.
-- [x] Frontend: Compilation sidebar posts cover_data_url with the name and tracks (custom image upload flows through).
-- [x] Backend: /api/compilations/download accepts cover_data_url; saves custom cover to cover.jpg/png or creates default 640×640 title SVG.
-- [x] Backend: New /api/items/by-spotify/<id>/cover serves local cover (jpg/png) or default SVG fallback.
-- [x] Backend: DB image_url points to local cover endpoint when local cover exists (history uses it).
-- [x] Rasterizing the default SVG to a 640×640 JPG/PNG (Pillow).
-- [x] Client-side downscaling of uploaded covers to 640×640.
+## Download progress enhancement with multiple green progressbars one for each song. 
 
-## Song Previews
-- [ ] Retrieve 10-second song previews during artist discovery (e.g., via Spotipy if available).
-- [ ] Add a quick-play button to preview tracks inline.
+## Cancel download button in the dowload page (both backend and frontend refactoring)
 
-### Plan
-- Goal: Enable inline, short previews for tracks on album/artist views without requiring a prior download.
-- Source: Prefer Spotify `preview_url` (often 30s MP3). If missing, skip or future-fallback to another provider.
-- Delivery: Backend proxy endpoint streams preview bytes to avoid CORS and to allow truncation to ~10s if needed.
-- UI: Play button in track rows wires into the existing `PlayerContext` with a "preview" queue.
+## Refactoring of the compilation sidepanel in a component inside the discovery section
 
-### Batches
+## Order discovery page by Popularity, Followers
 
-Batch 1 â€” Backend preview proxy
-- [ ] Add `GET /api/preview/<track_id>`: uses Spotipy `sp.track(track_id)` to fetch `preview_url` and caches mapping in LRU (TTL from `Config.METADATA_CACHE_TTL_SECONDS`).
-- [ ] If `preview_url` exists, proxy-stream it to the client (requests `stream=True`); optionally apply `Range` passthrough. If enforcing ~10s, stop after N bytes or return `206` with `Content-Range` approximating 10s for MP3.
-- [ ] Add `HEAD /api/preview/<track_id>` to quickly test availability and type.
-- [ ] Errors: 404 when no preview_url, 502 on remote stream error, 429 with basic rate-limiter if needed.
+## NEW FEATURE User Registration/Login
 
-Batch 2 â€” Frontend integration
-- [ ] Album details: Render `TrackListDiscovery` with `enablePlay` and provide `onPlayTrack` that builds preview URLs: `/api/preview/${track.spotify_id}`.
-- [ ] Artist details: Add a "Top Tracks" section above discography using Spotipy `artist_top_tracks` (new endpoint) and the same preview handling.
-- [ ] Player: No code changes expected; it plays any `audioUrl`. Ensure player state distinguishes preview vs local by title suffix or metadata flag (optional).
-- [ ] Visuals: Show a small "Preview" badge when the audio source is a preview.
+## NEW FEATURE FOR LOGGED IN USERS "My Playlists" 
 
-Batch 3 â€” UX polish and fallback
-- [ ] Preload small batches of availability (HEAD) to avoid click-time delays; cache on client.
+## NEW FEATURE "User Favourites" as in liked items Artists/Albums/Songs
 
-# TODO IN THE FUTURE
-
+# TODO IN THE FAR FUTURE
 
 ## Steps for online publication (no burning feature)
 

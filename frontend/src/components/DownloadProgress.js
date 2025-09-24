@@ -1,12 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 
-const INITIAL_STATE = {
-  song_display_name: null,
-  status: null,
-  progress: 0,
+const INITIAL_OVERALL = {
   overall_completed: 0,
   overall_total: 0,
+  overall_progress: 0,
 };
 
 const resolveStreamUrl = (baseUrl) => (baseUrl ? `${baseUrl}/api/progress/stream` : '/api/progress/stream');
@@ -14,7 +12,9 @@ const resolveStreamUrl = (baseUrl) => (baseUrl ? `${baseUrl}/api/progress/stream
 const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChange }) => {
   const esRef = useRef(null);
   const completionNotified = useRef(false);
-  const [state, setState] = useState(INITIAL_STATE);
+  const [overall, setOverall] = useState(INITIAL_OVERALL);
+  const [songsMap, setSongsMap] = useState({}); // key -> { key, name, status, progress, lastTs }
+  const [songsOrder, setSongsOrder] = useState([]); // maintain stable first-seen order
 
   useEffect(() => {
     if (!visible) {
@@ -23,7 +23,9 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
         esRef.current = null;
       }
       completionNotified.current = false;
-      setState(INITIAL_STATE);
+      setOverall(INITIAL_OVERALL);
+      setSongsMap({});
+      setSongsOrder([]);
       return undefined;
     }
 
@@ -38,30 +40,67 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
           return;
         }
 
-        const next = {
-          song_display_name: payload.song_display_name ?? payload.song_name ?? null,
-          status: payload.status ?? null,
-          progress: payload.progress ?? 0,
-          overall_completed: payload.overall_completed ?? 0,
-          overall_total: payload.overall_total ?? 0,
-        };
+        // Update overall progress snapshot
+        setOverall((prev) => ({
+          overall_completed: payload.overall_completed ?? prev.overall_completed ?? 0,
+          overall_total: payload.overall_total ?? prev.overall_total ?? 0,
+          overall_progress: payload.overall_progress ?? prev.overall_progress ?? 0,
+        }));
 
-        setState(next);
+        // Update per-song map for concurrent bars.
+        // Only create bars for track-level events that include a stable id/url.
+        const key = payload.song_id || payload.spotify_url;
+        if (!key) {
+          // Ignore album-level or non-track events (we already show an overall bar)
+          return;
+        }
+        const name = payload.song_display_name || payload.song_name || key;
+        const status = payload.status || null;
+        const progress = Number(payload.progress ?? 0);
+        const nowTs = Date.now();
 
-        const total = Number(next.overall_total || 0);
-        const done = Number(next.overall_completed || 0);
+        const normalizedProgress = Math.max(0, Math.min(100, Math.round(progress)));
+        const statusLower = (status || '').toLowerCase();
+        const isSongComplete = normalizedProgress >= 100 || statusLower.includes('complete') || statusLower.includes('done');
+
+        if (isSongComplete) {
+          setSongsMap((prev) => {
+            if (!prev[key]) return prev;
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          setSongsOrder((prev) => prev.filter((k) => k !== key));
+        } else {
+          setSongsMap((prev) => {
+            const next = { ...prev };
+            next[key] = {
+              key,
+              name,
+              status,
+              progress: normalizedProgress,
+              lastTs: nowTs,
+            };
+            return next;
+          });
+          setSongsOrder((prev) => (prev.includes(key) ? prev : [...prev, key]));
+        }
+
+        const total = Number(payload.overall_total || overall.overall_total || 0);
+        const done = Number(payload.overall_completed || overall.overall_completed || 0);
         // Consider complete only when server reports 'Complete' or clearly finished counts with 100%
         const isComplete =
-          next.status === 'Complete' || (total > 0 && done >= total && Number(next.progress || 0) >= 100);
+          (status === 'Complete') || (total > 0 && done >= total);
 
         if (typeof onActiveChange === 'function') {
+          // Active if any song is still below 100% or overall incomplete
           onActiveChange(!isComplete);
         }
 
         if (isComplete) {
           if (!completionNotified.current && typeof onComplete === 'function') {
             completionNotified.current = true;
-            onComplete(next);
+            onComplete(payload);
           }
         } else {
           completionNotified.current = false;
@@ -89,17 +128,20 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
     };
   }, [baseUrl, onActiveChange, onComplete, visible]);
 
+  const overallPercentage = useMemo(() => {
+    if (!overall.overall_total) return 0;
+    const raw = (Number(overall.overall_completed || 0) / Number(overall.overall_total)) * 100;
+    return Math.max(0, Math.min(100, Math.round(raw)));
+  }, [overall.overall_completed, overall.overall_total]);
+
+  const songList = useMemo(() => {
+    // Render in stable first-seen order; completed bars are removed above
+    return songsOrder.map((k) => songsMap[k]).filter(Boolean);
+  }, [songsMap, songsOrder]);
+
   if (!visible) {
     return null;
   }
-
-  const overallPercentage = (() => {
-    if (!state.overall_total) {
-      return 0;
-    }
-    const raw = (Number(state.overall_completed || 0) / Number(state.overall_total)) * 100;
-    return Math.max(0, Math.min(100, Math.round(raw)));
-  })();
 
   return (
     <div className="bg-brand-50 dark:bg-gray-800 rounded-lg p-4 shadow-lg mb-6 ring-1 ring-brand-100 dark:ring-0">
@@ -109,19 +151,32 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
 
       <div className="mb-3">
         <div className="text-sm text-slate-700 dark:text-gray-300">
-          Overall: {state.overall_completed} / {state.overall_total}
+          Overall: {overall.overall_completed} / {overall.overall_total}
         </div>
         <div className="w-full bg-brand-200 dark:bg-gray-700 rounded h-3 mt-1">
           <div className="bg-brand-600 h-3 rounded" style={{ width: `${overallPercentage}%` }} />
         </div>
       </div>
 
-      <div className="mt-3">
-        <div className="text-sm text-slate-700 dark:text-gray-300">{state.status || 'Waiting...'}</div>
-        <div className="text-sm text-slate-600 dark:text-gray-400 truncate">{state.song_display_name || 'Unknown'}</div>
-        <div className="w-full bg-brand-200 dark:bg-gray-700 rounded h-2 mt-1">
-          <div className="bg-brandSuccess-500 h-2 rounded" style={{ width: `${state.progress || 0}%` }} />
-        </div>
+      <div className="mt-3 space-y-2">
+        {songList.length === 0 ? (
+          <div className="text-sm text-slate-600 dark:text-gray-400">Waiting for songs…</div>
+        ) : (
+          songList.map((s) => (
+            <div key={s.key} className="w-full">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-slate-700 dark:text-gray-300 truncate pr-2">{s.name || 'Unknown'}</div>
+                <div className="text-xs text-slate-500 dark:text-gray-400 whitespace-nowrap">{s.progress || 0}%</div>
+              </div>
+              <div className="w-full bg-brand-200 dark:bg-gray-700 rounded h-2 mt-1">
+                <div className="bg-brandSuccess-500 h-2 rounded" style={{ width: `${Number(s.progress || 0)}%` }} />
+              </div>
+              {s.status && (
+                <div className="text-xs text-slate-500 dark:text-gray-400 mt-1">{s.status}</div>
+              )}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

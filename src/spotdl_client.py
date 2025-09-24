@@ -185,14 +185,32 @@ class SpotdlClient:
     def _wrap_progress_callback(self, cb: Callable[[dict], None]):
         def _inner(tracker: Any, message: str) -> None:
             try:
+                # Enrich events with stable per-song identifiers so the UI can
+                # render multiple concurrent progress bars.
+                song_obj = getattr(tracker, "song", None)
+                song_id = None
+                spotify_url = None
+                try:
+                    s_json = getattr(song_obj, "json", None)
+                    if isinstance(s_json, dict):
+                        song_id = s_json.get("song_id")
+                        spotify_url = s_json.get("url")
+                except Exception:
+                    pass
+                if spotify_url is None:
+                    spotify_url = getattr(song_obj, "url", None)
+
                 ev = {
                     "song_display_name": getattr(tracker, "song_name", None)
-                    or getattr(getattr(tracker, "song", None), "display_name", None),
+                    or getattr(song_obj, "display_name", None),
+                    "song_id": song_id,
+                    "spotify_url": spotify_url,
                     "status": message,
                     "progress": int(getattr(tracker, "progress", 0) or 0),
                     "overall_completed": int(getattr(tracker.parent, "overall_completed_tasks", 0) or 0),
                     "overall_total": int(getattr(tracker.parent, "song_count", 0) or 0),
                     "overall_progress": int(getattr(tracker.parent, "overall_progress", 0) or 0),
+                    "event": "download_progress",
                 }
                 cb(ev)
             except Exception as e:  # pragma: no cover - do not break downloads on UI errors
