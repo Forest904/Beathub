@@ -1,6 +1,7 @@
 ﻿import logging
 import os
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+import threading
 
 import spotipy  # Spotipy remains for browse/metadata endpoints
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -476,7 +477,7 @@ class SpotifyContentDownloader:
         }
         return result
 
-    def _download_best_of_album(self, artist_id: str) -> Dict[str, Any]:
+    def _download_best_of_album(self, artist_id: str, *, cancel_event: Optional[threading.Event] = None) -> Dict[str, Any]:
         """Download pipeline for synthetic Best-Of albums using SpotDL on per-track URLs."""
         # Resolve progress publisher (same behavior as main pipeline)
         publisher = self.progress_publisher
@@ -530,6 +531,7 @@ class SpotifyContentDownloader:
             return {"status": "error", "error_code": "no_results", "message": "SpotDL returned no songs for Best-Of selection."}
 
         # Inform UI that we are starting a multi-track job
+        total_expected = len(songs)
         if publisher is not None:
             try:
                 publisher.publish({
@@ -537,7 +539,7 @@ class SpotifyContentDownloader:
                     'status': 'Starting download',
                     'progress': 0,
                     'overall_completed': 0,
-                    'overall_total': len(songs),
+                    'overall_total': total_expected,
                     'overall_progress': 0,
                 })
             except Exception:
@@ -548,8 +550,33 @@ class SpotifyContentDownloader:
         try:
             sanitized_title = self.file_manager.sanitize_filename(title_name)
             output_template = os.path.join(item_specific_output_dir, f"{sanitized_title}")
+            # Per-job progress callback forwards to broker and checks cancellation
+            # Adjust SpotDL per-batch counters into job-scope totals
+            _acc = {"base": 0, "prev": 0}
+            def _progress_cb(ev: dict) -> None:
+                try:
+                    cc = int(ev.get('overall_completed') or 0)
+                except Exception:
+                    cc = 0
+                # Detect counter reset between chunks
+                if cc < _acc["prev"]:
+                    _acc["base"] += _acc["prev"]
+                _acc["prev"] = cc
+                global_completed = min(total_expected, _acc["base"] + cc)
+                ev['overall_completed'] = global_completed
+                ev['overall_total'] = total_expected
+                try:
+                    ev['overall_progress'] = int((global_completed / max(1, total_expected)) * 100)
+                except Exception:
+                    ev['overall_progress'] = 0
+                if publisher is not None:
+                    try:
+                        publisher.publish(ev)
+                    except Exception:
+                        pass
             spotdl_client.set_output_template(output_template)
-            results = spotdl_client.download_songs(songs)
+            spotdl_client.set_progress_callback(_progress_cb, web_ui=True, cancel_event=cancel_event)
+            results = spotdl_client.download_songs(songs, cancel_event=cancel_event)
             audio_failed = False
             error_result = None
             for song, p in results:
@@ -566,6 +593,23 @@ class SpotifyContentDownloader:
             except Exception:
                 DownloaderError = Exception  # type: ignore
                 AudioProviderError = Exception  # type: ignore
+            # Cooperative cancellation
+            try:
+                from .utils.cancellation import CancellationRequested
+                if isinstance(e, CancellationRequested):
+                    # Cleanup partials and remove the album folder
+                    try:
+                        self.file_manager.cleanup_partial_output(item_specific_output_dir)
+                    except Exception:
+                        pass
+                    try:
+                        import shutil
+                        shutil.rmtree(item_specific_output_dir, ignore_errors=True)
+                    except Exception:
+                        pass
+                    return {"status": "error", "error_code": "cancelled", "message": "Download cancelled by user."}
+            except Exception:
+                pass
             if isinstance(e, AudioProviderError):
                 return {"status": "error", "error_code": "provider_error", "message": str(e)}
             if isinstance(e, DownloaderError):
@@ -887,12 +931,12 @@ class SpotifyContentDownloader:
             'metadata_file_path': os.path.join(comp_dir, 'spotify_metadata.json'),
         }
 
-    def download_spotify_content(self, spotify_link):
+    def download_spotify_content(self, spotify_link, *, cancel_event: Optional[threading.Event] = None):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""
         # Synthetic Best-Of album support: treat 'bestof:<artist_id>' like a container
         if isinstance(spotify_link, str) and spotify_link.startswith('bestof:'):
             artist_id = spotify_link.split(':', 1)[1]
-            return self._download_best_of_album(artist_id)
+            return self._download_best_of_album(artist_id, cancel_event=cancel_event)
         # Progress publisher for SSE/clients (compat: fall back to broker in app context)
         publisher = self.progress_publisher
         if publisher is None:
@@ -980,6 +1024,7 @@ class SpotifyContentDownloader:
             # Drive downloads via SpotDL API (progress published via broker)
             try:
                 # Inform UI that we are starting a multi-track job
+                total_expected = len(songs)
                 if publisher is not None:
                     try:
                         publisher.publish({
@@ -987,15 +1032,38 @@ class SpotifyContentDownloader:
                             'status': 'Starting download',
                             'progress': 0,
                             'overall_completed': 0,
-                            'overall_total': len(songs),
+                            'overall_total': total_expected,
                             'overall_progress': 0,
                         })
                     except Exception:
                         pass
                 sanitized_title = self.file_manager.sanitize_filename(title_name)
                 output_template = os.path.join(item_specific_output_dir, f"{sanitized_title}")
+                # Install a per-job callback that republishes and normalizes totals
+                _acc = {"base": 0, "prev": 0}
+                def _progress_cb(ev: dict) -> None:
+                    try:
+                        cc = int(ev.get('overall_completed') or 0)
+                    except Exception:
+                        cc = 0
+                    if cc < _acc["prev"]:
+                        _acc["base"] += _acc["prev"]
+                    _acc["prev"] = cc
+                    global_completed = min(total_expected, _acc["base"] + cc)
+                    ev['overall_completed'] = global_completed
+                    ev['overall_total'] = total_expected
+                    try:
+                        ev['overall_progress'] = int((global_completed / max(1, total_expected)) * 100)
+                    except Exception:
+                        ev['overall_progress'] = 0
+                    if publisher is not None:
+                        try:
+                            publisher.publish(ev)
+                        except Exception:
+                            pass
                 spotdl_client.set_output_template(output_template)
-                results = spotdl_client.download_songs(songs)
+                spotdl_client.set_progress_callback(_progress_cb, web_ui=True, cancel_event=cancel_event)
+                results = spotdl_client.download_songs(songs, cancel_event=cancel_event)
                 for song, p in results:
                     results_map[song.url] = str(p) if p else None
                     if p is None:
@@ -1008,7 +1076,22 @@ class SpotifyContentDownloader:
                 except Exception:
                     DownloaderError = Exception  # type: ignore
                     AudioProviderError = Exception  # type: ignore
-
+                # Cooperative cancellation
+                try:
+                    from .utils.cancellation import CancellationRequested
+                    if isinstance(e, CancellationRequested):
+                        try:
+                            self.file_manager.cleanup_partial_output(item_specific_output_dir)
+                        except Exception:
+                            pass
+                        try:
+                            import shutil
+                            shutil.rmtree(item_specific_output_dir, ignore_errors=True)
+                        except Exception:
+                            pass
+                        return {"status": "error", "error_code": "cancelled", "message": "Download cancelled by user."}
+                except Exception:
+                    pass
                 logger.exception("SpotDL API download failed: %s", e)
                 if isinstance(e, AudioProviderError):
                     error_result = {"status": "error", "error_code": "provider_error", "message": str(e)}

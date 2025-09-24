@@ -16,11 +16,19 @@ def get_spotify_downloader():
     from flask import current_app
     return current_app.extensions['spotify_downloader']
 
+def get_job_queue():
+    from flask import current_app
+    return current_app.extensions.get('download_jobs')
+
+def get_progress_broker():
+    from flask import current_app
+    return current_app.extensions.get('progress_broker')
+
 @download_bp.route('/download', methods=['POST'])
 def download_spotify_item_api():
     from flask import current_app
     spotify_downloader = get_spotify_downloader()
-    jobs = current_app.extensions.get('download_jobs')
+    jobs = get_job_queue()
 
     data = request.get_json() or {}
     spotify_link = data.get('spotify_link')
@@ -98,6 +106,72 @@ def download_spotify_item_api():
     error_code = result.get("error_code")
     status_code = 500 if error_code in ("provider_error", "internal_error") else 400
     return jsonify(result), status_code
+
+
+@download_bp.route('/download/cancel', methods=['POST'])
+def cancel_download_job():
+    """Request cancellation of an in-progress or pending download job.
+
+    Payload: { "job_id": str } or { "link": str }
+    Returns 200 with { status, job_id, cancelled } or 404/400 errors.
+    """
+    jobs = get_job_queue()
+    if jobs is None:
+        return jsonify({"status": "error", "message": "Job queue unavailable."}), 503
+
+    data = request.get_json() or {}
+    job_id = (data.get('job_id') or '').strip()
+    link = (data.get('link') or '').strip()
+
+    job = None
+    if job_id:
+        job = jobs.get(job_id)
+        if job is None:
+            return jsonify({"status": "error", "message": "Job not found.", "job_id": job_id}), 404
+    elif link:
+        job = jobs.get_by_link(link)
+        if job is None:
+            return jsonify({"status": "error", "message": "Job not found for link.", "link": link}), 404
+        job_id = job.id
+    else:
+        return jsonify({"status": "error", "message": "Provide job_id or link."}), 400
+
+    ok = jobs.request_cancel(job_id)
+
+    # Push an immediate SSE event so the UI can react instantly
+    broker = get_progress_broker()
+    if broker is not None:
+        try:
+            broker.publish({
+                'event': 'job_cancel_requested',
+                'job_id': job_id,
+                'link': job.link,
+                'status': 'cancel_requested',
+            })
+        except Exception:
+            pass
+
+    return jsonify({"status": "ok", "job_id": job_id, "cancelled": bool(ok)}), 200
+
+
+@download_bp.route('/download/jobs/<string:job_id>', methods=['GET'])
+def get_job_status(job_id: str):
+    """Return current status for a job in the JobQueue."""
+    jobs = get_job_queue()
+    if jobs is None:
+        return jsonify({"status": "error", "message": "Job queue unavailable."}), 503
+    job = jobs.get(job_id)
+    if job is None:
+        return jsonify({"status": "error", "message": "Job not found."}), 404
+    payload = {
+        "job_id": job.id,
+        "link": job.link,
+        "status": job.status,
+        "attempts": job.attempts,
+        "result": job.result,
+        "error": job.error,
+    }
+    return jsonify(payload), 200
 
 @download_bp.route('/albums', methods=['GET'])
 def get_downloaded_items():

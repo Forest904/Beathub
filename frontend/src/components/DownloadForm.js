@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 
-const DownloadForm = ({ onSubmit, loading, rightAction }) => {
+const DownloadForm = ({ onSubmit, loading, middleAction, rightAction }) => {
   const [spotifyLink, setSpotifyLink] = useState('');
 
   const handleSubmit = (event) => {
@@ -47,6 +47,7 @@ const DownloadForm = ({ onSubmit, loading, rightAction }) => {
             'Download'
           )}
         </button>
+        {middleAction}
         {rightAction}
       </div>
     </form>
@@ -56,11 +57,13 @@ const DownloadForm = ({ onSubmit, loading, rightAction }) => {
 DownloadForm.propTypes = {
   onSubmit: PropTypes.func.isRequired,
   loading: PropTypes.bool,
+  middleAction: PropTypes.node,
   rightAction: PropTypes.node,
 };
 
 DownloadForm.defaultProps = {
   loading: false,
+  middleAction: null,
   rightAction: null,
 };
 

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import DownloadForm from '../components/DownloadForm';
+import CancelDownloadButton from '../components/CancelDownloadButton';
 import AlbumGallery from '../components/AlbumGallery';
 import DownloadProgress from '../components/DownloadProgress';
 import TrackListRich from '../components/TrackListRich';
@@ -19,6 +20,9 @@ const SpotifyDownloadPage = () => {
   const [progressVisible, setProgressVisible] = useState(false);
   const [richMetadata, setRichMetadata] = useState(null);
   const [hasActiveDownload, setHasActiveDownload] = useState(false);
+  const [activeJobId, setActiveJobId] = useState(null);
+  const [activeLink, setActiveLink] = useState(null);
+  const [cancelRequested, setCancelRequested] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [lyricsVisible, setLyricsVisible] = useState(false);
@@ -49,22 +53,16 @@ const SpotifyDownloadPage = () => {
       setLoading(true);
       setProgressVisible(true);
       setHasActiveDownload(true);
+      setActiveLink(spotifyLink);
+      setCancelRequested(false);
       setRichMetadata(null);
       setErrorMessage(null);
 
       try {
-        const response = await axios.post(`${apiBaseUrl}/api/download`, { spotify_link: spotifyLink });
-        await fetchAlbums();
-        const spotifyId = response.data.spotify_id;
-        if (spotifyId) {
-          try {
-            const metadataResponse = await axios.get(
-              `${apiBaseUrl}/api/items/by-spotify/${spotifyId}/metadata`,
-            );
-            setRichMetadata(metadataResponse.data);
-          } catch (metadataError) {
-            console.warn('Metadata fetch failed', metadataError);
-          }
+        // Start async job so it can be cancelled; backend returns 202 with job_id
+        const response = await axios.post(`${apiBaseUrl}/api/download`, { spotify_link: spotifyLink, async: true });
+        if (response.status === 202 && response.data && response.data.job_id) {
+          setActiveJobId(response.data.job_id);
         }
       } catch (error) {
         console.error('Download error', error);
@@ -114,8 +112,66 @@ const SpotifyDownloadPage = () => {
   const handleProgressComplete = useCallback(() => {
     setProgressVisible(false);
     setHasActiveDownload(false);
+    setActiveJobId(null);
+    setActiveLink(null);
+    setCancelRequested(false);
     fetchAlbums();
   }, [fetchAlbums]);
+
+  const handleProgressCancelled = useCallback(() => {
+    setProgressVisible(false);
+    setHasActiveDownload(false);
+    setActiveJobId(null);
+    setActiveLink(null);
+    setCancelRequested(false);
+  }, []);
+
+  const handleCancelClick = useCallback(async () => {
+    if (!activeJobId && !activeLink) return;
+    try {
+      const url = `${apiBaseUrl}/api/download/cancel`;
+      const payload = activeJobId ? { job_id: activeJobId } : { link: activeLink };
+      await axios.post(url, payload);
+      setCancelRequested(true);
+    } catch (e) {
+      // Keep UX simple; allow polling/SSE to reconcile final state
+    }
+  }, [activeJobId, activeLink, apiBaseUrl]);
+
+  // Poll job status while an async job is active, so UI stays accurate even if SSE drops
+  useEffect(() => {
+    if (!activeJobId) return undefined;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await axios.get(`${apiBaseUrl}/api/download/jobs/${activeJobId}`);
+        if (cancelled) return;
+        const st = (res.data && res.data.status) || 'pending';
+        if (st === 'completed') {
+          handleProgressComplete();
+          return;
+        }
+        if (st === 'failed' || st === 'cancelled') {
+          if (st === 'cancelled') {
+            handleProgressCancelled();
+          } else {
+            setErrorMessage(res.data && res.data.error ? String(res.data.error) : 'Download failed.');
+            handleProgressComplete();
+          }
+          return;
+        }
+      } catch (e) {
+        // Keep polling; transient errors are expected if server restarts
+      }
+    };
+    const iv = setInterval(tick, 3000);
+    // fire immediate check
+    tick();
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [activeJobId, apiBaseUrl, handleProgressCancelled, handleProgressComplete]);
 
   const handleSelectAlbum = useCallback(
   async (album) => {
@@ -244,6 +300,11 @@ const SpotifyDownloadPage = () => {
           <DownloadForm
             onSubmit={handleDownload}
             loading={loading}
+            middleAction={
+              hasActiveDownload ? (
+                <CancelDownloadButton onCancel={handleCancelClick} disabled={cancelRequested} />
+              ) : null
+            }
             rightAction={
               hasActiveDownload || progressVisible ? (
                 <button
@@ -263,6 +324,9 @@ const SpotifyDownloadPage = () => {
             baseUrl={apiBaseUrl}
             onActiveChange={handleActiveChange}
             onComplete={handleProgressComplete}
+            onCancelled={handleProgressCancelled}
+            jobId={activeJobId || undefined}
+            link={activeLink || undefined}
           />
         </div>
 

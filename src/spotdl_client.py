@@ -153,6 +153,7 @@ class SpotdlClient:
         self,
         callback: Optional[Callable[[dict], None]],
         web_ui: bool = True,
+        cancel_event: Optional[threading.Event] = None,
     ) -> None:
         """Attach a progress callback that receives dict events per update.
 
@@ -168,7 +169,7 @@ class SpotdlClient:
         """
         def _fn():
             ph = self._spotdl.downloader.progress_handler
-            ph.update_callback = None if callback is None else self._wrap_progress_callback(callback)
+            ph.update_callback = None if callback is None else self._wrap_progress_callback(callback, cancel_event)
             try:
                 ph.web_ui = bool(web_ui)
             except Exception:
@@ -182,9 +183,13 @@ class SpotdlClient:
         with self._lock:
             self._call_engine(_fn)
 
-    def _wrap_progress_callback(self, cb: Callable[[dict], None]):
+    def _wrap_progress_callback(self, cb: Callable[[dict], None], cancel_event: Optional[threading.Event] = None):
         def _inner(tracker: Any, message: str) -> None:
             try:
+                # Cooperative cancellation check
+                if cancel_event is not None and cancel_event.is_set():
+                    from .utils.cancellation import CancellationRequested
+                    raise CancellationRequested("Download canceled by user")
                 # Enrich events with stable per-song identifiers so the UI can
                 # render multiple concurrent progress bars.
                 song_obj = getattr(tracker, "song", None)
@@ -214,6 +219,13 @@ class SpotdlClient:
                 }
                 cb(ev)
             except Exception as e:  # pragma: no cover - do not break downloads on UI errors
+                # If cancellation is raised, re-raise so the engine call can unwind
+                try:
+                    from .utils.cancellation import CancellationRequested
+                    if isinstance(e, CancellationRequested):
+                        raise
+                except Exception:
+                    pass
                 self.logger.debug("Progress callback error: %s", e, exc_info=True)
 
         return _inner
@@ -225,12 +237,12 @@ class SpotdlClient:
         with self._lock:
             return self._call_engine(_fn)
 
-    def download_songs(self, songs) -> List[Tuple[Any, Optional[Path]]]:
+    def download_songs(self, songs, cancel_event: Optional[threading.Event] = None) -> List[Tuple[Any, Optional[Path]]]:
         """Download songs by executing inside the engine thread.
 
         Ensures SpotDL's event loop and semaphore remain on the same thread.
         """
-        def _fn():
+        def _call_native(_songs):
             # Silence console TUI/progress that SpotDL and its subprocesses print
             # Use both Python-level stdout/stderr redirection and OS-level fd redirection
             if self._suppress_output:
@@ -290,7 +302,7 @@ class SpotdlClient:
 
                 with _SemaphoreCtx(), cm_out, cm_err, _FdSilence():
                     try:
-                        return self._spotdl.download_songs(songs)
+                        return self._spotdl.download_songs(_songs)
                     finally:
                         if devnull_file:
                             try:
@@ -298,7 +310,43 @@ class SpotdlClient:
                             except Exception:
                                 pass
             else:
-                return self._spotdl.download_songs(songs)
+                return self._spotdl.download_songs(_songs)
+
+        def _fn():
+            # If no cooperative cancellation requested, use native batch for speed
+            if cancel_event is None:
+                return _call_native(songs)
+            # Cooperative mode with bounded-latency cancellation and parallelism:
+            # process in chunks roughly equal to the configured thread count so SpotDL
+            # downloads multiple songs in parallel, but we can stop between chunks.
+            try:
+                threads = int(self._spotdl.downloader.settings.get('threads', 4))
+            except Exception:
+                threads = 4
+            batch_size = max(1, min(threads, 16))
+            # Defensive: ensure songs is a list we can slice
+            song_list = list(songs or [])
+            results: List[Tuple[Any, Optional[Path]]] = []
+            for i in range(0, len(song_list), batch_size):
+                if cancel_event.is_set():
+                    from .utils.cancellation import CancellationRequested
+                    raise CancellationRequested("Download canceled by user")
+                chunk = song_list[i:i + batch_size]
+                try:
+                    res = _call_native(chunk)
+                except Exception as e:
+                    # If progress callback signaled cancellation inside SpotDL, propagate
+                    try:
+                        from .utils.cancellation import CancellationRequested
+                        if isinstance(e, CancellationRequested):
+                            raise
+                    except Exception:
+                        pass
+                    # Otherwise surface the error to caller
+                    raise
+                if isinstance(res, list):
+                    results.extend(res)
+            return results
         with self._lock:
             return self._call_engine(_fn)
 
@@ -307,6 +355,7 @@ class SpotdlClient:
         spotify_link: str,
         output_template: str,
         progress_callback: Optional[Callable[[dict], None]] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> List[Tuple[Any, Optional[Path]]]:
         """Convenience one-shot download for a link with per-job settings.
 
@@ -316,7 +365,7 @@ class SpotdlClient:
         """
         with self._lock:
             self.set_output_template(output_template)
-            self.set_progress_callback(progress_callback)
+            self.set_progress_callback(progress_callback, cancel_event=cancel_event)
         songs = self.search([spotify_link])
         return self.download_songs(songs)
 

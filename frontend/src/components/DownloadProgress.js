@@ -40,6 +40,8 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
           return;
         }
 
+        // Ignore job-level cancel events here; page-level polling reconciles state
+
         // Update overall progress snapshot
         setOverall((prev) => ({
           overall_completed: payload.overall_completed ?? prev.overall_completed ?? 0,
@@ -86,11 +88,10 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
           setSongsOrder((prev) => (prev.includes(key) ? prev : [...prev, key]));
         }
 
-        const total = Number(payload.overall_total || overall.overall_total || 0);
-        const done = Number(payload.overall_completed || overall.overall_completed || 0);
-        // Consider complete only when server reports 'Complete' or clearly finished counts with 100%
-        const isComplete =
-          (status === 'Complete') || (total > 0 && done >= total);
+        // Consider complete only when server reports an explicit completion status.
+        // Avoid inferring completion from counts because SpotDL emits per-batch totals
+        // when we chunk downloads for cooperative cancellation.
+        const isComplete = (status === 'Complete');
 
         if (typeof onActiveChange === 'function') {
           // Active if any song is still below 100% or overall incomplete

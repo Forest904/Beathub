@@ -25,10 +25,11 @@ class Job:
     id: str
     link: str
     attempts: int = 0
-    status: str = "pending"  # pending | in_progress | completed | failed
+    status: str = "pending"  # pending | in_progress | completed | failed | cancelled
     result: Optional[JobResult] = None
     error: Optional[str] = None
     event: threading.Event = field(default_factory=threading.Event)
+    cancel_event: threading.Event = field(default_factory=threading.Event)
 
 
 class JobQueue:
@@ -75,6 +76,18 @@ class JobQueue:
         job.event.wait(timeout=timeout)
         return job.result
 
+    def request_cancel(self, job_id: str) -> bool:
+        """Cooperatively request cancellation for a job in progress or pending.
+
+        Returns True if the signal was set, False if job not found.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return False
+            job.cancel_event.set()
+            return True
+
     def _worker(self):
         while not self._shutdown:
             try:
@@ -93,9 +106,31 @@ class JobQueue:
                 self._queue.task_done()
 
     def _run_job(self, job: Job):
+        def _publish_cancelled(phase: str):
+            try:
+                if self.flask_app is None:
+                    return
+                from flask import current_app  # type: ignore
+                broker = current_app.extensions.get('progress_broker')
+                if broker is not None:
+                    broker.publish({
+                        'event': 'job_cancelled',
+                        'job_id': job.id,
+                        'link': job.link,
+                        'status': 'cancelled',
+                        'phase': phase,
+                    })
+            except Exception:
+                pass
         with self._lock:
             # If another waiter already completed it, skip
             if job.status in ("completed", "failed"):
+                return
+            if job.cancel_event.is_set():
+                job.status = "cancelled"
+                job.result = {"status": "error", "error_code": "cancelled", "message": "Job cancelled"}
+                job.event.set()
+                _publish_cancelled('preflight')
                 return
             job.status = "in_progress"
 
@@ -105,7 +140,10 @@ class JobQueue:
             job.attempts = attempt
             try:
                 self.logger.info("Processing job %s (attempt %d): %s", job.id, attempt, job.link)
-                result = self.downloader.download_spotify_content(job.link)
+                # Respect cooperative cancellation prior to starting network work
+                if job.cancel_event.is_set():
+                    raise RuntimeError("cancelled")
+                result = self.downloader.download_spotify_content(job.link, cancel_event=job.cancel_event)
                 if isinstance(result, dict):
                     if result.get("status") == "success":
                         job.result = result
@@ -116,6 +154,13 @@ class JobQueue:
                     # Map error code and message for retry decision
                     err_code = result.get("error_code")
                     last_error = result.get("message", "Unknown error")
+                    if err_code == "cancelled":
+                        job.result = result
+                        job.status = "cancelled"
+                        job.event.set()
+                        self.logger.info("Job %s cancelled", job.id)
+                        _publish_cancelled('downloader')
+                        return
                     non_retriable = {
                         "spotdl_unavailable",
                         "search_unavailable",
@@ -132,6 +177,13 @@ class JobQueue:
                     # Unexpected orchestrator response shape
                     last_error = "Unexpected orchestrator response"
             except Exception as e:  # pragma: no cover - defensive
+                if str(e) == "cancelled" or job.cancel_event.is_set():
+                    job.result = {"status": "error", "error_code": "cancelled", "message": "Job cancelled"}
+                    job.status = "cancelled"
+                    job.event.set()
+                    self.logger.info("Job %s cancelled before start", job.id)
+                    _publish_cancelled('exception')
+                    return
                 last_error = str(e)
 
             # Decide retry; for now, retry on generic failures until attempts exhausted
