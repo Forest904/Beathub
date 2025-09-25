@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from .database.db_manager import db, DownloadedTrack
+from flask import has_app_context
+from flask_login import current_user
+
+from .database.db_manager import db, DownloadedTrack, get_system_user_id
 from .models.dto import TrackDTO
 
 
@@ -18,12 +21,25 @@ class DownloadRepository:
 
 
 class DefaultDownloadRepository(DownloadRepository):
+    def _resolve_user_id(self) -> int:
+        if has_app_context():
+            try:
+                user = current_user
+                if getattr(user, "is_authenticated", False):
+                    return int(user.get_id())
+            except Exception:
+                pass
+        return get_system_user_id()
+
     def save_tracks(self, tracks: List[TrackDTO]) -> None:
         try:
+            user_id = self._resolve_user_id()
             for t in tracks:
                 existing = DownloadedTrack.query.filter_by(spotify_id=t.spotify_id).first()
                 if existing:
                     existing.local_lyrics_path = t.local_lyrics_path
+                    if not existing.user_id:
+                        existing.user_id = user_id
                 else:
                     row = DownloadedTrack(
                         spotify_id=t.spotify_id,
@@ -48,6 +64,7 @@ class DefaultDownloadRepository(DownloadRepository):
                         cover_url=t.cover_url,
                         local_path=t.local_path,
                         local_lyrics_path=t.local_lyrics_path,
+                        user_id=user_id,
                     )
                     db.session.add(row)
             db.session.commit()

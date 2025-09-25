@@ -3,13 +3,23 @@ import shutil
 import logging
 from flask import Blueprint, request, jsonify, send_file
 import json
-from src.database.db_manager import db, DownloadedItem
+from flask_login import current_user
+from src.database.db_manager import db, DownloadedItem, get_system_user_id
 from src.lyrics_service import LyricsService
 import re
 
 logger = logging.getLogger(__name__)
 
 download_bp = Blueprint('download_bp', __name__, url_prefix='/api')
+
+# Resolve the user id for persistence; fall back to the system user when unauthenticated.
+def _resolve_user_id() -> int:
+    try:
+        if getattr(current_user, "is_authenticated", False):
+            return int(current_user.get_id())
+    except Exception:
+        pass
+    return get_system_user_id()
 
 # Helper function to get the SpotifyContentDownloader instance
 def get_spotify_downloader():
@@ -41,7 +51,7 @@ def download_spotify_item_api():
 
     # If job queue is available, use it for idempotent handling and parallelism
     if jobs is not None:
-        job = jobs.submit(spotify_link)
+        job = jobs.submit(spotify_link, user_id=_resolve_user_id())
         if async_mode:
             return jsonify({"status": "accepted", "job_id": job.id, "link": spotify_link}), 202
         # Synchronous path: wait for completion
@@ -73,9 +83,11 @@ def download_spotify_item_api():
         # Determine if this item type should be stored in the DownloadedItem model
         if item_type in ["album", "track", "playlist"]:
             try:
-                existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
+                user_id = _resolve_user_id()
+                existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id, user_id=user_id).first()
                 if not existing_item:
                     new_item = DownloadedItem(
+                        user_id=user_id,
                         spotify_id=spotify_id,
                         title=title,
                         artist=artist,
@@ -128,8 +140,10 @@ def cancel_download_job():
         job = jobs.get(job_id)
         if job is None:
             return jsonify({"status": "error", "message": "Job not found.", "job_id": job_id}), 404
+        if job.user_id != _resolve_user_id():
+            return jsonify({"status": "error", "message": "Not authorized."}), 403
     elif link:
-        job = jobs.get_by_link(link)
+        job = jobs.get_by_link(link, user_id=_resolve_user_id())
         if job is None:
             return jsonify({"status": "error", "message": "Job not found for link.", "link": link}), 404
         job_id = job.id
@@ -163,6 +177,8 @@ def get_job_status(job_id: str):
     job = jobs.get(job_id)
     if job is None:
         return jsonify({"status": "error", "message": "Job not found."}), 404
+    if job.user_id != _resolve_user_id():
+        return jsonify({"status": "error", "message": "Not authorized."}), 403
     payload = {
         "job_id": job.id,
         "link": job.link,
@@ -175,7 +191,8 @@ def get_job_status(job_id: str):
 
 @download_bp.route('/albums', methods=['GET'])
 def get_downloaded_items():
-    items = DownloadedItem.query.order_by(DownloadedItem.title).all()
+    user_id = _resolve_user_id()
+    items = DownloadedItem.query.filter_by(user_id=user_id).order_by(DownloadedItem.title).all()
     return jsonify([item.to_dict() for item in items]), 200
 
 @download_bp.route('/albums/<int:item_id>', methods=['DELETE'])
@@ -183,6 +200,9 @@ def delete_downloaded_item(item_id):
     item = DownloadedItem.query.get(item_id)
     if not item:
         return jsonify({'success': False, 'message': 'Item not found'}), 404
+
+    if item.user_id != _resolve_user_id():
+        return jsonify({'success': False, 'message': 'Not authorized to delete this item'}), 403
 
     if item.local_path and os.path.exists(item.local_path):
         try:
@@ -204,6 +224,8 @@ def get_item_metadata_by_id(item_id: int):
     item = DownloadedItem.query.get(item_id)
     if not item:
         return jsonify({'error': 'Item not found'}), 404
+    if item.user_id != _resolve_user_id():
+        return jsonify({'error': 'Not authorized'}), 403
     if not item.local_path:
         return jsonify({'error': 'Local path not available for this item'}), 404
 
@@ -222,7 +244,7 @@ def get_item_metadata_by_id(item_id: int):
 @download_bp.route('/items/by-spotify/<string:spotify_id>/metadata', methods=['GET'])
 def get_item_metadata_by_spotify(spotify_id: str):
     """Return the saved spotify_metadata.json for a downloaded item by Spotify id."""
-    item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
+    item = DownloadedItem.query.filter_by(spotify_id=spotify_id, user_id=_resolve_user_id()).first()
     if not item:
         return jsonify({'error': 'Item not found'}), 404
     if not item.local_path:

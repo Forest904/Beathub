@@ -10,34 +10,41 @@ import CDBurnerPage from './pages/CDBurnerPage';
 import { ThemeProvider } from './theme/ThemeContext';
 import { PlayerProvider } from './player/PlayerContext';
 import { CompilationProvider } from './compilation/CompilationContext.jsx';
+import { AuthProvider } from './hooks/useAuth';
 import CompilationSidebar from './compilation/CompilationSidebar.jsx';
 import PlayerBar from './components/PlayerBar';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
 
 const App = () => (
-  <ThemeProvider>
-    <PlayerProvider>
-      <CompilationProvider>
-        <Router>
-          <div className="flex min-h-screen flex-col bg-brand-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-            <Header />
-            <main className="flex-1 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-              <Routes>
-                <Route path="/" element={<ArtistBrowserPage />} />
-                <Route path="/browse" element={<ArtistBrowserPage />} />
-                <Route path="/download" element={<SpotifyDownloadPage />} />
-                <Route path="/artist/:artistId" element={<ArtistDetailsPage />} />
-                <Route path="/album/:albumId" element={<AlbumDetailsPage />} />
-                <Route path="/burn-cd" element={<CDBurnerPage />} />
-              </Routes>
-            </main>
-            <Footer />
-          </div>
-          <CompilationSidebar />
-        </Router>
-        <PlayerBar />
-      </CompilationProvider>
-    </PlayerProvider>
-  </ThemeProvider>
+  <AuthProvider>
+    <ThemeProvider>
+      <PlayerProvider>
+        <CompilationProvider>
+          <Router>
+            <div className="flex min-h-screen flex-col bg-brand-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+              <Header />
+              <main className="flex-1 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+                <Routes>
+                  <Route path="/" element={<ArtistBrowserPage />} />
+                  <Route path="/browse" element={<ArtistBrowserPage />} />
+                  <Route path="/download" element={<SpotifyDownloadPage />} />
+                  <Route path="/artist/:artistId" element={<ArtistDetailsPage />} />
+                  <Route path="/album/:albumId" element={<AlbumDetailsPage />} />
+                  <Route path="/burn-cd" element={<CDBurnerPage />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+                </Routes>
+              </main>
+              <Footer />
+            </div>
+            <CompilationSidebar />
+          </Router>
+          <PlayerBar />
+        </CompilationProvider>
+      </PlayerProvider>
+    </ThemeProvider>
+  </AuthProvider>
 );
 
 export default App;

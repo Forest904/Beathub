@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle.jsx';
 import CompilationToggle from '../compilation/CompilationToggle.jsx';
+import { useAuth } from '../hooks/useAuth';
 
 const NAV_LINKS = [
   { label: 'Discover', to: '/browse' },
@@ -13,6 +14,12 @@ const Header = () => {
   const location = useLocation();
   const pathname = location.pathname || '';
   const showCompilation = /^\/(?:$|browse|artist\/|album\/)/.test(pathname);
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+  };
+
   return (
   <header className="relative bg-white text-slate-900 shadow dark:bg-slate-950 dark:text-slate-100 border-b border-brand-100 dark:border-transparent">
     <div className="container mx-auto px-4">
@@ -55,6 +62,33 @@ const Header = () => {
         <div className="flex items-center gap-3">
           {showCompilation && <CompilationToggle />}
           <ThemeToggle />
+          {user ? (
+            <div className="flex items-center gap-2">
+              <span className="hidden text-sm text-slate-600 dark:text-slate-200 sm:inline">{user.email}</span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-slate-200 px-3 py-1 text-sm font-medium text-slate-600 transition hover:border-brand-500 hover:text-brand-700 dark:border-slate-700 dark:text-slate-200 dark:hover:border-brandDark-400 dark:hover:text-brandDark-200"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Link
+                to="/login"
+                className="rounded-full border border-transparent px-3 py-1 text-slate-600 transition hover:text-brand-700 dark:text-slate-200 dark:hover:text-brandDark-200"
+              >
+                Sign in
+              </Link>
+              <Link
+                to="/register"
+                className="rounded-full bg-brand-600 px-3 py-1 text-white transition hover:bg-brand-500 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
+              >
+                Create account
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

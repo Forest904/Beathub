@@ -10,10 +10,12 @@ import { AlbumCardVariant } from '../components/AlbumCard';
 import Message from '../components/Message';
 import LyricsPanel from '../components/LyricsPanel';
 import { usePlayer } from '../player/PlayerContext';
+import { useAuth } from '../hooks/useAuth';
 
 const SpotifyDownloadPage = () => {
   const location = useLocation();
   const player = usePlayer();
+  const { user } = useAuth();
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(false);
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
@@ -41,12 +43,16 @@ const SpotifyDownloadPage = () => {
       setErrorMessage(null);
     } catch (error) {
       console.error('Error fetching albums', error);
-      setErrorMessage('We could not load your downloads just now. Please try again.');
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setErrorMessage('Please sign in to view your downloaded items.');
+      } else {
+        setErrorMessage('We could not load your downloads just now. Please try again.');
+      }
     } finally {
       setLoading(false);
       setInitialFetchComplete(true);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, user]);
 
   const handleDownload = useCallback(
     async (spotifyLink) => {
@@ -94,7 +100,11 @@ const SpotifyDownloadPage = () => {
         }
       } catch (error) {
         console.error('Delete album error', error);
-        setErrorMessage('We could not delete that album. Please try again.');
+        if (error?.response?.status === 403) {
+          setErrorMessage('You can only delete downloads from your own account.');
+        } else {
+          setErrorMessage('We could not delete that album. Please try again.');
+        }
       }
     },
     [apiBaseUrl, selectedAlbumId],

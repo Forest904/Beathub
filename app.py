@@ -18,6 +18,7 @@ from src.cd_burning_service import CDBurningService
 
 # --- Import db, DownloadedItem model, and the initialization function ---
 from src.database.db_manager import initialize_database
+from src.auth import init_auth
 
 # --- Import Blueprints from new routes directory ---
 from src.routes.download_routes import download_bp
@@ -99,6 +100,7 @@ def create_app():
 
     # Initialize database
     initialize_database(app)
+    init_auth(app)
 
     # Prepare progress broker and SpotDL client first so we can inject
     app.extensions['progress_broker'] = ProgressBroker()

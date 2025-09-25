@@ -116,23 +116,6 @@ On first run, the SQLite DB and tables are created automatically.
 
 No license specified. Add one if you plan to distribute.
 
-## Tests
-
-Run the backend test suite from the repository root:
-
-```bash
-python -m pytest -q
-```
-
-Install dev dependencies first if you have not already:
-
-```bash
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-dev.txt
-```
-
-Tests automatically isolate their database storage and stub external SpotDL/Spotify calls, so the suite runs quickly without network access.
-
 ## CD Burning API
 
 - Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` — returns `202 Accepted` with `{ "session_id": "..." }`.
