@@ -1,8 +1,10 @@
 # database/db_manager.py
-
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import UserMixin
+from werkzeug.security import check_password_hash, generate_password_hash
 import os  # Import os for path handling
 import logging
+from datetime import datetime
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 try:
@@ -16,11 +18,50 @@ except Exception:  # pragma: no cover
 db = SQLAlchemy()
 logger = logging.getLogger(__name__)
 
+SYSTEM_USER_EMAIL = "system@beathub.local"
+
+
+class User(UserMixin, db.Model):
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_system = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    downloads = relationship("DownloadedItem", back_populates="owner", lazy=True)
+    download_jobs = relationship("DownloadJob", back_populates="owner", lazy=True)
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+    def get_id(self) -> str:
+        return str(self.id)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "email": self.email,
+            "is_system": self.is_system,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<User {self.email}>"
+
 # --- Define Your Database Models Here ---
 class DownloadedItem(db.Model):
     __tablename__ = 'downloaded_items' # Explicitly set table name
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
     spotify_id = db.Column(db.String(50), unique=True, nullable=False, index=True) # Shorter string, added index for speed
     title = db.Column(db.String(255), nullable=False)
     artist = db.Column(db.String(255), nullable=False) # Can be album artist or track artist
@@ -29,6 +70,8 @@ class DownloadedItem(db.Model):
     local_path = db.Column(db.String(500), nullable=True) # Path to the downloaded item's directory
     is_favorite = db.Column(db.Boolean, default=False, nullable=False)
     item_type = db.Column(db.String(20), nullable=False) # 'album', 'track', 'playlist'
+
+    owner = relationship('User', back_populates='downloads')
 
     def __repr__(self):
         # Improved representation for debugging
@@ -39,6 +82,7 @@ class DownloadedItem(db.Model):
         return {
             'id': self.id,
             'spotify_id': self.spotify_id,
+            'user_id': self.user_id,
             'title': self.title,
             'artist': self.artist,
             'image_url': self.image_url,
@@ -56,6 +100,7 @@ class DownloadedTrack(db.Model):
 
     # Parent item (album/playlist/track container)
     item_id = db.Column(db.Integer, ForeignKey('downloaded_items.id', ondelete='CASCADE'), nullable=True, index=True)
+    user_id = db.Column(db.Integer, ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
 
     # Core identifiers
     spotify_id = db.Column(db.String(50), nullable=False, index=True)
@@ -93,6 +138,22 @@ class DownloadedTrack(db.Model):
 
     # Relationship back to container item
     item = relationship('DownloadedItem', backref=db.backref('tracks', lazy=True))
+    owner = relationship('User')
+
+
+class DownloadJob(db.Model):
+    __tablename__ = 'download_jobs'
+
+    id = db.Column(db.String(36), primary_key=True)
+    user_id = db.Column(db.Integer, ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
+    link = db.Column(db.String(512), nullable=False)
+    status = db.Column(db.String(32), nullable=False, default='pending')
+    result = db.Column(db.JSON, nullable=True)
+    error = db.Column(db.String(512), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    owner = relationship('User', back_populates='download_jobs')
 
     def to_dict(self):
         return {
@@ -121,6 +182,33 @@ class DownloadedTrack(db.Model):
             'local_path': self.local_path,
             'local_lyrics_path': self.local_lyrics_path,
         }
+
+def ensure_system_user():
+    """Ensure a non-interactive system user exists for legacy/anonymous data."""
+    from sqlalchemy.exc import IntegrityError
+
+    try:
+        system = User.query.filter_by(email=SYSTEM_USER_EMAIL).first()
+        if system:
+            return system
+        system = User(email=SYSTEM_USER_EMAIL, is_active=False, is_system=True)
+        # Generate an irreversible password to avoid interactive login
+        system_password = os.urandom(32).hex()
+        system.set_password(system_password)
+        db.session.add(system)
+        db.session.commit()
+        return system
+    except IntegrityError:
+        db.session.rollback()
+        return User.query.filter_by(email=SYSTEM_USER_EMAIL).first()
+
+
+def get_system_user_id() -> int:
+    system = ensure_system_user()
+    if system is None:
+        raise RuntimeError("System user could not be created")
+    return system.id
+
 
 def initialize_database(app):
     """
@@ -153,3 +241,4 @@ def initialize_database(app):
     with app.app_context():
         db.create_all()
         logger.info("Database tables created or already exist.")
+        ensure_system_user()
