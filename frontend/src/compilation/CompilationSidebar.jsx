@@ -51,7 +51,7 @@ const SidebarContent = () => {
       <aside className="absolute inset-y-0 left-0 w-[22rem] max-w-[90vw] bg-white p-4 shadow-xl dark:bg-slate-900 flex flex-col">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">
-            <span className="inline-block rounded-md bg-brand-600 px-2 py-1 text-white dark:bg-brandDark-600">Make you own compilation</span>
+            <span className="inline-block rounded-md px-2 py-1 text-black dark:text-white">Make you own compilation</span>
           </h2>
           <button
             type="button"

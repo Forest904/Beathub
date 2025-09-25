@@ -4,9 +4,9 @@ import ThemeToggle from './ThemeToggle.jsx';
 import CompilationToggle from '../compilation/CompilationToggle.jsx';
 
 const NAV_LINKS = [
-  { label: 'Artists', to: '/browse' },
+  { label: 'Discover', to: '/browse' },
   { label: 'Download', to: '/download' },
-  { label: 'Burner', to: '/burn-cd' },
+  { label: 'Burn', to: '/burn-cd' },
 ];
 
 const Header = () => {
