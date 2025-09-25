@@ -3,12 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 // import { formatDuration } from '../utils/helpers';
 import TrackListDiscovery from '../components/TrackListDiscovery.jsx';
+import { useAuth } from '../hooks/useAuth';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/300x300.png?text=No+Cover';
 
 const AlbumDetailsPage = () => {
   const { albumId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [albumDetails, setAlbumDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -171,13 +173,15 @@ const AlbumDetailsPage = () => {
                   Copy Spotify Link
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleDirectDownload}
-                className="w-full md:w-auto bg-brand-700 hover:bg-brand-800 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
-              >
-                Direct Download
-              </button>
+              {user && (
+                <button
+                  type="button"
+                  onClick={handleDirectDownload}
+                  className="w-full md:w-auto bg-brand-700 hover:bg-brand-800 text-white font-semibold py-2 px-4 text-sm rounded-full transition duration-200 md:flex md:items-center md:justify-center"
+                >
+                  Direct Download
+                </button>
+              )}
             </div>
           </div>
         </div>

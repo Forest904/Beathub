@@ -20,6 +20,8 @@ const Header = () => {
     await logout();
   };
 
+  const links = NAV_LINKS.filter((link) => (user ? true : link.to !== '/download'));
+
   return (
   <header className="relative bg-white text-slate-900 shadow dark:bg-slate-950 dark:text-slate-100 border-b border-brand-100 dark:border-transparent">
     <div className="container mx-auto px-4">
@@ -38,7 +40,7 @@ const Header = () => {
         <div className="mx-4 flex flex-1 justify-center">
           <nav aria-label="Primary">
             <ul className="flex items-center gap-2 text-sm font-medium md:gap-4 md:text-base">
-              {NAV_LINKS.map((link) => (
+              {links.map((link) => (
                 <li key={link.to}>
                   <NavLink
                     to={link.to}
@@ -60,7 +62,7 @@ const Header = () => {
 
         {/* Right: Compilation (discovery only) + Theme toggle */}
         <div className="flex items-center gap-3">
-          {showCompilation && <CompilationToggle />}
+          {showCompilation && user && <CompilationToggle />}
           <ThemeToggle />
           {user ? (
             <div className="flex items-center gap-2">

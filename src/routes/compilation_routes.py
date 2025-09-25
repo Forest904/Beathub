@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from flask import Blueprint, jsonify, request
+from flask_login import login_required
 
 from src.database.db_manager import db, DownloadedItem
 
@@ -19,6 +20,7 @@ def _get_downloader():
 
 
 @compilation_bp.route('/compilations/download', methods=['POST'])
+@login_required
 def download_compilation_api():
     downloader = _get_downloader()
     if downloader is None:

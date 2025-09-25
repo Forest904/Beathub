@@ -4,9 +4,11 @@ import { useCompilation } from './CompilationContext.jsx';
 import { formatDuration } from '../utils/helpers';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 const SidebarContent = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { compilationMode, setCompilationMode, name, rename, items, totalMs, clear, remove, reorder, capacityMinutes, altCapacityMinutes, coverDataUrl, setCoverDataUrl, clearCover } = useCompilation();
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -40,7 +42,7 @@ const SidebarContent = () => {
     setConfirmed(false);
   }, [name, items]);
 
-  if (!compilationMode) return null;
+  if (!user || !compilationMode) return null;
 
   return (
     <div className="fixed inset-0 z-40">
@@ -257,8 +259,15 @@ const SidebarContent = () => {
                 setConfirmed(false);
                 navigate('/download', { state: { showProgressPanel: true, selectSpotifyId: compId } });
               } catch (e) {
-                // eslint-disable-next-line no-alert
-                alert('Failed to start compilation download.');
+                const status = e?.response?.status;
+                if (status === 401) {
+                  // eslint-disable-next-line no-alert
+                  alert('Please sign in to create a compilation.');
+                  navigate('/login');
+                } else {
+                  // eslint-disable-next-line no-alert
+                  alert('Failed to start compilation download.');
+                }
               } finally {
                 setSubmitting(false);
               }

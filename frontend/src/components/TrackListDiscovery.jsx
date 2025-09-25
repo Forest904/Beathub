@@ -2,9 +2,11 @@ import React, { useContext } from 'react';
 import PropTypes from 'prop-types';
 import { formatDuration } from '../utils/helpers';
 import CompilationContext from '../compilation/CompilationContext.jsx';
+import { useAuth } from '../hooks/useAuth';
 
 const TrackListDiscovery = ({ tracks }) => {
   const compilation = useContext(CompilationContext);
+  const { user } = useAuth();
   if (!tracks || tracks.length === 0) return null;
 
 
@@ -44,14 +46,16 @@ const TrackListDiscovery = ({ tracks }) => {
               <p className="text-sm text-slate-600 dark:text-gray-400">{(track.artists || []).join(', ')}</p>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleToggle}
-                className={`px-2 py-1 rounded text-sm ${inCart ? 'bg-brandError-600 text-white hover:bg-brandError-700' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
-                title={inCart ? 'Remove from compilation' : 'Add to compilation'}
-              >
-                {inCart ? 'Remove' : '+'}
-              </button>
+              {user && (
+                <button
+                  type="button"
+                  onClick={handleToggle}
+                  className={`px-2 py-1 rounded text-sm ${inCart ? 'bg-brandError-600 text-white hover:bg-brandError-700' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
+                  title={inCart ? 'Remove from compilation' : 'Add to compilation'}
+                >
+                  {inCart ? 'Remove' : '+'}
+                </button>
+              )}
               <p className="text-slate-600 dark:text-gray-400 text-sm">{formatDuration(track.duration_ms)}</p>
             </div>
           </li>

@@ -3,7 +3,7 @@ import shutil
 import logging
 from flask import Blueprint, request, jsonify, send_file
 import json
-from flask_login import current_user
+from flask_login import current_user, login_required
 from src.database.db_manager import db, DownloadedItem, get_system_user_id
 from src.lyrics_service import LyricsService
 import re
@@ -35,6 +35,7 @@ def get_progress_broker():
     return current_app.extensions.get('progress_broker')
 
 @download_bp.route('/download', methods=['POST'])
+@login_required
 def download_spotify_item_api():
     from flask import current_app
     spotify_downloader = get_spotify_downloader()
@@ -121,6 +122,7 @@ def download_spotify_item_api():
 
 
 @download_bp.route('/download/cancel', methods=['POST'])
+@login_required
 def cancel_download_job():
     """Request cancellation of an in-progress or pending download job.
 
@@ -169,6 +171,7 @@ def cancel_download_job():
 
 
 @download_bp.route('/download/jobs/<string:job_id>', methods=['GET'])
+@login_required
 def get_job_status(job_id: str):
     """Return current status for a job in the JobQueue."""
     jobs = get_job_queue()
@@ -190,12 +193,14 @@ def get_job_status(job_id: str):
     return jsonify(payload), 200
 
 @download_bp.route('/albums', methods=['GET'])
+@login_required
 def get_downloaded_items():
     user_id = _resolve_user_id()
     items = DownloadedItem.query.filter_by(user_id=user_id).order_by(DownloadedItem.title).all()
     return jsonify([item.to_dict() for item in items]), 200
 
 @download_bp.route('/albums/<int:item_id>', methods=['DELETE'])
+@login_required
 def delete_downloaded_item(item_id):
     item = DownloadedItem.query.get(item_id)
     if not item:
@@ -219,6 +224,7 @@ def delete_downloaded_item(item_id):
 
 
 @download_bp.route('/items/<int:item_id>/metadata', methods=['GET'])
+@login_required
 def get_item_metadata_by_id(item_id: int):
     """Return the saved spotify_metadata.json for a downloaded item by DB id."""
     item = DownloadedItem.query.get(item_id)
@@ -242,6 +248,7 @@ def get_item_metadata_by_id(item_id: int):
 
 
 @download_bp.route('/items/by-spotify/<string:spotify_id>/metadata', methods=['GET'])
+@login_required
 def get_item_metadata_by_spotify(spotify_id: str):
     """Return the saved spotify_metadata.json for a downloaded item by Spotify id."""
     item = DownloadedItem.query.filter_by(spotify_id=spotify_id, user_id=_resolve_user_id()).first()
@@ -263,6 +270,7 @@ def get_item_metadata_by_spotify(spotify_id: str):
 
 
 @download_bp.route('/items/<int:item_id>/lyrics', methods=['GET'])
+@login_required
 def get_item_lyrics(item_id: int):
     """Retrieve lyrics for a given downloaded item (album/playlist/track) using fuzzy file matching.
 
@@ -446,6 +454,7 @@ def get_item_lyrics(item_id: int):
 
 
 @download_bp.route('/items/<int:item_id>/audio', methods=['GET'])
+@login_required
 def stream_item_audio(item_id: int):
     """Stream a matched audio file for a downloaded item using fuzzy matching.
 

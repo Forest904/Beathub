@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import PropTypes from 'prop-types';
 import { formatDuration } from '../utils/helpers';
 import CompilationContext from '../compilation/CompilationContext.jsx';
+import { useAuth } from '../hooks/useAuth';
 
 const BADGE_VARIANTS = {
   gray: 'bg-slate-200 text-slate-700 dark:bg-gray-700 dark:text-gray-200',
@@ -26,6 +27,7 @@ Badge.defaultProps = {
 
 const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExplicit, showIsrc, showDisc, showPopularity, onLyricsClick, enablePlay, onPlayTrack }) => {
   const compilation = useContext(CompilationContext);
+  const { user } = useAuth();
   if (!tracks || tracks.length === 0) {
     return null;
   }
@@ -44,7 +46,7 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
             {(!compactForBurnPreview && showIsrc) && <th className="px-2 py-2">ISRC</th>}
             {showDisc && <th className="px-2 py-2">Disc</th>}
             {(!compactForBurnPreview && showPopularity) && <th className="px-2 py-2">Popularity</th>}
-            {(!compactForBurnPreview && compilation?.compilationMode) && <th className="px-2 py-2">Compilation</th>}
+            {(!compactForBurnPreview && compilation?.compilationMode && user) && <th className="px-2 py-2">Compilation</th>}
           </tr>
         </thead>
         <tbody>
@@ -53,7 +55,7 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
             const useShowIsrc = !compactForBurnPreview && showIsrc;
             const useShowPopularity = !compactForBurnPreview && showPopularity;
             const useEnablePlay = !compactForBurnPreview && enablePlay;
-            const useCompilationControls = !compactForBurnPreview && Boolean(compilation?.compilationMode);
+            const useCompilationControls = !compactForBurnPreview && Boolean(compilation?.compilationMode) && Boolean(user);
             const colSpan = 4 + (useEnablePlay ? 1 : 0) + (useShowExplicit ? 1 : 0) + (useShowIsrc ? 1 : 0) + (showDisc ? 1 : 0) + (useShowPopularity ? 1 : 0) + (useCompilationControls ? 1 : 0);
             let lastDisc = null;
             const rows = [];

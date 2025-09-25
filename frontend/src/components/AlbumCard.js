@@ -1,6 +1,7 @@
 ﻿import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 export const AlbumCardVariant = Object.freeze({
   DISCOVERY: 'discography',
@@ -12,6 +13,7 @@ const FALLBACK_IMAGE = 'https://via.placeholder.com/200x200.png?text=No+Cover';
 
 const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled }) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isBestOf = String(album?.id || '').startsWith('bestof:');
 
   const handleCopyLink = useCallback(
@@ -117,7 +119,7 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
             </button>
           )}
 
-          {variant === AlbumCardVariant.DISCOVERY && album.spotify_url && !isBestOf && (
+          {variant === AlbumCardVariant.DISCOVERY && album.spotify_url && !isBestOf && user && (
             <button
               type="button"
               onClick={handleDirectDownload}
