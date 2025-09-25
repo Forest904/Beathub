@@ -6,8 +6,7 @@
 - [ ] Action: Co-locate required styles (CSS modules/tokens) and shared layout primitives with the new component, updating import paths so no legacy global styles break.
 
 ## Order discovery page by Popularity, Followers
-- [ ] Action: Extend the discovery API handler to fetch/populate popularity and follower counts; update serializers so the frontend receives normalized metrics.
-- [ ] Action: Store the sort preference in the router query string and mirror it into local storage so refreshes and deep links reopen with the selected ordering.
+- [ ] Action: Extend the discovery API handler to order by popularity and follower counts; update serializers so the frontend receives normalized metrics.
 - [ ] Action: Handle sparse data by defining deterministic fallbacks (e.g., treat missing metrics as zero) and surface a subtle UI badge when metrics are unavailable.
 
 ## NEW FEATURE User Registration/Login

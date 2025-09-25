@@ -18,6 +18,8 @@ const ArtistBrowserPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pageInfo, setPageInfo] = useState({ page: initialPage, hasNext: false, hasPrev: false, totalPages: 1, total: 0 });
+  const initialOrderBy = (searchParams.get('orderBy') || 'popularity').toLowerCase() === 'followers' ? 'followers' : 'popularity';
+  const [orderBy, setOrderBy] = useState(initialOrderBy); // 'popularity' | 'followers'
 
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const page = useMemo(() => Math.max(1, parseInt(searchParams.get('page') || '1', 10)), [searchParams]);
@@ -27,7 +29,7 @@ const ArtistBrowserPage = () => {
     setError(null);
     try {
       const response = await axios.get('/api/famous_artists', {
-        params: { limit: POPULAR_LIMIT, page },
+        params: { limit: POPULAR_LIMIT, page, order_by: orderBy, order_dir: 'desc' },
       });
       const data = response.data || {};
       setFamousArtists(data.artists || []);
@@ -46,7 +48,7 @@ const ArtistBrowserPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [POPULAR_LIMIT, page]);
+  }, [POPULAR_LIMIT, page, orderBy]);
 
   // Load famous artists when there is no active search term, and when page changes
   useEffect(() => {
@@ -69,7 +71,19 @@ const ArtistBrowserPage = () => {
           params: { q: debouncedSearchTerm, page, limit: POPULAR_LIMIT },
         });
         const data = response.data || {};
-        setArtists(data.artists || []);
+        let list = Array.isArray(data.artists) ? data.artists.slice() : [];
+        // Client-side sort for search results using selected order
+        const primary = orderBy;
+        const secondary = primary === 'popularity' ? 'followers' : 'popularity';
+        list.sort((a, b) => {
+          const av = (typeof a[primary] === 'number' ? a[primary] : 0);
+          const bv = (typeof b[primary] === 'number' ? b[primary] : 0);
+          if (bv !== av) return bv - av; // desc
+          const asv = (typeof a[secondary] === 'number' ? a[secondary] : 0);
+          const bsv = (typeof b[secondary] === 'number' ? b[secondary] : 0);
+          return bsv - asv;
+        });
+        setArtists(list);
         const p = data.pagination || {};
         setPageInfo({
           page: p.page || page,
@@ -89,7 +103,7 @@ const ArtistBrowserPage = () => {
     };
 
     searchArtists();
-  }, [debouncedSearchTerm, page]);
+  }, [debouncedSearchTerm, page, orderBy]);
 
   const handleSearchChange = (event) => {
     const value = event.target.value;
@@ -103,6 +117,16 @@ const ArtistBrowserPage = () => {
       next.delete('q');
       next.set('page', '1');
     }
+    setSearchParams(next);
+  };
+
+  const handleOrderChange = (nextOrder) => {
+    const normalized = nextOrder === 'followers' ? 'followers' : 'popularity';
+    setOrderBy(normalized);
+    const next = new URLSearchParams(searchParams);
+    next.set('orderBy', normalized);
+    // reset to first page when changing sorting
+    next.set('page', '1');
     setSearchParams(next);
   };
 
@@ -136,7 +160,29 @@ const ArtistBrowserPage = () => {
           <h1 className="text-4xl font-bold text-slate-900 dark:text-white">Discover Artists</h1>
         </div>
 
-        <SearchBar searchTerm={searchTerm} onSearchChange={handleSearchChange} placeholder="Search for your favorite artists..." />
+        <div className="mt-4 mb-6 flex flex-col sm:flex-row items-center gap-3">
+          <div className="w-full flex-1 min-w-0 flex items-center">
+            <SearchBar compact className="w-full" searchTerm={searchTerm} onSearchChange={handleSearchChange} placeholder="Search for your favorite artists..." />
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                onClick={() => handleOrderChange('popularity')}
+                className={`px-3 h-10 text-sm border border-slate-200 dark:border-gray-700 ${orderBy === 'popularity' ? 'bg-brand-600 text-white dark:bg-brandDark-400' : 'bg-white dark:bg-gray-800 text-slate-700 dark:text-gray-200'} rounded-l-md`}
+              >
+                Popularity
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOrderChange('followers')}
+                className={`px-3 h-10 text-sm border-t border-b border-r border-slate-200 dark:border-gray-700 ${orderBy === 'followers' ? 'bg-brand-600 text-white dark:bg-brandDark-400' : 'bg-white dark:bg-gray-800 text-slate-700 dark:text-gray-200'} rounded-r-md`}
+              >
+                Followers
+              </button>
+            </div>
+          </div>
+        </div>
 
         {loading && <p className="text-center text-brand-600 dark:text-brandDark-400 text-xl mt-8">Loading artists...</p>}
 

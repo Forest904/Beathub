@@ -63,13 +63,28 @@ class Config:
     METADATA_CACHE_TTL_SECONDS = _get_int('METADATA_CACHE_TTL_SECONDS', 300)
     METADATA_CACHE_MAXSIZE = max(1, _get_int('METADATA_CACHE_MAXSIZE', 256))
 
-    # Popular artists sourcing
-    POPULAR_ARTIST_PLAYLIST_IDS = _get_csv_list(
-        'POPULAR_ARTIST_PLAYLIST_IDS',
-        '37i9dQZEVXbMDoHDwVN2tF,37i9dQZEVXbLRQDuF5jeBP'
-    )
+    # Popular artists sourcing (fully controlled by app)
+    # Curated editorial/viral playlists used to seed the pool. Not configurable via env.
+    POPULAR_ARTIST_PLAYLIST_IDS = [
+        # Global/Editorial
+        '37i9dQZEVXbLRQDuF5jeBP',  # Top 50 - Global
+        '37i9dQZF1DXcBWIGoYBM5M',  # Today's Top Hits
+        '37i9dQZEVXbMDoHDwVN2tF',  # Top 50 - Italy (example regional)
+        '37i9dQZEVXbLiRSasKsNU9',  # Viral 50 - Global
+        # Genre anchors (IDs are stable public Spotify/editorial playlists)
+        '37i9dQZF1DX0XUsuxWHRQd',  # RapCaviar
+        '37i9dQZF1DWXRqgorJj26U',  # Rock Classics
+        '37i9dQZF1DX4SBhb3fqCJd',  # Are & Be (R&B)
+        '37i9dQZF1DX4dyzvuaRJ0n',  # mint (Dance/Electronic)
+        '37i9dQZF1DX10zKzsJ2jva',  # Viva Latino
+        '37i9dQZF1DX4JAvHpjipBk',  # New Music Friday
+    ]
+    # Default page size if none specified
     POPULAR_ARTIST_LIMIT = max(1, _get_int('POPULAR_ARTIST_LIMIT', 20))
+    # Cache TTL for popular artist pool/pages
     POPULAR_ARTIST_CACHE_TTL_SECONDS = _get_int('POPULAR_ARTIST_CACHE_TTL_SECONDS', 900)
+    # Target size for the cached popular-artist pool (fixed, app-controlled)
+    POPULAR_ARTIST_POOL_SIZE = 500
 
     # Runtime behavior
     # Turn Flask debug on/off from env; default off to avoid noisy console

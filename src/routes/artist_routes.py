@@ -40,14 +40,23 @@ def search_artists_api():
         artists = []
         for artist in results.get('artists', {}).get('items', []):
             images = artist.get('images') or []
+            followers_obj = (artist.get('followers') or {})
+            raw_followers = followers_obj.get('total')
+            raw_popularity = artist.get('popularity')
+            followers_available = isinstance(raw_followers, int)
+            popularity_available = isinstance(raw_popularity, int)
+            norm_followers = int(raw_followers) if isinstance(raw_followers, int) else 0
+            norm_popularity = int(raw_popularity) if isinstance(raw_popularity, int) else 0
             artists.append({
                 'id': artist.get('id'),
                 'name': artist.get('name'),
                 'genres': artist.get('genres', []),
-                'followers': (artist.get('followers') or {}).get('total'),
+                'followers': norm_followers,
+                'popularity': norm_popularity,
+                'followers_available': followers_available,
+                'popularity_available': popularity_available,
                 'image': images[0]['url'] if images else None,
                 'external_urls': (artist.get('external_urls') or {}).get('spotify'),
-                'popularity': artist.get('popularity'),
             })
 
         total_items = (results.get('artists') or {}).get('total', 0)
@@ -80,6 +89,12 @@ def get_popular_artists_api():
     limit_param = request.args.get('limit')
     page_param = request.args.get('page')
     market = request.args.get('market', 'US')
+    order_by = (request.args.get('order_by') or 'popularity').strip().lower()
+    order_dir = (request.args.get('order_dir') or 'desc').strip().lower()
+    if order_by not in ('popularity', 'followers'):
+        order_by = 'popularity'
+    if order_dir not in ('asc', 'desc'):
+        order_dir = 'desc'
     page = 1
     page_size = 20
     if page_param:
@@ -95,26 +110,37 @@ def get_popular_artists_api():
             page_size = 20
     # Cap page size to a reasonable value
     page_size = min(page_size, 50)
-    # Fetch enough to determine next-page availability (+1 sentinel)
-    internal_limit = page * page_size + 1
-    # Soft cap to avoid excessive work
-    internal_limit = min(internal_limit, 500)
     try:
-        full_list = spotify_downloader.fetch_popular_artists(limit=internal_limit, market=market)
+        # Use full cached pool to support flexible ordering, then slice
+        full_list = spotify_downloader.get_popular_artist_pool(market=market)
+        # Normalize metrics (defensive in case of legacy cache entries)
+        for a in full_list:
+            if a is None:
+                continue
+            pop = a.get('popularity')
+            fol = a.get('followers')
+            a['popularity_available'] = bool(a.get('popularity_available')) if 'popularity_available' in a else isinstance(pop, int)
+            a['followers_available'] = bool(a.get('followers_available')) if 'followers_available' in a else isinstance(fol, int)
+            a['popularity'] = int(pop) if isinstance(pop, int) else 0
+            a['followers'] = int(fol) if isinstance(fol, int) else 0
+
+        reverse = (order_dir == 'desc')
+        secondary = 'followers' if order_by == 'popularity' else 'popularity'
+        full_list.sort(key=lambda d: (d.get(order_by, 0) or 0, d.get(secondary, 0) or 0), reverse=reverse)
+
         start = (page - 1) * page_size
         end = start + page_size
         artists = full_list[start:end]
         has_next = len(full_list) > end
         has_prev = page > 1
-        # We don't have a true total from the data source; expose lower-bound
-        total_lower_bound = len(full_list) if not has_next else end + 1
-        total_pages = max(1, (total_lower_bound + page_size - 1) // page_size)
+        total_items = len(full_list)
+        total_pages = max(1, (total_items + page_size - 1) // page_size)
         return jsonify({
             "artists": artists,
             "pagination": {
                 "page": page,
                 "limit": page_size,
-                "total": total_lower_bound,
+                "total": total_items,
                 "total_pages": total_pages,
                 "has_next": has_next,
                 "has_prev": has_prev,

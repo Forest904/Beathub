@@ -90,9 +90,11 @@ class SpotifyContentDownloader:
         cache_ttl = Config.METADATA_CACHE_TTL_SECONDS
         self._artist_cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
         self._artist_discography_cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
+        # Caches popular-artist pool per market; result slicing happens per request
         self._popular_artists_cache = TTLCache(maxsize=4, ttl=Config.POPULAR_ARTIST_CACHE_TTL_SECONDS)
         self._popular_artist_playlist_ids = Config.POPULAR_ARTIST_PLAYLIST_IDS
         self._popular_artist_limit = Config.POPULAR_ARTIST_LIMIT
+        self._popular_artist_pool_size = Config.POPULAR_ARTIST_POOL_SIZE
 
         logger.info("SpotifyContentDownloader initialized with decoupled services and configuration passed.")
 
@@ -148,12 +150,20 @@ class SpotifyContentDownloader:
             first_image = images[0]
             image_url = first_image.get('url') if isinstance(first_image, dict) else None
         followers = artist.get('followers') or {}
+        raw_followers = followers.get('total')
+        raw_popularity = artist.get('popularity')
+        followers_available = isinstance(raw_followers, int)
+        popularity_available = isinstance(raw_popularity, int)
+        norm_followers = int(raw_followers) if isinstance(raw_followers, int) else 0
+        norm_popularity = int(raw_popularity) if isinstance(raw_popularity, int) else 0
         return {
             'id': artist_id,
             'name': artist.get('name'),
             'genres': artist.get('genres', []),
-            'followers': followers.get('total'),
-            'popularity': artist.get('popularity'),
+            'followers': norm_followers,
+            'popularity': norm_popularity,
+            'followers_available': followers_available,
+            'popularity_available': popularity_available,
             'image': image_url,
             'external_urls': (artist.get('external_urls') or {}).get('spotify'),
         }
@@ -230,37 +240,40 @@ class SpotifyContentDownloader:
 
 
     def fetch_popular_artists(self, limit: Optional[int] = None, market: str = 'US') -> List[Dict[str, Any]]:
+        """Return a slice of a large, cached popular-artist pool.
+
+        Builds a diversified pool (~pool_size) from curated playlists and tops up
+        with genre searches if needed, caches that pool per market, then slices
+        it to the requested limit.
+        """
         if not self.sp:
             logger.error('Spotipy client not initialized. Cannot fetch popular artists.')
             return []
-        resolved_limit = limit or self._popular_artist_limit
-        cache_key = (resolved_limit, market)
-        cached = self._popular_artists_cache.get(cache_key, MISSING)
-        if cached is not MISSING:
-            return cached
 
+        resolved_limit = max(1, int(limit or self._popular_artist_limit))
+        pool_key = ('popular_pool', market)
+        cached_pool = self._popular_artists_cache.get(pool_key, MISSING)
+        if cached_pool is not MISSING:
+            return list(cached_pool)[:resolved_limit]
+
+        target_unique = max(1, int(self._popular_artist_pool_size))
         playlist_ids = [pid for pid in self._popular_artist_playlist_ids if pid]
-        artist_payloads: List[Dict[str, Any]] = []
 
+        # 1) Collect unique artist IDs from curated playlists
+        collected_ids: List[str] = []
+        seen_ids: Set[str] = set()
         if playlist_ids:
-            target_unique = max(resolved_limit * 2, resolved_limit)
-            collected: List[str] = []
-            seen_ids: Set[str] = set()
-
             for playlist_id in playlist_ids:
-                if len(collected) >= target_unique:
+                if len(collected_ids) >= target_unique:
                     break
-
                 playlist_uri = playlist_id
                 if not playlist_uri.startswith(('spotify:playlist:', 'https://', 'http://')):
                     playlist_uri = f'spotify:playlist:{playlist_id}'
-
                 try:
                     playlist_items = self.sp.playlist_items(playlist_uri, limit=100, market=market)
                 except Exception as exc:
                     logger.warning('Failed to load playlist %s for popular artist discovery: %s', playlist_id, exc)
                     continue
-
                 while playlist_items:
                     items = playlist_items.get('items', [])
                     for entry in items:
@@ -272,79 +285,109 @@ class SpotifyContentDownloader:
                             if not artist_id or artist_id in seen_ids:
                                 continue
                             seen_ids.add(artist_id)
-                            collected.append(artist_id)
-                            if len(collected) >= target_unique:
+                            collected_ids.append(artist_id)
+                            if len(collected_ids) >= target_unique:
                                 break
-                        if len(collected) >= target_unique:
+                        if len(collected_ids) >= target_unique:
                             break
-                    if len(collected) >= target_unique or not playlist_items.get('next'):
+                    if len(collected_ids) >= target_unique or not playlist_items.get('next'):
                         break
                     try:
                         playlist_items = self.sp.next(playlist_items)
                     except Exception as exc:
                         logger.warning('Pagination failed for playlist %s: %s', playlist_id, exc)
                         break
-
-            ids_to_fetch: List[str] = []
-            for artist_id in collected:
-                cached_artist = self._artist_cache.get(artist_id, MISSING)
-                if cached_artist is not MISSING:
-                    if cached_artist:
-                        artist_payloads.append(cached_artist)
-                else:
-                    ids_to_fetch.append(artist_id)
-
-            for chunk in self._chunked_iterable(ids_to_fetch, 50):
-                try:
-                    resp = self.sp.artists(list(chunk))
-                except Exception as exc:
-                    logger.warning('Batch artist lookup failed for %s: %s', chunk, exc)
-                    continue
-                for artist in resp.get('artists', []):
-                    normalized = self._normalize_artist_payload(artist)
-                    if not normalized:
-                        continue
-                    self._artist_cache.set(normalized['id'], normalized)
-                    artist_payloads.append(normalized)
         else:
             logger.warning('No playlist sources configured for popular artists.')
 
-        if not artist_payloads:
-            fallback_artists: List[Dict[str, Any]] = []
-            seen_fallback: Set[str] = set()
-            fallback_genres = ['pop', 'rock', 'hip-hop', 'latin', 'r&b']
-            for genre in fallback_genres:
-                try:
-                    search = self.sp.search(q=f'genre:"{genre}"', type='artist', market=market, limit=resolved_limit)
-                except Exception as exc:
-                    logger.warning('Fallback genre search failed for %s: %s', genre, exc)
+        # 2) Batch-fetch artist profiles for the collected IDs
+        artist_payloads: List[Dict[str, Any]] = []
+        ids_to_fetch: List[str] = []
+        for artist_id in collected_ids:
+            cached_artist = self._artist_cache.get(artist_id, MISSING)
+            if cached_artist is not MISSING:
+                if cached_artist:
+                    artist_payloads.append(cached_artist)
+            else:
+                ids_to_fetch.append(artist_id)
+        for chunk in self._chunked_iterable(ids_to_fetch, 50):
+            try:
+                resp = self.sp.artists(list(chunk))
+            except Exception as exc:
+                logger.warning('Batch artist lookup failed for %s: %s', chunk, exc)
+                continue
+            for artist in resp.get('artists', []):
+                normalized = self._normalize_artist_payload(artist)
+                if not normalized:
                     continue
-                for artist in search.get('artists', {}).get('items', []):
-                    normalized = self._normalize_artist_payload(artist)
-                    if not normalized:
-                        continue
-                    identifier = normalized['id']
-                    if identifier in seen_fallback:
-                        continue
-                    seen_fallback.add(identifier)
-                    fallback_artists.append(normalized)
-                    if len(fallback_artists) >= resolved_limit:
-                        break
-                if len(fallback_artists) >= resolved_limit:
-                    break
-            artist_payloads = fallback_artists
+                self._artist_cache.set(normalized['id'], normalized)
+                artist_payloads.append(normalized)
 
+        # 3) Top-up via diversified genre searches until pool is filled
+        if len(artist_payloads) < target_unique:
+            needed = target_unique - len(artist_payloads)
+            seen_pool_ids: Set[str] = {a['id'] for a in artist_payloads if a and a.get('id')}
+            fallback_genres = [
+                'pop', 'rock', 'hip-hop', 'latin', 'r&b',
+                'dance', 'electronic', 'indie', 'k-pop', 'metal',
+                'country', 'reggaeton', 'soul', 'alternative', 'j-pop'
+            ]
+            try:
+                per_page = 50
+                for genre in fallback_genres:
+                    if len(artist_payloads) >= target_unique:
+                        break
+                    # paginate offsets to widen unique pool
+                    for offset in range(0, 500, per_page):
+                        if len(artist_payloads) >= target_unique:
+                            break
+                        try:
+                            search = self.sp.search(
+                                q=f'genre:"{genre}"', type='artist', market=market, limit=per_page, offset=offset
+                            )
+                        except Exception as exc:
+                            logger.warning('Fallback genre search failed for %s (offset %s): %s', genre, offset, exc)
+                            break
+                        for artist in (search.get('artists') or {}).get('items', []):
+                            normalized = self._normalize_artist_payload(artist)
+                            if not normalized:
+                                continue
+                            identifier = normalized.get('id')
+                            if not identifier or identifier in seen_pool_ids:
+                                continue
+                            seen_pool_ids.add(identifier)
+                            artist_payloads.append(normalized)
+                            if len(artist_payloads) >= target_unique:
+                                break
+            except Exception as exc:
+                logger.warning('Genre top-up failed: %s', exc)
+
+        # 4) Deduplicate, sort, cache pool, slice
         unique_by_id: Dict[str, Dict[str, Any]] = {}
         for artist in artist_payloads:
             if not artist:
                 continue
             unique_by_id[artist['id']] = artist
 
-        final_list = list(unique_by_id.values())
-        final_list.sort(key=lambda data: ((data.get('popularity') or 0), (data.get('followers') or 0)), reverse=True)
-        result = final_list[:resolved_limit]
-        self._popular_artists_cache.set(cache_key, result)
-        return result
+        full_pool = list(unique_by_id.values())
+        full_pool.sort(key=lambda data: ((data.get('popularity') or 0), (data.get('followers') or 0)), reverse=True)
+        # Trim to pool size for consistency
+        full_pool = full_pool[:target_unique]
+        self._popular_artists_cache.set(pool_key, full_pool)
+        return list(full_pool)[:resolved_limit]
+
+    def get_popular_artist_pool(self, market: str = 'US') -> List[Dict[str, Any]]:
+        """Return the full cached popular-artist pool for a market, building it if needed."""
+        pool_key = ('popular_pool', market)
+        cached_pool = self._popular_artists_cache.get(pool_key, MISSING)
+        if cached_pool is not MISSING:
+            return list(cached_pool)
+        # Build by invoking fetch (which constructs and stores the pool)
+        _ = self.fetch_popular_artists(limit=self._popular_artist_pool_size, market=market)
+        cached_pool = self._popular_artists_cache.get(pool_key, MISSING)
+        if cached_pool is not MISSING:
+            return list(cached_pool)
+        return []
 
     def build_best_of_album_details(self, artist_id: str, market: str = 'US') -> Optional[Dict[str, Any]]:
         """

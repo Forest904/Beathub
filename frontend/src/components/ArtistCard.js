@@ -15,6 +15,11 @@ const ArtistCard = ({ artist }) => {
         </div>
         <div className="p-4 flex flex-col justify-between flex-grow">
           <h3 className="text-xl font-semibold text-slate-900 dark:text-white truncate mb-2">{artist.name}</h3>
+          {(!artist.popularity_available || !artist.followers_available) && (
+            <span className="self-start mb-2 inline-block text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 dark:bg-gray-700 dark:text-gray-300">
+              Metrics unavailable
+            </span>
+          )}
           {artist.genres?.length > 0 && (
             <p className="text-sm text-slate-600 dark:text-gray-300 mb-1">
               <span className="font-medium">Genres:</span> {artist.genres.slice(0, 2).join(', ')}
