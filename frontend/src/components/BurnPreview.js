@@ -36,14 +36,10 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
     const missing = (plan?.missing_tracks || []).length === 0;
     const primaryMin = Number(plan?.capacity_primary_min || 80);
     const primaryFit = plan?.fits_primary ?? (total <= primaryMin * 60);
-    const secondaryMin = plan?.capacity_secondary_min ? Number(plan.capacity_secondary_min) : null;
-    const secondaryFit = secondaryMin ? (plan?.fits_secondary ?? (total <= secondaryMin * 60)) : null;
     return {
       statusOk: plan?.status === 'ok',
       primaryMin,
-      secondaryMin,
       fitsPrimary: Boolean(primaryFit),
-      fitsSecondary: secondaryFit === null ? null : Boolean(secondaryFit),
       noMissing: missing,
     };
   }, [plan, total]);
@@ -52,9 +48,7 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
 
   const capacity = useMemo(() => {
     const primaryMin = Number(plan?.capacity_primary_min || 80);
-    const secondaryMin = plan?.capacity_secondary_min ? Number(plan.capacity_secondary_min) : null;
     const capP = Math.max(1, primaryMin) * 60;
-    const capS = secondaryMin ? Math.max(1, secondaryMin) * 60 : null;
     const left = (cap) => cap - total;
     const label = (l) => (l >= 0 ? `${fmtTime(l)} left` : `Over by ${fmtTime(-l)}`);
     const color = (l) => (l < 0 ? 'red' : l < 120 ? 'yellow' : 'green');
@@ -68,18 +62,12 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
       return c === 'red' ? 'text-brandError-400' : c === 'yellow' ? 'text-brandWarning-300' : 'text-brandSuccess-400';
     };
     const lP = left(capP);
-    const lS = capS !== null ? left(capS) : null;
     return {
       primaryMin,
-      secondaryMin,
       labelPrimary: label(lP),
-      labelSecondary: lS === null ? null : label(lS),
       textPrimary: textClass(lP),
-      textSecondary: lS === null ? null : textClass(lS),
       usedPrimary: usedPct(capP),
-      usedSecondary: lS === null ? null : usedPct(capS),
       barPrimary: barClass(lP),
-      barSecondary: lS === null ? null : barClass(lS),
     };
   }, [plan, total]);
 
@@ -117,9 +105,6 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
         <Flag ok={flags.statusOk} label="Metadata OK" />
         <Flag ok={flags.noMissing} label="All files found" />
         <Flag ok={flags.fitsPrimary} label={`≤ ${flags.primaryMin} min`} />
-        {flags.secondaryMin && (
-          <Flag ok={flags.fitsSecondary} label={`≤ ${flags.secondaryMin} min`} />
-        )}
       </div>
 
       <div className="mb-3 text-sm">
@@ -131,18 +116,6 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
           <div className={`h-2 ${capacity.barPrimary}`} style={{ width: `${capacity.usedPrimary}%` }} />
         </div>
       </div>
-
-      {capacity.secondaryMin && (
-        <div className="mb-4 text-sm">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-slate-700 dark:text-gray-300">{capacity.secondaryMin}-min CD</span>
-            <span className={capacity.textSecondary}>{capacity.labelSecondary}</span>
-          </div>
-          <div className="h-2 rounded bg-brand-200 dark:bg-gray-700 overflow-hidden">
-            <div className={`h-2 ${capacity.barSecondary}`} style={{ width: `${capacity.usedSecondary}%` }} />
-          </div>
-        </div>
-      )}
 
       {plan?.warnings?.length > 0 && (
         <div className="mb-4 text-brandWarning-700 dark:text-brandWarning-300 text-sm">
@@ -193,3 +166,4 @@ const BurnPreview = ({ plan, onStart, initiating = false, inProgress = false, ca
 };
 
 export default BurnPreview;
+

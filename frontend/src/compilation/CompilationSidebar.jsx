@@ -9,7 +9,7 @@ import { useAuth } from '../hooks/useAuth';
 const SidebarContent = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { compilationMode, setCompilationMode, name, rename, items, totalMs, clear, remove, reorder, capacityMinutes, altCapacityMinutes, coverDataUrl, setCoverDataUrl, clearCover } = useCompilation();
+  const { compilationMode, setCompilationMode, name, rename, items, totalMs, clear, remove, reorder, capacityMinutes, coverDataUrl, setCoverDataUrl, clearCover } = useCompilation();
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [nameError, setNameError] = useState(false);
@@ -145,7 +145,6 @@ const SidebarContent = () => {
           </div>
           <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
             CD Budget: <span className="font-medium">{formattedBudget}</span>
-            {altCapacityMinutes > 0 && <span className="ml-2">(Alt: {altCapacityMinutes}m)</span>}
             {overBudget && (
               <span className="ml-2 text-brandWarning-600 dark:text-brandWarning-500 font-semibold">Over by {formatDuration(overByMs)}</span>
             )}

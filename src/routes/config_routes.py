@@ -13,10 +13,9 @@ def get_frontend_config():
     try:
         payload = {
             'cd_capacity_minutes': int(Config.CD_CAPACITY_MINUTES or 80),
-            'cd_alt_capacity_minutes': int(getattr(Config, 'CD_ALT_CAPACITY_MINUTES', 0) or 0),
         }
         return jsonify(payload), 200
     except Exception as e:
         logger.warning('Failed to load frontend config: %s', e, exc_info=True)
-        return jsonify({'cd_capacity_minutes': 80, 'cd_alt_capacity_minutes': 0}), 200
+        return jsonify({'cd_capacity_minutes': 80}), 200
 

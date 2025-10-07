@@ -611,16 +611,9 @@ class CDBurningService:
             primary_min = int(getattr(Config, 'CD_CAPACITY_MINUTES', 80) or 80)
         except Exception:
             primary_min = 80
-        try:
-            secondary_min = int(getattr(Config, 'CD_ALT_CAPACITY_MINUTES', 74) or 0)
-        except Exception:
-            secondary_min = 0
-
         cap_primary_sec = max(1, primary_min) * 60
-        cap_secondary_sec = max(0, secondary_min) * 60 if secondary_min else 0
 
         fits_primary = total_seconds <= cap_primary_sec
-        fits_secondary = (total_seconds <= cap_secondary_sec) if cap_secondary_sec else None
 
         # Legacy flags maintained for compatibility (based on 74/80 mins)
         fits_74 = total_seconds <= 74 * 60
@@ -642,8 +635,6 @@ class CDBurningService:
         warnings = []
         if not fits_primary:
             warnings.append(f'Total duration exceeds {primary_min}-minute CD capacity')
-        elif cap_secondary_sec and not fits_secondary:
-            warnings.append(f'Total duration exceeds {secondary_min}-minute CD, but fits {primary_min}-minute CD')
 
         # Try to include raw tracks from saved metadata for UI richness
         raw_tracks = None
@@ -670,11 +661,8 @@ class CDBurningService:
             'fits_80_min_cd': fits_80,
             # Dynamic capacities
             'capacity_primary_min': primary_min,
-            'capacity_secondary_min': secondary_min if cap_secondary_sec else None,
             'fits_primary': fits_primary,
-            'fits_secondary': fits_secondary,
             'time_left_primary_sec': round(cap_primary_sec - total_seconds, 2),
-            'time_left_secondary_sec': round(cap_secondary_sec - total_seconds, 2) if cap_secondary_sec else None,
             'cd_text': {
                 'album': album_cdtext,
                 'per_track': per_track_cdtext,

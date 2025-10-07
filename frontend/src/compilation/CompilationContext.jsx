@@ -21,7 +21,6 @@ export const CompilationProvider = ({ children }) => {
   const [items, setItems] = useState(defaultState.items);
   const [coverDataUrl, setCoverDataUrl] = useState(defaultState.coverDataUrl);
   const [capacityMinutes, setCapacityMinutes] = useState(80);
-  const [altCapacityMinutes, setAltCapacityMinutes] = useState(0);
 
   // UI state (not persisted): whether user is in Compilation Mode
   const [compilationMode, setCompilationMode] = useState(false);
@@ -71,7 +70,6 @@ export const CompilationProvider = ({ children }) => {
         const data = res.data || {};
         if (!cancelled) {
           if (typeof data.cd_capacity_minutes === 'number') setCapacityMinutes(data.cd_capacity_minutes);
-          if (typeof data.cd_alt_capacity_minutes === 'number') setAltCapacityMinutes(data.cd_alt_capacity_minutes);
         }
       } catch (e) {
         // ignore; defaults will be used
@@ -129,7 +127,6 @@ export const CompilationProvider = ({ children }) => {
     itemCount: items.length,
     coverDataUrl,
     capacityMinutes,
-    altCapacityMinutes,
     // ui
     compilationMode,
     setCompilationMode,
@@ -143,7 +140,7 @@ export const CompilationProvider = ({ children }) => {
     clearCover,
     reorder,
     isInCompilation,
-  }), [name, items, totalMs, capacityMinutes, altCapacityMinutes, compilationMode, coverDataUrl, isInCompilation]);
+  }), [name, items, totalMs, capacityMinutes, compilationMode, coverDataUrl, isInCompilation]);
 
   return (
     <CompilationContext.Provider value={value}>

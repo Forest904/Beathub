@@ -71,18 +71,7 @@ const ArtistBrowserPage = () => {
           params: { q: debouncedSearchTerm, page, limit: POPULAR_LIMIT },
         });
         const data = response.data || {};
-        let list = Array.isArray(data.artists) ? data.artists.slice() : [];
-        // Client-side sort for search results using selected order
-        const primary = orderBy;
-        const secondary = primary === 'popularity' ? 'followers' : 'popularity';
-        list.sort((a, b) => {
-          const av = (typeof a[primary] === 'number' ? a[primary] : 0);
-          const bv = (typeof b[primary] === 'number' ? b[primary] : 0);
-          if (bv !== av) return bv - av; // desc
-          const asv = (typeof a[secondary] === 'number' ? a[secondary] : 0);
-          const bsv = (typeof b[secondary] === 'number' ? b[secondary] : 0);
-          return bsv - asv;
-        });
+        const list = Array.isArray(data.artists) ? data.artists.slice() : [];
         setArtists(list);
         const p = data.pagination || {};
         setPageInfo({
@@ -103,7 +92,7 @@ const ArtistBrowserPage = () => {
     };
 
     searchArtists();
-  }, [debouncedSearchTerm, page, orderBy]);
+  }, [debouncedSearchTerm, page]);
 
   const handleSearchChange = (event) => {
     const value = event.target.value;

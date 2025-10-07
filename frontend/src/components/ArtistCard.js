@@ -6,6 +6,11 @@ const FALLBACK_IMAGE = 'https://via.placeholder.com/150?text=No+Image';
 
 const ArtistCard = ({ artist }) => {
   const imageUrl = artist.image || FALLBACK_IMAGE;
+  const hasFollowers = typeof artist.followers === 'number';
+  const hasPopularity = typeof artist.popularity === 'number';
+  const metricsUnavailable =
+    (!artist.popularity_available && !hasPopularity) ||
+    (!artist.followers_available && !hasFollowers);
 
   return (
     <Link to={`/artist/${artist.id}`} className="block transform transition-transform duration-200 hover:scale-105">
@@ -13,28 +18,49 @@ const ArtistCard = ({ artist }) => {
         <div className="relative w-full h-48 sm:h-56 md:h-64 overflow-hidden">
           <img src={imageUrl} alt={artist.name} className="w-full h-full object-cover" />
         </div>
-        <div className="p-4 flex flex-col justify-between flex-grow">
-          <h3 className="text-xl font-semibold text-slate-900 dark:text-white truncate mb-2">{artist.name}</h3>
-          {(!artist.popularity_available || !artist.followers_available) && (
-            <span className="self-start mb-2 inline-block text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 dark:bg-gray-700 dark:text-gray-300">
+        <div className="p-4 flex flex-col flex-grow gap-2">
+          <h3 className="text-xl font-semibold text-slate-900 dark:text-white truncate">{artist.name}</h3>
+          {metricsUnavailable && (
+            <span className="self-start inline-block text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 dark:bg-gray-700 dark:text-gray-300">
               Metrics unavailable
             </span>
           )}
+          {(hasFollowers || hasPopularity) && (
+            <div className="flex items-center gap-2">
+              {hasFollowers && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:border-brandDark-400 dark:bg-brandDark-500/20 dark:text-brandDark-100">
+                  <span className="uppercase tracking-wide">Followers</span>
+                  <span className="text-sm font-bold">
+                    {artist.followers.toLocaleString()}
+                  </span>
+                </span>
+              )}
+              {hasPopularity && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100">
+                  <span className="uppercase tracking-wide">Popularity</span>
+                  <span className="text-sm font-bold">
+                    {artist.popularity}
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
           {artist.genres?.length > 0 && (
-            <p className="text-sm text-slate-600 dark:text-gray-300 mb-1">
-              <span className="font-medium">Genres:</span> {artist.genres.slice(0, 2).join(', ')}
-              {artist.genres.length > 2 && '...'}
-            </p>
-          )}
-          {typeof artist.followers === 'number' && (
-            <p className="text-sm text-slate-600 dark:text-gray-300">
-              <span className="font-medium">Followers:</span> {artist.followers.toLocaleString()}
-            </p>
-          )}
-          {typeof artist.popularity === 'number' && (
-            <p className="text-sm text-slate-600 dark:text-gray-300">
-              <span className="font-medium">Popularity:</span> {artist.popularity}
-            </p>
+            <div className="flex flex-wrap gap-2">
+              {artist.genres.slice(0, 4).map((genre) => (
+                <span
+                  key={genre}
+                  className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  {genre.charAt(0).toUpperCase() + genre.slice(1)}
+                </span>
+              ))}
+              {artist.genres.length > 4 && (
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100">
+                  +{artist.genres.length - 4}
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -50,6 +76,8 @@ ArtistCard.propTypes = {
     genres: PropTypes.arrayOf(PropTypes.string),
     followers: PropTypes.number,
     popularity: PropTypes.number,
+    followers_available: PropTypes.bool,
+    popularity_available: PropTypes.bool,
   }).isRequired,
 };
 

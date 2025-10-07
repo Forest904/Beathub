@@ -1,5 +1,16 @@
-﻿# TODO
+﻿#TODO
+## Prompt for Comprehensive Scalability & Cohesion Audit
 
+You are tasked with auditing the entire CD-Collector codebase (backend, frontend, build tooling, and docs) to design a refactor plan that maximizes scalability, high cohesion, and low coupling. Perform the following steps and record concrete action items for each subsystem you review:
+
+- [ ] Map domain boundaries and ownership: catalogue every module/package, identify their responsibilities, dependencies, and shared primitives, then propose domain-aligned boundaries that reduce cross-cutting concerns.
+- [ ] Evaluate data flow contracts: trace API schemas, database models, and React props/state to ensure each boundary exchanges well-typed, versioned contracts; note where adapters or DTOs are required.
+- [ ] Analyze service lifecycle and configuration: document initialization sequences, background jobs, and configuration inputs (env vars, feature flags) to surface areas requiring dependency injection or factories for testability.
+- [ ] Inspect shared utilities and duplicate logic: locate repeated helpers across backend jobs, routes, and frontend hooks; schedule extractions into cohesive libraries with clear owners.
+- [ ] Review asynchronous workflows: examine job queues, download progress brokers, and React async hooks for scalability risks (blocking I/O, unbounded concurrency) and outline mitigation tactics.
+- [ ] Assess state management cohesion: audit Redux/React Query/local state usage to enforce a consistent pattern per feature and limit coupling between discovery, playlists, and downloads.
+- [ ] Verify build and deployment pipelines: ensure Flask app factory, CLI runners, and frontend builds share composable configuration; note refactors to simplify local vs. production parity.
+- [ ] Prioritize incremental refactor roadmap: rank findings by impact and effort, defining milestones and acceptance criteria for each planned refactor to update this TODO accordingly.
 ## NEW FEATURE FOR LOGGED IN USERS "My Playlists" 
 - [ ] Action: Implement playlist CRUD endpoints with authorization checks ensuring only the owner can mutate or delete; reuse SQLAlchemy relationships for tracks.
 - [ ] Action: Introduce optimistic updates in the playlist UI backed by paginated fetch hooks that cache results using React Query/SWR patterns.

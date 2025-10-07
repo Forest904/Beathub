@@ -15,6 +15,11 @@ const Header = () => {
   const pathname = location.pathname || '';
   const showCompilation = /^\/(?:$|browse|artist\/|album\/)/.test(pathname);
   const { user, logout } = useAuth();
+  const displayName = user
+    ? (user.email && typeof user.email === 'string' && user.email.includes('@')
+        ? user.email.split('@')[0]
+        : user.username || user.name || '')
+    : '';
 
   const handleLogout = async () => {
     await logout();
@@ -66,7 +71,9 @@ const Header = () => {
           <ThemeToggle />
           {user ? (
             <div className="flex items-center gap-2">
-              <span className="hidden text-sm text-slate-600 dark:text-slate-200 sm:inline">{user.email}</span>
+              <span className="hidden text-sm text-slate-600 dark:text-slate-200 sm:inline">
+                {displayName || 'User'}
+              </span>
               <button
                 type="button"
                 onClick={handleLogout}
