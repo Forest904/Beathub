@@ -13,6 +13,8 @@ export const fetchDownloadHistory = async () => {
 export const toDownloadItem = (raw) => ({
   id: Number(raw?.id ?? 0),
   spotify_id: String(raw?.spotify_id ?? ''),
+  // Ensure shared AlbumCard components always receive a primary name field.
+  name: String(raw?.title ?? raw?.name ?? ''),
   title: String(raw?.title ?? ''),
   artist: String(raw?.artist ?? ''),
   image_url: raw?.image_url ?? null,

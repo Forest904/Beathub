@@ -15,6 +15,10 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
   const navigate = useNavigate();
   const { user } = useAuth();
   const isBestOf = String(album?.id || '').startsWith('bestof:');
+  const displayName = album?.name || album?.title || 'Untitled Item';
+  const subHeading = !isBestOf
+    ? album?.artist || (album?.title && album.title !== displayName ? album.title : '')
+    : '';
 
   const handleCopyLink = useCallback(
     (event) => {
@@ -96,7 +100,7 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
       <div className="w-full aspect-square overflow-hidden">
         <img
           src={album.image_url || FALLBACK_IMAGE}
-          alt={`${album.name} Album Cover`}
+          alt={`${displayName} Album Cover`}
           className="w-full h-full object-cover"
           width="640"
           height="640"
@@ -104,9 +108,9 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
         />
       </div>
       <div className="p-4 text-center">
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1 truncate">{album.name}</h3>
-        {!isBestOf && (
-          <p className="text-sm text-slate-600 dark:text-gray-400 mb-3 truncate">{album.title}</p>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1 truncate">{displayName}</h3>
+        {!isBestOf && subHeading && (
+          <p className="text-sm text-slate-600 dark:text-gray-400 mb-3 truncate">{subHeading}</p>
         )}
         <div className="flex flex-col space-y-2">
           {variant !== AlbumCardVariant.BURN_SELECTION && album.spotify_url && !isBestOf && (
@@ -148,6 +152,7 @@ AlbumCard.propTypes = {
   album: PropTypes.shape({
     id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
     name: PropTypes.string.isRequired,
+    artist: PropTypes.string,
     title: PropTypes.string,
     image_url: PropTypes.string,
     spotify_url: PropTypes.string,

@@ -2,6 +2,7 @@
  * @typedef {Object} DownloadItem
  * @property {number} id
  * @property {string} spotify_id
+ * @property {string} name
  * @property {string} title
  * @property {string} artist
  * @property {string|null} image_url

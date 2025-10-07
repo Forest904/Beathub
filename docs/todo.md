@@ -3,18 +3,14 @@
 ## Prompt for Comprehensive Scalability & Cohesion Audit
 
 - [x] Map domain boundaries and ownership: catalogue every module/package, identify their responsibilities, dependencies, and shared primitives, then propose domain-aligned boundaries that reduce cross-cutting concerns. (Owner: Architecture, Priority: P0, Completed: 2025-10-07)
-- [ ] Evaluate data flow contracts: trace API schemas, database models, and React props/state to ensure each boundary exchanges well-typed, versioned contracts; note where adapters or DTOs are required. (Owner: Platform, Priority: P1)
-- [ ] Analyze service lifecycle and configuration: document initialization sequences, background jobs, and configuration inputs (env vars, feature flags) to surface areas requiring dependency injection or factories for testability. (Owner: Platform, Priority: P1)
-- [ ] Inspect shared utilities and duplicate logic: locate repeated helpers across backend jobs, routes, and frontend hooks; schedule extractions into cohesive libraries with clear owners. (Owner: Frontend, Priority: P1)
-- [ ] Review asynchronous workflows: examine job queues, download progress brokers, and React async hooks for scalability risks (blocking I/O, unbounded concurrency) and outline mitigation tactics. (Owner: Platform, Priority: P2)
-- [ ] Assess state management cohesion: audit React state usage to enforce a consistent pattern per feature and limit coupling between discovery, playlists, and downloads. (Owner: Frontend, Priority: P2)
-- [ ] Verify build and deployment pipelines: ensure Flask app factory, CLI runners, and frontend builds share composable configuration; note refactors to simplify local vs. production parity. (Owner: DevOps, Priority: P2)
-- [ ] Prioritize incremental refactor roadmap: rank findings by impact and effort, defining milestones and acceptance criteria for each planned refactor to update this TODO accordingly. (Owner: Architecture, Priority: P1)
+- [X] Evaluate data flow contracts: trace API schemas, database models, and React props/state to ensure each boundary exchanges well-typed, versioned contracts; note where adapters or DTOs are required. 
+- [ ] Analyze service lifecycle and configuration: document initialization sequences, background jobs, and configuration inputs (env vars, feature flags) to surface areas requiring dependency injection or factories for testability. 
+- [ ] Inspect shared utilities and duplicate logic: locate repeated helpers across backend jobs, routes, and frontend hooks; schedule extractions into cohesive libraries with clear owners. 
+- [ ] Review asynchronous workflows: examine job queues, download progress brokers, and React async hooks for scalability risks (blocking I/O, unbounded concurrency) and outline mitigation tactics. 
+- [ ] Assess state management cohesion: audit React state usage to enforce a consistent pattern per feature and limit coupling between discovery, playlists, and downloads. 
+- [ ] Verify build and deployment pipelines: ensure Flask app factory, CLI runners, and frontend builds share composable configuration; note refactors to simplify local vs. production parity. 
+- [ ] Prioritize incremental refactor roadmap: rank findings by impact and effort, defining milestones and acceptance criteria for each planned refactor to update this TODO accordingly.
 
-### Follow-up Documentation Actions
-- [ ] Action: Expand `docs/architecture.md` with the new layered boundaries, explicit interface contracts, and subsystem responsibilities. (Owner: Architecture, Priority: P1)
-- [ ] Action: Audit the documentation set for encoding issues and re-encode any remaining legacy files to UTF-8. (Owner: Documentation, Priority: P1)
-- [ ] Action: Maintain a living boundary map in `docs/architecture.md`, updating it whenever modules move between layers. (Owner: Architecture, Priority: P2)
 
 ## NEW FEATURE FOR LOGGED IN USERS "My Playlists"
 
