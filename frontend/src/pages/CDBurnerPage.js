@@ -1,5 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-/* eslint-disable unicode-bom */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import AlbumGallery from '../components/AlbumGallery';
 import { AlbumCardVariant } from '../components/AlbumCard';

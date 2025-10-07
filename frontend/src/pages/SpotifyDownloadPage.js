@@ -20,6 +20,49 @@ const resolveApiBaseUrl = () => {
   return '';
 };
 
+const extractSpotifyId = (link) => {
+  if (!link) return null;
+  const trimmed = String(link).trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('spotify:')) {
+    const parts = trimmed.split(':');
+    return parts[parts.length - 1] || null;
+  }
+  try {
+    const candidate = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(candidate);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length >= 2) {
+      return segments[1] || null;
+    }
+    if (segments.length === 1) {
+      return segments[0] || null;
+    }
+  } catch (error) {
+    return null;
+  }
+  return null;
+};
+
+const normalizeSpotifyUrl = (link) => {
+  if (!link) return null;
+  const trimmed = String(link).trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('spotify:')) {
+    return trimmed.toLowerCase();
+  }
+  try {
+    const candidate = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(candidate);
+    parsed.search = '';
+    parsed.hash = '';
+    const normalized = `${parsed.origin}${parsed.pathname}`.replace(/\/$/, '');
+    return normalized.toLowerCase();
+  } catch (error) {
+    return trimmed.toLowerCase();
+  }
+};
+
 const SpotifyDownloadPage = () => {
   const location = useLocation();
   const player = usePlayer();
@@ -35,6 +78,7 @@ const SpotifyDownloadPage = () => {
   const [cancelRequested, setCancelRequested] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [pendingSelection, setPendingSelection] = useState(null);
   const [lyricsVisible, setLyricsVisible] = useState(false);
   const [lyricsTrack, setLyricsTrack] = useState(null);
   const autoDownloadAttempted = useRef(false);
@@ -59,7 +103,7 @@ const SpotifyDownloadPage = () => {
       setLoading(false);
       setInitialFetchComplete(true);
     }
-  }, [apiBaseUrl, user]);
+  }, [apiBaseUrl]);
 
   const handleDownload = useCallback(
     async (spotifyLink) => {
@@ -84,7 +128,7 @@ const SpotifyDownloadPage = () => {
         setLoading(false);
       }
     },
-    [apiBaseUrl, fetchAlbums],
+    [apiBaseUrl],
   );
 
   const handleDeleteAlbum = useCallback(
@@ -126,14 +170,56 @@ const SpotifyDownloadPage = () => {
     if (hasActiveDownload) setProgressVisible(true);
   }, [hasActiveDownload]);
 
-  const handleProgressComplete = useCallback(() => {
+  const handleProgressComplete = useCallback((completionPayload) => {
+    const normalizedStatus = (() => {
+      if (completionPayload && typeof completionPayload === 'object' && completionPayload.status) {
+        try {
+          return String(completionPayload.status).toLowerCase();
+        } catch (error) {
+          return null;
+        }
+      }
+      return null;
+    })();
+
+    const candidateResult =
+      completionPayload && typeof completionPayload === 'object' && completionPayload.result && typeof completionPayload.result === 'object'
+        ? completionPayload.result
+        : completionPayload && typeof completionPayload === 'object' && completionPayload.status === 'success'
+          ? completionPayload
+          : null;
+
+    const resultStatus = candidateResult && typeof candidateResult.status === 'string'
+      ? candidateResult.status.toLowerCase()
+      : null;
+
+    const succeeded =
+      (normalizedStatus && (normalizedStatus === 'complete' || normalizedStatus === 'completed' || normalizedStatus === 'success')) ||
+      (resultStatus === 'success');
+
+    const resultSpotifyId =
+      succeeded && candidateResult && typeof candidateResult.spotify_id === 'string' ? candidateResult.spotify_id : null;
+    const resultSpotifyUrl =
+      succeeded && candidateResult && typeof candidateResult.spotify_url === 'string' ? candidateResult.spotify_url : null;
+    const derivedSpotifyId = succeeded ? (resultSpotifyId || extractSpotifyId(activeLink)) : null;
+    const derivedSpotifyUrl = succeeded ? (resultSpotifyUrl || activeLink || null) : null;
+
+    if (succeeded && (derivedSpotifyId || derivedSpotifyUrl)) {
+      setPendingSelection({
+        spotifyId: derivedSpotifyId || null,
+        spotifyUrl: derivedSpotifyUrl || null,
+      });
+    } else {
+      setPendingSelection(null);
+    }
+
     setProgressVisible(false);
     setHasActiveDownload(false);
     setActiveJobId(null);
     setActiveLink(null);
     setCancelRequested(false);
     fetchAlbums();
-  }, [fetchAlbums]);
+  }, [activeLink, fetchAlbums]);
 
   const handleProgressCancelled = useCallback(() => {
     setProgressVisible(false);
@@ -165,7 +251,7 @@ const SpotifyDownloadPage = () => {
         if (cancelled) return;
         const st = (res.data && res.data.status) || 'pending';
         if (st === 'completed') {
-          handleProgressComplete();
+          handleProgressComplete(res.data);
           return;
         }
         if (st === 'failed' || st === 'cancelled') {
@@ -173,7 +259,7 @@ const SpotifyDownloadPage = () => {
             handleProgressCancelled();
           } else {
             setErrorMessage(res.data && res.data.error ? String(res.data.error) : 'Download failed.');
-            handleProgressComplete();
+            handleProgressComplete(res.data);
           }
           return;
         }
@@ -185,32 +271,35 @@ const SpotifyDownloadPage = () => {
     // fire immediate check
     tick();
     return () => {
-      cancelled = true;
       clearInterval(iv);
+      cancelled = true;
     };
   }, [activeJobId, apiBaseUrl, handleProgressCancelled, handleProgressComplete]);
 
   const handleSelectAlbum = useCallback(
-  async (album) => {
-    if (!album) return;
-    const isSame = selectedAlbumId === album.id;
-    if (isSame) {
-      // Toggle off when clicking the already-selected card
-      setSelectedAlbumId(null);
+    async (album, options = {}) => {
+      if (!album) return;
+      const force = Boolean(options.force);
+      const isSame = selectedAlbumId === album.id;
+      if (isSame && !force) {
+        // Toggle off when clicking the already-selected card
+        setSelectedAlbumId(null);
+        setRichMetadata(null);
+        return;
+      }
+      if (!isSame) {
+        setSelectedAlbumId(album.id);
+      }
       setRichMetadata(null);
-      return;
-    }
-    setSelectedAlbumId(album.id);
-    setRichMetadata(null);
-    try {
-      const metadataResponse = await axios.get(`${apiBaseUrl}/api/items/${album.id}/metadata`);
-      setRichMetadata(metadataResponse.data);
-    } catch (error) {
-      console.warn('Failed to fetch selected album metadata', error);
-    }
-  },
-  [apiBaseUrl, selectedAlbumId],
-);
+      try {
+        const metadataResponse = await axios.get(`${apiBaseUrl}/api/items/${album.id}/metadata`);
+        setRichMetadata(metadataResponse.data);
+      } catch (error) {
+        console.warn('Failed to fetch selected album metadata', error);
+      }
+    },
+    [apiBaseUrl, selectedAlbumId],
+  );
 
   useEffect(() => {
     if (!user) return;
@@ -223,6 +312,38 @@ const SpotifyDownloadPage = () => {
       setProgressVisible(true);
     }
   }, [location.state]);
+
+  useEffect(() => {
+    if (!pendingSelection) return;
+    const { spotifyId, spotifyUrl } = pendingSelection;
+    if (!spotifyId && !spotifyUrl) {
+      setPendingSelection(null);
+      return;
+    }
+    if (!albums || albums.length === 0) return;
+    const normalizedTargetUrl = normalizeSpotifyUrl(spotifyUrl);
+    const match = albums.find((album) => {
+      if (spotifyId && album.spotify_id === spotifyId) {
+        return true;
+      }
+      if (normalizedTargetUrl && normalizeSpotifyUrl(album.spotify_url) === normalizedTargetUrl) {
+        return true;
+      }
+      return false;
+    });
+    if (match) {
+      const alreadySelected = selectedAlbumId === match.id;
+      handleSelectAlbum(match, { force: alreadySelected });
+      setPendingSelection(null);
+      if (historySectionRef.current && typeof historySectionRef.current.scrollIntoView === 'function') {
+        try {
+          historySectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (err) {
+          historySectionRef.current.scrollIntoView();
+        }
+      }
+    }
+  }, [albums, pendingSelection, selectedAlbumId, handleSelectAlbum]);
 
   // If a spotify id to select is provided, select matching item when albums list loads
   useEffect(() => {
@@ -307,7 +428,7 @@ const SpotifyDownloadPage = () => {
       artist: Array.isArray(t.artists) && t.artists.length > 0 ? t.artists[0] : '',
     }));
     player.playQueue(queue, index);
-  }, [player, sortedTracks, buildAudioUrl]);
+  }, [player, sortedTracks, buildAudioUrl, selectedAlbumId]);
 
   return (
     <div className="min-h-screen">

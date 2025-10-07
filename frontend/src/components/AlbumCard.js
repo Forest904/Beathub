@@ -1,4 +1,4 @@
-﻿import React, { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -82,7 +82,7 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
         onSelect(album);
       }
     }
-  }, [album, navigate, onSelect, variant]);
+  }, [album, disabled, navigate, onSelect, variant]);
 
   return (
     <div

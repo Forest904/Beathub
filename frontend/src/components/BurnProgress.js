@@ -114,7 +114,7 @@ const BurnProgress = ({ visible, baseUrl, sessionId, onClose }) => {
         esRef.current = null;
       }
     };
-  }, [baseUrl, sessionId, visible]);
+  }, [baseUrl, onClose, sessionId, visible]);
 
   if (!visible) {
     return null;

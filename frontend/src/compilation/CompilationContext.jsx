@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 
 // Local storage key and versioning
@@ -116,10 +116,10 @@ export const CompilationProvider = ({ children }) => {
     });
   };
 
-  const isInCompilation = (id) => {
+  const isInCompilation = useCallback((id) => {
     if (!id) return false;
     return items.some((t) => (t.spotify_id || t.id || t.url || t.uri) === id);
-  };
+  }, [items]);
 
   const value = useMemo(() => ({
     // data
@@ -143,7 +143,7 @@ export const CompilationProvider = ({ children }) => {
     clearCover,
     reorder,
     isInCompilation,
-  }), [name, items, totalMs, capacityMinutes, altCapacityMinutes, compilationMode, coverDataUrl]);
+  }), [name, items, totalMs, capacityMinutes, altCapacityMinutes, compilationMode, coverDataUrl, isInCompilation]);
 
   return (
     <CompilationContext.Provider value={value}>
