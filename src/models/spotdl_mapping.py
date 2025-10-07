@@ -58,7 +58,10 @@ def songs_to_item_dto(
     first = songs[0]
     # Derive item characteristics
     item_type = "album" if len(songs) > 1 else "track"
-    artist_name = first.artist
+    if item_type == "album":
+        artist_name = first.album_artist or first.artist
+    else:
+        artist_name = first.artist
     title_name = first.album_name if first.album_name else first.name
     cover_url = cover_url_override if cover_url_override is not None else first.cover_url
 

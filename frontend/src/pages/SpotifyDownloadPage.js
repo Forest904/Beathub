@@ -63,6 +63,9 @@ const normalizeSpotifyUrl = (link) => {
   }
 };
 
+const AUTO_REFRESH_RETRY_LIMIT = 4;
+const AUTO_REFRESH_DELAY_MS = 1400;
+
 const SpotifyDownloadPage = () => {
   const location = useLocation();
   const player = usePlayer();
@@ -86,21 +89,30 @@ const SpotifyDownloadPage = () => {
 
   const apiBaseUrl = resolveApiBaseUrl();
 
-  const fetchAlbums = useCallback(async () => {
-    setLoading(true);
+  const fetchAlbums = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const response = await axios.get(`${apiBaseUrl}/api/albums`);
       setAlbums(response.data);
-      setErrorMessage(null);
+      if (!silent) {
+        setErrorMessage(null);
+      }
     } catch (error) {
       console.error('Error fetching albums', error);
-      if (error?.response?.status === 401 || error?.response?.status === 403) {
-        setErrorMessage('Please sign in to view your downloaded items.');
-      } else {
-        setErrorMessage('We could not load your downloads just now. Please try again.');
+      if (!silent) {
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+          setErrorMessage('Please sign in to view your downloaded items.');
+        } else {
+          setErrorMessage('We could not load your downloads just now. Please try again.');
+        }
       }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
       setInitialFetchComplete(true);
     }
   }, [apiBaseUrl]);
@@ -208,6 +220,8 @@ const SpotifyDownloadPage = () => {
       setPendingSelection({
         spotifyId: derivedSpotifyId || null,
         spotifyUrl: derivedSpotifyUrl || null,
+        retriesRemaining: AUTO_REFRESH_RETRY_LIMIT,
+        token: Date.now(),
       });
     } else {
       setPendingSelection(null);
@@ -218,7 +232,7 @@ const SpotifyDownloadPage = () => {
     setActiveJobId(null);
     setActiveLink(null);
     setCancelRequested(false);
-    fetchAlbums();
+    fetchAlbums({ silent: true });
   }, [activeLink, fetchAlbums]);
 
   const handleProgressCancelled = useCallback(() => {
@@ -314,13 +328,40 @@ const SpotifyDownloadPage = () => {
   }, [location.state]);
 
   useEffect(() => {
-    if (!pendingSelection) return;
-    const { spotifyId, spotifyUrl } = pendingSelection;
+    if (!pendingSelection) return undefined;
+    const { spotifyId, spotifyUrl, retriesRemaining = 0, token } = pendingSelection;
     if (!spotifyId && !spotifyUrl) {
       setPendingSelection(null);
-      return;
+      return undefined;
     }
-    if (!albums || albums.length === 0) return;
+
+    const scheduleRefreshAttempt = () => {
+      if (retriesRemaining <= 0) {
+        setPendingSelection(null);
+        return undefined;
+      }
+      const timer = setTimeout(() => {
+        fetchAlbums({ silent: true });
+        setPendingSelection((prev) => {
+          if (!prev || prev.token !== token) {
+            return prev;
+          }
+          const nextRetries = prev.retriesRemaining > 0 ? prev.retriesRemaining - 1 : 0;
+          return nextRetries > 0 ? { ...prev, retriesRemaining: nextRetries } : null;
+        });
+      }, AUTO_REFRESH_DELAY_MS);
+      return timer;
+    };
+
+    if (!albums || albums.length === 0) {
+      const pendingTimer = scheduleRefreshAttempt();
+      return () => {
+        if (pendingTimer) {
+          clearTimeout(pendingTimer);
+        }
+      };
+    }
+
     const normalizedTargetUrl = normalizeSpotifyUrl(spotifyUrl);
     const match = albums.find((album) => {
       if (spotifyId && album.spotify_id === spotifyId) {
@@ -342,8 +383,16 @@ const SpotifyDownloadPage = () => {
           historySectionRef.current.scrollIntoView();
         }
       }
+      return undefined;
     }
-  }, [albums, pendingSelection, selectedAlbumId, handleSelectAlbum]);
+
+    const retryTimer = scheduleRefreshAttempt();
+    return () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [albums, pendingSelection, selectedAlbumId, handleSelectAlbum, fetchAlbums]);
 
   // If a spotify id to select is provided, select matching item when albums list loads
   useEffect(() => {

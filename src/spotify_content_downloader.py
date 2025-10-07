@@ -741,9 +741,19 @@ class SpotifyContentDownloader:
                 'local_lyrics_path': t.local_lyrics_path,
             })
 
-        return {
+        completion_message = f"Successfully processed {item_type}: {title_name}"
+        if failed_tracks:
+            failure_suffix = f" (with {len(failed_tracks)} error{'s' if len(failed_tracks) != 1 else ''})"
+            completion_message = completion_message + failure_suffix
+            logger.warning(
+                "Completed %s with %d failed tracks.",
+                title_name,
+                len(failed_tracks),
+            )
+
+        response_payload = {
             "status": "success",
-            "message": f"Successfully processed {item_type}: {title_name}",
+            "message": completion_message,
             "item_name": title_name,
             "item_type": item_type,
             "spotify_id": spotify_id,
@@ -756,6 +766,11 @@ class SpotifyContentDownloader:
             "metadata_file_path": metadata_json_path,
             "user_id": user_id,
         }
+        if failed_tracks:
+            response_payload["failed_tracks"] = failed_tracks
+            response_payload["partial_success"] = True
+
+        return response_payload
 
 
     def download_compilation(self, tracks: List[Dict[str, Any]], name: str, cover_data_url: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
@@ -1114,56 +1129,81 @@ class SpotifyContentDownloader:
                 spotdl_client.set_output_template(output_template)
                 spotdl_client.set_progress_callback(_progress_cb, web_ui=True, cancel_event=cancel_event)
                 results = spotdl_client.download_songs(songs, cancel_event=cancel_event)
+                successful_downloads = 0
+                partial_failures = False
                 for index, (song, p) in enumerate(results, start=1):
                     song_url = getattr(song, "url", None)
                     display_name = getattr(song, "display_name", None) or getattr(song, "song_name", None)
                     results_map[song_url] = str(p) if p else None
-                    if p is None:
-                        audio_failed = True
-                        provider = getattr(song, "audio_provider", None)
-                        detail = getattr(song, "download_error", None) or getattr(song, "error_message", None)
-                        if isinstance(detail, Exception):
-                            detail = str(detail)
-                        if not detail:
-                            detail = getattr(song, "log", None)
-                        if isinstance(detail, dict):
-                            detail = detail.get("message") or detail.get("error")
-                        if not detail:
-                            detail = "Audio provider did not return a media file."
-                        failed_entry = {
-                            "index": index,
-                            "title": display_name or song_url or f"Track {index}",
-                            "spotify_url": song_url,
-                            "audio_provider": provider,
-                            "error_message": detail,
-                        }
-                        failed_tracks.append(failed_entry)
-                        if song_url:
-                            failed_urls.add(song_url)
-                        logger.error(
-                            "Audio download failed for %s (provider=%s, url=%s): %s",
-                            failed_entry["title"],
-                            provider,
-                            song_url,
-                            detail,
-                        )
-                        if publisher is not None:
-                            try:
-                                publisher.publish({
-                                    'event': 'download_progress',
-                                    'song_display_name': failed_entry["title"],
-                                    'spotify_url': song_url,
-                                    'status': f"Error: {detail}",
-                                    'progress': 0,
-                                    'overall_completed': max(0, index - len(failed_tracks)),
-                                    'overall_total': total_expected,
-                                    'overall_progress': int((max(0, index - len(failed_tracks)) / max(1, total_expected)) * 100),
-                                    'error_message': detail,
-                                    'audio_provider': provider,
-                                    'severity': 'error',
-                                })
-                            except Exception:
-                                pass
+                    if p:
+                        successful_downloads += 1
+                        continue
+
+                    partial_failures = True
+                    provider = getattr(song, "audio_provider", None)
+                    detail = getattr(song, "download_error", None) or getattr(song, "error_message", None)
+                    if isinstance(detail, Exception):
+                        detail = str(detail)
+                    if not detail:
+                        detail = getattr(song, "log", None)
+                    if isinstance(detail, dict):
+                        detail = detail.get("message") or detail.get("error")
+                    if not detail:
+                        detail = "Audio provider did not return a media file."
+                    failed_entry = {
+                        "index": index,
+                        "title": display_name or song_url or f"Track {index}",
+                        "spotify_url": song_url,
+                        "audio_provider": provider,
+                        "error_message": detail,
+                    }
+                    failed_tracks.append(failed_entry)
+                    if song_url:
+                        failed_urls.add(song_url)
+                    logger.error(
+                        "Audio download failed for %s (provider=%s, url=%s): %s",
+                        failed_entry["title"],
+                        provider,
+                        song_url,
+                        detail,
+                    )
+                    if publisher is not None:
+                        try:
+                            publisher.publish({
+                                'event': 'download_progress',
+                                'song_display_name': failed_entry["title"],
+                                'spotify_url': song_url,
+                                'status': f"Error: {detail}",
+                                'progress': 0,
+                                'overall_completed': successful_downloads,
+                                'overall_total': total_expected,
+                                'overall_progress': int((successful_downloads / max(1, total_expected)) * 100),
+                                'error_message': detail,
+                                'audio_provider': provider,
+                                'severity': 'error',
+                            })
+                        except Exception:
+                            pass
+                if successful_downloads == 0 and failed_tracks:
+                    audio_failed = True
+                    if error_result is None:
+                        error_result = {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
+                elif partial_failures and publisher is not None:
+                    try:
+                        publisher.publish({
+                            'event': 'download_error_summary',
+                            'song_display_name': title_name,
+                            'status': f'Completed with {len(failed_tracks)} failed track(s).',
+                            'progress': 100 if successful_downloads else 0,
+                            'overall_completed': successful_downloads,
+                            'overall_total': total_expected,
+                            'overall_progress': int((successful_downloads / max(1, total_expected)) * 100),
+                            'error_message': 'Some tracks failed to download.',
+                            'failed_tracks': failed_tracks,
+                            'severity': 'warning',
+                        })
+                    except Exception:
+                        pass
             except Exception as e:
                 # Map specific SpotDL errors when possible
                 try:
@@ -1415,9 +1455,19 @@ class SpotifyContentDownloader:
                     'local_lyrics_path': t.local_lyrics_path,
                 })
 
-        return {
+        completion_message = f"Successfully processed {item_type}: {title_name}"
+        if failed_tracks:
+            failure_suffix = f" (with {len(failed_tracks)} error{'s' if len(failed_tracks) != 1 else ''})"
+            completion_message = completion_message + failure_suffix
+            logger.warning(
+                "Completed %s with %d failed tracks.",
+                title_name,
+                len(failed_tracks),
+            )
+
+        response_payload = {
             "status": "success",
-            "message": f"Successfully processed {item_type}: {title_name}",
+            "message": completion_message,
             "item_name": title_name,
             "item_type": item_type,
             "spotify_id": spotify_id,
@@ -1430,6 +1480,11 @@ class SpotifyContentDownloader:
             "metadata_file_path": metadata_json_path,
             "user_id": user_id,
         }
+        if failed_tracks:
+            response_payload["failed_tracks"] = failed_tracks
+            response_payload["partial_success"] = True
+
+        return response_payload
 
 
 
