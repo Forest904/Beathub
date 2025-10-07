@@ -1,7 +1,10 @@
 import logging
-import re
 import os
-from typing import Optional
+import re
+from typing import Iterable, Optional
+
+import requests
+from bs4 import BeautifulSoup
 
 from config import Config
 
@@ -18,6 +21,11 @@ try:
 except Exception:  # pragma: no cover - mutagen is in requirements; defensive import only
     MutagenFile = None  # type: ignore
     ID3 = USLT = MP3 = MP4 = FLAC = OggVorbis = None  # type: ignore
+
+try:
+    import syncedlyrics
+except Exception:  # pragma: no cover - optional dependency failures shouldn't break pipeline
+    syncedlyrics = None  # type: ignore
 
 
 class LyricsService:
@@ -146,4 +154,134 @@ class LyricsService:
             return txt_path
         except Exception as e:
             logger.debug("Failed to export embedded lyrics for %s: %s", audio_path, e)
+            return None
+
+    # --- Remote fallback ---
+    def _build_query(self, title: Optional[str], artists: Optional[Iterable[str]]) -> Optional[str]:
+        parts = []
+        if title:
+            parts.append(title)
+        if artists:
+            if isinstance(artists, str):
+                parts.append(artists)
+            else:
+                parts.append(" ".join(a for a in artists if a))
+        query = " ".join(p.strip() for p in parts if p and p.strip()).strip()
+        return query or None
+
+    def fetch_remote_lyrics(self, title: Optional[str], artists: Optional[Iterable[str]]) -> Optional[str]:
+        if syncedlyrics is None:
+            logger.debug("syncedlyrics library not available; skipping remote lyrics fetch")
+            return None
+        query = self._build_query(title, artists)
+        if not query:
+            return None
+        try:
+            logger.debug("Attempting remote lyrics lookup for query: %s", query)
+            text = syncedlyrics.search(query)
+        except Exception as exc:  # pragma: no cover - network/provider issues
+            logger.warning("Remote lyrics search failed for %s: %s", query, exc)
+            return None
+        if not text:
+            logger.debug("Remote lyrics providers returned no results for %s", query)
+            return None
+        cleaned = text.strip()
+        if not cleaned:
+            return None
+        return cleaned
+
+    def fetch_genius_lyrics(self, title: Optional[str], artists: Optional[Iterable[str]]) -> Optional[str]:
+        token = Config.GENIUS_ACCESS_TOKEN
+        if not token:
+            logger.debug("GENIUS_ACCESS_TOKEN not configured; skipping Genius lookup")
+            return None
+        query = self._build_query(title, artists)
+        if not query:
+            return None
+        headers = {"Authorization": f"Bearer {token}"}
+        try:
+            resp = requests.get(
+                "https://api.genius.com/search",
+                params={"q": query},
+                headers=headers,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.warning("Genius search failed for %s: %s", query, exc)
+            return None
+        hits = data.get("response", {}).get("hits", [])
+        if not hits:
+            logger.debug("Genius search returned no hits for %s", query)
+            return None
+        url = hits[0]["result"].get("url")
+        if not url:
+            return None
+        try:
+            page = requests.get(url, timeout=10)
+            page.raise_for_status()
+        except Exception as exc:
+            logger.warning("Failed to fetch Genius page %s: %s", url, exc)
+            return None
+        soup = BeautifulSoup(page.text, "html.parser")
+        containers = soup.select("div[class^='Lyrics__Container'], .lyrics")
+        if not containers:
+            logger.debug("No lyric containers found on Genius page %s", url)
+            return None
+        lines = []
+        for div in containers:
+            # Replace <br> with newlines for readability
+            for br in div.select("br"):
+                br.replace_with("\n")
+            text = div.get_text(separator="\n").strip()
+            if text:
+                lines.append(text)
+        lyrics = "\n".join(lines).strip()
+        if not lyrics:
+            logger.debug("Extracted empty lyrics from Genius page %s", url)
+            return None
+        return lyrics
+
+    def ensure_lyrics(
+        self,
+        audio_path: str,
+        *,
+        title: Optional[str] = None,
+        artists: Optional[Iterable[str]] = None,
+    ) -> Optional[str]:
+        """Ensure a lyrics text file exists for the given audio track.
+
+        Order of operations:
+            1. Attempt to export embedded lyrics from the audio container.
+            2. If none are embedded, query remote providers (syncedlyrics).
+
+        Returns the path to the lyrics file if written, otherwise None.
+        """
+        embedded = self.export_embedded_lyrics(audio_path)
+        if embedded:
+            return embedded
+
+        remote = self.fetch_remote_lyrics(title, artists)
+        if not remote:
+            genius = self.fetch_genius_lyrics(title, artists)
+            if not genius:
+                logger.info(
+                    "Lyrics not found for %s (artists=%s)",
+                    title or os.path.splitext(os.path.basename(audio_path))[0],
+                    ", ".join(artists) if artists else "unknown",
+                )
+                return None
+            remote = genius
+
+        base_dir = os.path.dirname(audio_path)
+        base_name = os.path.splitext(os.path.basename(audio_path))[0]
+        txt_path = os.path.join(base_dir, f"{base_name}.txt")
+        try:
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write(remote)
+            logger.info("Fetched remote lyrics for %s -> %s", title or base_name, txt_path)
+            return txt_path
+        except Exception as exc:
+            logger.warning("Failed to write remote lyrics for %s: %s", audio_path, exc)
             return None

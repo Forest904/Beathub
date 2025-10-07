@@ -96,7 +96,18 @@ def configure_logging(log_dir: str) -> str:
 def create_app():
     app = Flask(__name__, static_folder='frontend/build', static_url_path='') # Assuming frontend/build now for static files
     app.config.from_object(Config)
-    CORS(app)
+    allowed_origins = sorted({
+        origin.strip()
+        for origin in Config.CORS_ALLOWED_ORIGINS
+        if origin and origin.strip() and origin.strip() != "*"
+    })
+    cors_resources = {r"/api/*": {"origins": allowed_origins}}
+    CORS(
+        app,
+        resources=cors_resources,
+        supports_credentials=True,
+        expose_headers=["Content-Disposition"],
+    )
 
     # Initialize database
     initialize_database(app)

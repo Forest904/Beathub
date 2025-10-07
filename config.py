@@ -98,4 +98,10 @@ class Config:
     # Optional secondary capacity to display (e.g., 74 for older 74-min discs). Set 0 to hide.
     CD_ALT_CAPACITY_MINUTES = _get_int('CD_ALT_CAPACITY_MINUTES', 74)
 
+    # CORS
+    CORS_ALLOWED_ORIGINS = _get_csv_list(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5000,http://127.0.0.1:5000',
+    )
+
 

@@ -19,6 +19,7 @@ from flask_login import current_user
 
 from config import Config
 from .database.db_manager import db, DownloadJob, get_system_user_id
+from .services.download_history import persist_download_item
 
 
 JobResult = Dict[str, Any]
@@ -192,12 +193,13 @@ class JobQueue:
                 # Respect cooperative cancellation prior to starting network work
                 if job.cancel_event.is_set():
                     raise RuntimeError("cancelled")
-                result = self.downloader.download_spotify_content(job.link, cancel_event=job.cancel_event)
+                result = self.downloader.download_spotify_content(job.link, cancel_event=job.cancel_event, user_id=job.user_id)
                 if isinstance(result, dict):
                     if result.get("status") == "success":
                         job.result = result
                         job.status = "completed"
                         self._update_job_status(job, status=job.status, result=job.result)
+                        persist_download_item(result, explicit_user_id=job.user_id)
                         job.event.set()
                         self.logger.info("Job %s completed", job.id)
                         return

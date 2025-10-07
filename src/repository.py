@@ -16,12 +16,14 @@ logger = logging.getLogger(__name__)
 class DownloadRepository:
     """Interface for persisting downloaded track metadata."""
 
-    def save_tracks(self, tracks: List[TrackDTO]) -> None:  # pragma: no cover - interface
+    def save_tracks(self, tracks: List[TrackDTO], *, user_id: Optional[int] = None) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
 
 class DefaultDownloadRepository(DownloadRepository):
-    def _resolve_user_id(self) -> int:
+    def _resolve_user_id(self, explicit: Optional[int] = None) -> int:
+        if explicit is not None:
+            return explicit
         if has_app_context():
             try:
                 user = current_user
@@ -31,15 +33,17 @@ class DefaultDownloadRepository(DownloadRepository):
                 pass
         return get_system_user_id()
 
-    def save_tracks(self, tracks: List[TrackDTO]) -> None:
+    def save_tracks(self, tracks: List[TrackDTO], *, user_id: Optional[int] = None) -> None:
         try:
-            user_id = self._resolve_user_id()
+            resolved_user_id = self._resolve_user_id(user_id)
             for t in tracks:
                 existing = DownloadedTrack.query.filter_by(spotify_id=t.spotify_id).first()
                 if existing:
                     existing.local_lyrics_path = t.local_lyrics_path
-                    if not existing.user_id:
-                        existing.user_id = user_id
+                    if existing.user_id != resolved_user_id:
+                        existing.user_id = resolved_user_id
+                    if existing.local_path != t.local_path:
+                        existing.local_path = t.local_path
                 else:
                     row = DownloadedTrack(
                         spotify_id=t.spotify_id,
@@ -64,7 +68,7 @@ class DefaultDownloadRepository(DownloadRepository):
                         cover_url=t.cover_url,
                         local_path=t.local_path,
                         local_lyrics_path=t.local_lyrics_path,
-                        user_id=user_id,
+                        user_id=resolved_user_id,
                     )
                     db.session.add(row)
             db.session.commit()

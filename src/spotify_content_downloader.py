@@ -1,5 +1,6 @@
 ﻿import logging
 import os
+import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 import threading
 
@@ -520,7 +521,7 @@ class SpotifyContentDownloader:
         }
         return result
 
-    def _download_best_of_album(self, artist_id: str, *, cancel_event: Optional[threading.Event] = None) -> Dict[str, Any]:
+    def _download_best_of_album(self, artist_id: str, *, cancel_event: Optional[threading.Event] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Download pipeline for synthetic Best-Of albums using SpotDL on per-track URLs."""
         # Resolve progress publisher (same behavior as main pipeline)
         publisher = self.progress_publisher
@@ -537,7 +538,7 @@ class SpotifyContentDownloader:
         # Build details and track list
         details = self.build_best_of_album_details(artist_id)
         if not details:
-            return {"status": "error", "error_code": "metadata_unavailable", "message": "Could not build Best-Of album for this artist."}
+            return {"status": "error", "error_code": "metadata_unavailable", "message": "Could not build Best-Of album for this artist.", "user_id": user_id}
 
         artist_name = details.get('artist') or 'Unknown Artist'
         title_name = details.get('title') or f'Best Of {artist_name}'
@@ -549,7 +550,7 @@ class SpotifyContentDownloader:
         # Prepare output directory and cover art
         item_specific_output_dir = self.file_manager.create_item_output_directory(artist_name, title_name)
         if not item_specific_output_dir:
-            return {"status": "error", "message": f"Could not create output directory for {title_name}."}
+            return {"status": "error", "message": f"Could not create output directory for {title_name}.", "user_id": user_id}
 
         local_cover_image_path = self.audio_cover_download_service.download_cover_image(
             image_url_from_metadata,
@@ -675,10 +676,11 @@ class SpotifyContentDownloader:
             exported_count = 0
             for t in track_dtos:
                 if t.local_path and not t.local_lyrics_path:
-                    try:
-                        exported = self.lyrics_service.export_embedded_lyrics(t.local_path)
-                    except Exception:
-                        exported = None
+                    exported = self.lyrics_service.ensure_lyrics(
+                        t.local_path,
+                        title=t.title,
+                        artists=t.artists,
+                    )
                     t.local_lyrics_path = exported
                 exported_count += 1
                 if publisher is not None:
@@ -708,7 +710,7 @@ class SpotifyContentDownloader:
 
         # Persist track rows
         try:
-            self.repo.save_tracks(track_dtos)
+            self.repo.save_tracks(track_dtos, user_id=user_id)
         except Exception:
             pass
 
@@ -751,11 +753,12 @@ class SpotifyContentDownloader:
             "cover_art_url": image_url_from_metadata,
             "local_cover_image_path": local_cover_image_path,
             "tracks": simplified_tracks_info_for_return,
-            "metadata_file_path": metadata_json_path
+            "metadata_file_path": metadata_json_path,
+            "user_id": user_id,
         }
 
 
-    def download_compilation(self, tracks: List[Dict[str, Any]], name: str, cover_data_url: Optional[str] = None) -> Dict[str, Any]:
+    def download_compilation(self, tracks: List[Dict[str, Any]], name: str, cover_data_url: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Download an ad-hoc compilation of tracks into a dedicated folder.
 
         Args:
@@ -876,10 +879,11 @@ class SpotifyContentDownloader:
         exported_count = 0
         for t in track_dtos:
             if t.local_path and not t.local_lyrics_path:
-                try:
-                    exported = self.lyrics_service.export_embedded_lyrics(t.local_path)
-                except Exception:
-                    exported = None
+                exported = self.lyrics_service.ensure_lyrics(
+                    t.local_path,
+                    title=t.title,
+                    artists=t.artists,
+                )
                 t.local_lyrics_path = exported
             exported_count += 1
             if publisher is not None:
@@ -897,7 +901,7 @@ class SpotifyContentDownloader:
                     pass
 
         try:
-            self.repo.save_tracks(track_dtos)
+            self.repo.save_tracks(track_dtos, user_id=user_id)
         except Exception:
             pass
 
@@ -972,14 +976,15 @@ class SpotifyContentDownloader:
                 } for t in track_dtos
             ],
             'metadata_file_path': os.path.join(comp_dir, 'spotify_metadata.json'),
+            'user_id': user_id,
         }
 
-    def download_spotify_content(self, spotify_link, *, cancel_event: Optional[threading.Event] = None):
+    def download_spotify_content(self, spotify_link, *, cancel_event: Optional[threading.Event] = None, user_id: Optional[int] = None):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""
         # Synthetic Best-Of album support: treat 'bestof:<artist_id>' like a container
         if isinstance(spotify_link, str) and spotify_link.startswith('bestof:'):
             artist_id = spotify_link.split(':', 1)[1]
-            return self._download_best_of_album(artist_id, cancel_event=cancel_event)
+            return self._download_best_of_album(artist_id, cancel_event=cancel_event, user_id=user_id)
         # Progress publisher for SSE/clients (compat: fall back to broker in app context)
         publisher = self.progress_publisher
         if publisher is None:
@@ -1007,7 +1012,7 @@ class SpotifyContentDownloader:
         if item_dto is None:
             initial_metadata = self.metadata_service.get_metadata_from_link(spotify_link)
             if not initial_metadata:
-                return {"status": "error", "message": "Could not retrieve metadata for the given Spotify link."}
+                return {"status": "error", "message": "Could not retrieve metadata for the given Spotify link.", "user_id": user_id}
             artist_name = initial_metadata.get('artist', 'Unknown Artist')
             title_name = initial_metadata.get('title', 'Unknown Title')
             cover_url = initial_metadata.get('image_url')
@@ -1063,6 +1068,8 @@ class SpotifyContentDownloader:
         results_map = {}
         audio_failed = False
         error_result = None
+        failed_tracks: List[dict] = []
+        failed_urls: Set[str] = set()
         if spotdl_client and songs:
             # Drive downloads via SpotDL API (progress published via broker)
             try:
@@ -1107,10 +1114,56 @@ class SpotifyContentDownloader:
                 spotdl_client.set_output_template(output_template)
                 spotdl_client.set_progress_callback(_progress_cb, web_ui=True, cancel_event=cancel_event)
                 results = spotdl_client.download_songs(songs, cancel_event=cancel_event)
-                for song, p in results:
-                    results_map[song.url] = str(p) if p else None
+                for index, (song, p) in enumerate(results, start=1):
+                    song_url = getattr(song, "url", None)
+                    display_name = getattr(song, "display_name", None) or getattr(song, "song_name", None)
+                    results_map[song_url] = str(p) if p else None
                     if p is None:
                         audio_failed = True
+                        provider = getattr(song, "audio_provider", None)
+                        detail = getattr(song, "download_error", None) or getattr(song, "error_message", None)
+                        if isinstance(detail, Exception):
+                            detail = str(detail)
+                        if not detail:
+                            detail = getattr(song, "log", None)
+                        if isinstance(detail, dict):
+                            detail = detail.get("message") or detail.get("error")
+                        if not detail:
+                            detail = "Audio provider did not return a media file."
+                        failed_entry = {
+                            "index": index,
+                            "title": display_name or song_url or f"Track {index}",
+                            "spotify_url": song_url,
+                            "audio_provider": provider,
+                            "error_message": detail,
+                        }
+                        failed_tracks.append(failed_entry)
+                        if song_url:
+                            failed_urls.add(song_url)
+                        logger.error(
+                            "Audio download failed for %s (provider=%s, url=%s): %s",
+                            failed_entry["title"],
+                            provider,
+                            song_url,
+                            detail,
+                        )
+                        if publisher is not None:
+                            try:
+                                publisher.publish({
+                                    'event': 'download_progress',
+                                    'song_display_name': failed_entry["title"],
+                                    'spotify_url': song_url,
+                                    'status': f"Error: {detail}",
+                                    'progress': 0,
+                                    'overall_completed': max(0, index - len(failed_tracks)),
+                                    'overall_total': total_expected,
+                                    'overall_progress': int((max(0, index - len(failed_tracks)) / max(1, total_expected)) * 100),
+                                    'error_message': detail,
+                                    'audio_provider': provider,
+                                    'severity': 'error',
+                                })
+                            except Exception:
+                                pass
             except Exception as e:
                 # Map specific SpotDL errors when possible
                 try:
@@ -1135,17 +1188,107 @@ class SpotifyContentDownloader:
                         return {"status": "error", "error_code": "cancelled", "message": "Download cancelled by user."}
                 except Exception:
                     pass
+                detail = str(e).strip() or repr(e)
+                provider_name = getattr(e, "provider", None) or e.__class__.__name__
+                error_url = None
+                try:
+                    match = re.search(r"https?://\S+", detail or "")
+                    if match:
+                        error_url = match.group(0).rstrip(").,;")
+                except Exception:
+                    error_url = None
+
+                matched_song = None
+                if songs:
+                    if error_url:
+                        for idx, candidate in enumerate(songs, start=1):
+                            if getattr(candidate, "url", None) == error_url:
+                                matched_song = (idx, candidate)
+                                break
+                    if matched_song is None:
+                        for idx, candidate in enumerate(songs, start=1):
+                            cand_url = getattr(candidate, "url", None)
+                            if cand_url not in failed_urls:
+                                matched_song = (idx, candidate)
+                                break
+
+                failed_entry = None
+                if matched_song is not None:
+                    idx, candidate = matched_song
+                    entry_title = (
+                        getattr(candidate, "display_name", None)
+                        or getattr(candidate, "song_name", None)
+                        or getattr(candidate, "name", None)
+                        or f"Track {idx}"
+                    )
+                    candidate_url = getattr(candidate, "url", None)
+                    failed_entry = {
+                        "index": idx,
+                        "title": entry_title,
+                        "spotify_url": error_url or candidate_url,
+                        "audio_provider": provider_name,
+                        "error_message": detail,
+                    }
+                elif songs:
+                    entry_title = getattr(songs[0], "display_name", None) or getattr(songs[0], "song_name", None) or title_name
+                    candidate_url = getattr(songs[0], "url", None)
+                    failed_entry = {
+                        "index": 1,
+                        "title": entry_title,
+                        "spotify_url": error_url or candidate_url,
+                        "audio_provider": provider_name,
+                        "error_message": detail,
+                    }
+                elif error_url:
+                    failed_entry = {
+                        "index": 1,
+                        "title": title_name,
+                        "spotify_url": error_url,
+                        "audio_provider": provider_name,
+                        "error_message": detail,
+                    }
+
+                if failed_entry:
+                    failed_tracks.append(failed_entry)
+                    url_value = failed_entry.get("spotify_url")
+                    if url_value:
+                        failed_urls.add(url_value)
+                    logger.error(
+                        "Audio provider error while downloading %s: %s (provider=%s, url=%s)",
+                        failed_entry["title"],
+                        detail,
+                        provider_name,
+                        failed_entry.get("spotify_url"),
+                    )
+                    if publisher is not None:
+                        try:
+                            publisher.publish({
+                                "event": "download_progress",
+                                "song_display_name": failed_entry["title"],
+                                "spotify_url": failed_entry.get("spotify_url"),
+                                "status": "Error: {}".format(detail),
+                                "progress": 0,
+                                "overall_completed": max(0, len(songs or []) - len(failed_tracks)),
+                                "overall_total": total_expected if songs else 0,
+                                "overall_progress": 0,
+                                "error_message": detail,
+                                "audio_provider": provider_name,
+                                "severity": "error",
+                            })
+                        except Exception:
+                            pass
                 logger.exception("SpotDL API download failed: %s", e)
                 if isinstance(e, AudioProviderError):
-                    error_result = {"status": "error", "error_code": "provider_error", "message": str(e)}
+                    error_result = {"status": "error", "error_code": "provider_error", "message": detail}
                 elif isinstance(e, DownloaderError):
-                    error_result = {"status": "error", "error_code": "downloader_error", "message": str(e)}
+                    error_result = {"status": "error", "error_code": "downloader_error", "message": detail}
                 else:
-                    error_result = {"status": "error", "error_code": "internal_error", "message": f"SpotDL API download failed: {e}"}
+                    error_result = {"status": "error", "error_code": "internal_error", "message": f"SpotDL API download failed: {detail}"}
                 audio_failed = True
-        else:
-            # Without SpotDL search results we cannot download audio
+        if not songs:
             return {"status": "error", "error_code": "search_unavailable", "message": "SpotDL search did not return results or client unavailable."}
+        if audio_failed and failed_tracks and error_result and "failed_tracks" not in error_result:
+            error_result = {**error_result, "failed_tracks": failed_tracks}
 
         # --- Build track DTOs from SpotDL songs (canonical) ---
         track_dtos: List[TrackDTO] = []
@@ -1157,26 +1300,22 @@ class SpotifyContentDownloader:
             # Keep compatibility: if we don't have songs (legacy metadata path), no tracks
             track_dtos = []
 
-        # --- Lyrics handling ---
-        # SpotDL pipeline: we will export embedded lyrics after audio paths are known.
-
-        # --- Wait/check audio completion ---
-        if audio_failed:
-            return error_result or {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
-        # Fill local_path from results_map
+        # Always map known audio paths so downstream processing has access,
+        # even if the download experienced partial failures.
         for t in track_dtos:
             t.local_path = results_map.get(t.spotify_url)
 
         # For SpotDL pipeline: export embedded lyrics alongside audio files (graceful if missing)
-        if True:
-            total_tracks = len(track_dtos)
+        total_tracks = len(track_dtos)
+        if total_tracks:
             exported_count = 0
             for t in track_dtos:
                 if t.local_path and not t.local_lyrics_path:
-                    try:
-                        exported = self.lyrics_service.export_embedded_lyrics(t.local_path)
-                    except Exception:
-                        exported = None
+                    exported = self.lyrics_service.ensure_lyrics(
+                        t.local_path,
+                        title=t.title,
+                        artists=t.artists,
+                    )
                     t.local_lyrics_path = exported
                 exported_count += 1
                 # Progress update for lyrics export phase
@@ -1189,11 +1328,14 @@ class SpotifyContentDownloader:
                             'overall_completed': exported_count,
                             'overall_total': total_tracks,
                             'overall_progress': int((exported_count / max(1, total_tracks)) * 100),
+                            'event': 'lyrics_export',
+                            'lyrics_exported': bool(t.local_lyrics_path),
+                            'lyrics_path': t.local_lyrics_path,
                         })
                     except Exception:
                         pass
             # Final completion event after lyrics export and persistence
-            if publisher is not None:
+            if publisher is not None and not audio_failed:
                 try:
                     publisher.publish({
                         'song_display_name': title_name,
@@ -1206,9 +1348,39 @@ class SpotifyContentDownloader:
                 except Exception:
                     pass
 
+        # --- Wait/check audio completion ---
+        if audio_failed:
+            failure_payload = error_result or {
+                "status": "error",
+                "error_code": "download_failed",
+                "message": f"Audio download failed for {title_name}.",
+                "failed_tracks": failed_tracks,
+            }
+            if "failed_tracks" not in failure_payload:
+                failure_payload = {**failure_payload, "failed_tracks": failed_tracks}
+            if user_id is not None and "user_id" not in failure_payload:
+                failure_payload = {**failure_payload, "user_id": user_id}
+            if publisher is not None:
+                try:
+                    publisher.publish({
+                        'event': 'download_error_summary',
+                        'song_display_name': title_name,
+                        'status': failure_payload.get("message"),
+                        'progress': 0,
+                        'overall_completed': max(0, len(songs or []) - len(failed_tracks)),
+                        'overall_total': len(songs or []),
+                        'overall_progress': 0,
+                        'error_message': failure_payload.get("message"),
+                        'failed_tracks': failure_payload.get("failed_tracks"),
+                        'severity': 'error',
+                    })
+                except Exception:
+                    pass
+            return failure_payload
+
         # Persist track rows (now including local audio path and lyrics path)
         try:
-            self.repo.save_tracks(track_dtos)
+            self.repo.save_tracks(track_dtos, user_id=user_id)
         except Exception:
             # Repository implementations log their own errors
             pass
@@ -1255,7 +1427,8 @@ class SpotifyContentDownloader:
             "cover_art_url": image_url_from_metadata,
             "local_cover_image_path": local_cover_image_path,
             "tracks": simplified_tracks_info_for_return,
-            "metadata_file_path": metadata_json_path
+            "metadata_file_path": metadata_json_path,
+            "user_id": user_id,
         }
 
 

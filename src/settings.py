@@ -23,6 +23,37 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return val.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
 
+def _parse_audio_providers(value: Optional[object]) -> List[str]:
+    """Normalize audio provider configuration into a unique ordered list."""
+    if value is None:
+        tokens: List[str] = []
+    elif isinstance(value, str):
+        tokens = [token.strip() for token in value.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        tokens = [str(token).strip() for token in value]
+    else:
+        tokens = [str(value).strip()]
+
+    aliases = {
+        "ytmusic": "youtube-music",
+        "youtube music": "youtube-music",
+        "yt music": "youtube-music",
+        "yt": "youtube",
+        "yt-dlp": "youtube",
+    }
+    normalized: List[str] = []
+    for token in tokens:
+        if not token:
+            continue
+        key = token.lower()
+        key = aliases.get(key, key)
+        if key not in normalized:
+            normalized.append(key)
+    if not normalized:
+        return ["youtube-music"]
+    return normalized
+
+
 class AppSettings(BaseModel):
     """Application-wide settings with SpotDL-related options."""
 
@@ -34,7 +65,7 @@ class AppSettings(BaseModel):
     spotify_client_secret: Optional[str] = Field(default=Config.SPOTIPY_CLIENT_SECRET)
 
     # SpotDL downloader options
-    audio_providers: List[str] = Field(default_factory=lambda: [Config.SPOTDL_AUDIO_SOURCE])
+    audio_providers: List[str] = Field(default_factory=lambda: _parse_audio_providers(Config.SPOTDL_AUDIO_SOURCE))
     format: str = Field(default=Config.SPOTDL_FORMAT)
     threads: int = Field(default=Config.SPOTDL_THREADS)
     overwrite: str = Field(default="skip")
@@ -56,6 +87,11 @@ class AppSettings(BaseModel):
         if v not in allowed:
             return "skip"
         return v
+
+    @field_validator("audio_providers", mode="before")
+    @classmethod
+    def _normalize_audio_providers(cls, value):
+        return _parse_audio_providers(value)
 
 
 def load_app_settings() -> AppSettings:

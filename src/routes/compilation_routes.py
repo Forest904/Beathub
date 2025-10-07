@@ -5,9 +5,9 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from flask import Blueprint, jsonify, request
-from flask_login import login_required
+from flask_login import login_required, current_user
 
-from src.database.db_manager import db, DownloadedItem
+from src.database.db_manager import db, DownloadedItem, get_system_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,15 @@ compilation_bp = Blueprint('compilation_bp', __name__, url_prefix='/api')
 def _get_downloader():
     from flask import current_app
     return current_app.extensions.get('spotify_downloader')
+
+
+def _resolve_user_id() -> int:
+    try:
+        if getattr(current_user, "is_authenticated", False):
+            return int(current_user.get_id())
+    except Exception:
+        pass
+    return get_system_user_id()
 
 
 @compilation_bp.route('/compilations/download', methods=['POST'])
@@ -122,25 +131,39 @@ def download_compilation_api():
     if not cover_path:
         cover_path = _write_default_svg(name, comp_dir)
 
+    user_id = _resolve_user_id()
+
     # Persist or update DB record
     try:
-        existing = DownloadedItem.query.filter_by(spotify_id=synthetic_spotify_id).first()
+        existing = DownloadedItem.query.filter_by(spotify_id=synthetic_spotify_id, user_id=user_id).first()
+        ownership_changed = False
         if not existing:
-            item = DownloadedItem(
-                spotify_id=synthetic_spotify_id,
-                title=name,
-                artist='Various Artists',
-                image_url=f"/api/items/by-spotify/{synthetic_spotify_id}/cover",
-                spotify_url=None,
-                local_path=comp_dir,
-                item_type='compilation',
-            )
-            db.session.add(item)
-            db.session.commit()
-        else:
+            existing = DownloadedItem.query.filter_by(spotify_id=synthetic_spotify_id).first()
+            if existing:
+                ownership_changed = existing.user_id != user_id
+                if ownership_changed:
+                    existing.user_id = user_id
+            else:
+                item = DownloadedItem(
+                    user_id=user_id,
+                    spotify_id=synthetic_spotify_id,
+                    title=name,
+                    artist='Various Artists',
+                    image_url=f"/api/items/by-spotify/{synthetic_spotify_id}/cover",
+                    spotify_url=None,
+                    local_path=comp_dir,
+                    item_type='compilation',
+                )
+                db.session.add(item)
+                db.session.commit()
+                existing = item
+        if existing:
             # Ensure path + cover URL are up to date
             new_url = f"/api/items/by-spotify/{synthetic_spotify_id}/cover"
-            changed = False
+            changed = ownership_changed
+            if existing.user_id != user_id:
+                existing.user_id = user_id
+                changed = True
             if existing.local_path != comp_dir:
                 existing.local_path = comp_dir
                 changed = True
@@ -155,7 +178,7 @@ def download_compilation_api():
 
     def _run_job():
         try:
-            downloader.download_compilation(tracks, name, cover_data_url=cover_data_url)
+            downloader.download_compilation(tracks, name, cover_data_url=cover_data_url, user_id=user_id)
         except Exception as e:
             logger.error('Compilation download failed: %s', e, exc_info=True)
 
@@ -164,7 +187,7 @@ def download_compilation_api():
         t.start()
         return jsonify({'status': 'accepted', 'compilation_spotify_id': synthetic_spotify_id, 'output_directory': comp_dir}), 202
 
-    result = downloader.download_compilation(tracks, name, cover_data_url=cover_data_url)
+    result = downloader.download_compilation(tracks, name, cover_data_url=cover_data_url, user_id=user_id)
     http_status = 200 if isinstance(result, dict) and result.get('status') == 'success' else 500
     return jsonify(result), http_status
 

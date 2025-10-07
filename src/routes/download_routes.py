@@ -8,9 +8,15 @@ from src.database.db_manager import db, DownloadedItem, get_system_user_id
 from src.lyrics_service import LyricsService
 import re
 
+from src.services.download_history import persist_download_item
+
 logger = logging.getLogger(__name__)
 
 download_bp = Blueprint('download_bp', __name__, url_prefix='/api')
+
+def _persist_download_item(result: dict) -> None:
+    """Persist DownloadedItem metadata for completed downloads (idempotent)."""
+    persist_download_item(result)
 
 # Resolve the user id for persistence; fall back to the system user when unauthenticated.
 def _resolve_user_id() -> int:
@@ -59,7 +65,7 @@ def download_spotify_item_api():
         result = jobs.wait(job.id)
     else:
         # Direct call when no job queue is configured
-        result = spotify_downloader.download_spotify_content(spotify_link)
+        result = spotify_downloader.download_spotify_content(spotify_link, user_id=_resolve_user_id())
 
     if not isinstance(result, dict):
         return jsonify({"status": "error", "message": "Unexpected orchestrator response."}), 500
@@ -75,42 +81,7 @@ def download_spotify_item_api():
         local_path = result.get('output_directory')
 
         logger.info(f"Attempting to save to DB: Type='{item_type}', ID='{spotify_id}', Title='{title}', Artist='{artist}'")
-
-        # Validate essential fields before attempting DB save
-        if not spotify_id or not title:
-            logger.warning(f"Missing crucial data for DB save (Spotify ID or Title). Skipping DB storage for {spotify_link}.")
-            return jsonify(result), 200
-
-        # Determine if this item type should be stored in the DownloadedItem model
-        if item_type in ["album", "track", "playlist"]:
-            try:
-                user_id = _resolve_user_id()
-                existing_item = DownloadedItem.query.filter_by(spotify_id=spotify_id, user_id=user_id).first()
-                if not existing_item:
-                    new_item = DownloadedItem(
-                        user_id=user_id,
-                        spotify_id=spotify_id,
-                        title=title,
-                        artist=artist,
-                        image_url=(f"/api/items/by-spotify/{spotify_id}/cover" if result.get('local_cover_image_path') else image_url),
-
-                        spotify_url=spotify_url,
-                        local_path=local_path,
-                        item_type=item_type
-                    )
-                    db.session.add(new_item)
-                    db.session.commit()
-                    logger.info(f"Added {item_type} to DB: {new_item.title} (ID: {new_item.id})")
-                else:
-                    if existing_item.local_path != local_path:
-                        existing_item.local_path = local_path
-                        db.session.commit()
-                        logger.info(f"Updated local_path for '{existing_item.title}' to '{local_path}'")
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"DATABASE ERROR: Failed to save/update {item_type} '{title}' (ID: {spotify_id}) to DB: {e}", exc_info=True)
-        else:
-            logger.warning(f"Unhandled item_type '{item_type}' encountered. Skipping DB storage for this item.")
+        _persist_download_item(result)
 
         return jsonify(result), 200
 
@@ -190,6 +161,8 @@ def get_job_status(job_id: str):
         "result": job.result,
         "error": job.error,
     }
+    if job.status == "completed" and isinstance(job.result, dict) and job.result.get("status") == "success":
+        _persist_download_item(job.result)
     return jsonify(payload), 200
 
 @download_bp.route('/albums', methods=['GET'])

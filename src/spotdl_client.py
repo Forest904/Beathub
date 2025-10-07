@@ -205,6 +205,15 @@ class SpotdlClient:
                 if spotify_url is None:
                     spotify_url = getattr(song_obj, "url", None)
 
+                audio_provider = getattr(song_obj, "audio_provider", None)
+                error_message = getattr(tracker, "error_message", None) or getattr(tracker, "error", None)
+                if not error_message:
+                    try:
+                        error_message = getattr(tracker, "exception", None)
+                    except Exception:
+                        error_message = None
+                if isinstance(error_message, Exception):
+                    error_message = str(error_message)
                 ev = {
                     "song_display_name": getattr(tracker, "song_name", None)
                     or getattr(song_obj, "display_name", None),
@@ -216,7 +225,14 @@ class SpotdlClient:
                     "overall_total": int(getattr(tracker.parent, "song_count", 0) or 0),
                     "overall_progress": int(getattr(tracker.parent, "overall_progress", 0) or 0),
                     "event": "download_progress",
+                    "audio_provider": audio_provider,
                 }
+                if error_message:
+                    ev["error_message"] = error_message
+                if isinstance(message, str) and message.lower().startswith("error"):
+                    ev["severity"] = "error"
+                    if error_message and error_message not in message:
+                        ev["status"] = f"{message}: {error_message}"
                 cb(ev)
             except Exception as e:  # pragma: no cover - do not break downloads on UI errors
                 # If cancellation is raised, re-raise so the engine call can unwind
@@ -374,6 +390,13 @@ def build_default_client(app_logger: Optional[logging.Logger] = None) -> SpotdlC
     """Build a SpotdlClient from environment/config defaults."""
     settings = load_app_settings()
     opts = build_spotdl_downloader_options(settings)
+    if app_logger is not None:
+        try:
+            providers = getattr(opts, "audio_providers", None)
+        except Exception:
+            providers = None
+        if providers:
+            app_logger.info("SpotDL audio providers configured: %s", list(providers))
 
     if not settings.spotify_client_id or not settings.spotify_client_secret:
         raise RuntimeError(

@@ -2,6 +2,8 @@ import logging
 from flask import Blueprint, Response
 from flask_cors import cross_origin
 
+from config import Config
+
 logger = logging.getLogger(__name__)
 
 progress_bp = Blueprint('progress_bp', __name__, url_prefix='/api')
@@ -13,7 +15,7 @@ def _get_broker():
 
 
 @progress_bp.route('/progress/stream')
-@cross_origin()  # ensure CORS headers for SSE
+@cross_origin(origins=Config.CORS_ALLOWED_ORIGINS, supports_credentials=True)  # ensure CORS headers for SSE
 def stream_progress():
     broker = _get_broker()
     if broker is None:

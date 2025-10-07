@@ -12,6 +12,14 @@ import LyricsPanel from '../components/LyricsPanel';
 import { usePlayer } from '../player/PlayerContext';
 import { useAuth } from '../hooks/useAuth';
 
+const resolveApiBaseUrl = () => {
+  const envBase = (process.env.REACT_APP_API_BASE_URL || '').trim();
+  if (envBase) {
+    return envBase.replace(/\/$/, '');
+  }
+  return '';
+};
+
 const SpotifyDownloadPage = () => {
   const location = useLocation();
   const player = usePlayer();
@@ -32,8 +40,7 @@ const SpotifyDownloadPage = () => {
   const autoDownloadAttempted = useRef(false);
   const historySectionRef = useRef(null);
 
-  const apiBaseUrl =
-    process.env.NODE_ENV === 'production' ? window.location.origin : 'http://127.0.0.1:5000';
+  const apiBaseUrl = resolveApiBaseUrl();
 
   const fetchAlbums = useCallback(async () => {
     setLoading(true);

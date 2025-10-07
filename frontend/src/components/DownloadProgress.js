@@ -51,7 +51,7 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
 
         // Update per-song map for concurrent bars.
         // Only create bars for track-level events that include a stable id/url.
-        const key = payload.song_id || payload.spotify_url;
+        const key = payload.song_id || payload.spotify_url || payload.song_display_name || payload.song_name;
         if (!key) {
           // Ignore album-level or non-track events (we already show an overall bar)
           return;
@@ -59,6 +59,10 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
         const name = payload.song_display_name || payload.song_name || key;
         const status = payload.status || null;
         const progress = Number(payload.progress ?? 0);
+        const errorMessage = payload.error_message || payload.errorMessage || null;
+        const severity =
+          payload.severity ||
+          (typeof status === 'string' && status.toLowerCase().startsWith('error') ? 'error' : undefined);
         const nowTs = Date.now();
 
         const normalizedProgress = Math.max(0, Math.min(100, Math.round(progress)));
@@ -76,12 +80,15 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
         } else {
           setSongsMap((prev) => {
             const next = { ...prev };
+            const prior = prev[key];
             next[key] = {
               key,
               name,
               status,
               progress: normalizedProgress,
               lastTs: nowTs,
+              errorMessage: errorMessage || (prior && prior.errorMessage) || null,
+              severity: severity || (prior && prior.severity) || undefined,
             };
             return next;
           });
@@ -173,7 +180,20 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
                 <div className="bg-brandSuccess-500 h-2 rounded" style={{ width: `${Number(s.progress || 0)}%` }} />
               </div>
               {s.status && (
-                <div className="text-xs text-slate-500 dark:text-gray-400 mt-1">{s.status}</div>
+                <div
+                  className={`text-xs mt-1 ${
+                    s.severity === 'error'
+                      ? 'text-brandError-600 dark:text-brandError-400'
+                      : 'text-slate-500 dark:text-gray-400'
+                  }`}
+                >
+                  {s.status}
+                </div>
+              )}
+              {s.errorMessage && s.errorMessage !== s.status && (
+                <div className="text-xs text-brandError-600 dark:text-brandError-400 mt-1 break-words">
+                  {s.errorMessage}
+                </div>
               )}
             </div>
           ))
