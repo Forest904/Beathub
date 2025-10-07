@@ -1,19 +1,5 @@
 ﻿# TODO
 
-## Refactoring of the compilation sidepanel in a component inside the discovery section
-- [ ] Action: Extract the existing sidepanel JSX into `frontend/src/discovery/CompilationSidepanel.tsx`, explicitly threading the current callbacks and selection state as props.
-- [ ] Action: Add a Storybook story or React Testing Library spec that renders the isolated component with mocked props to validate selection, close, and CTA flows.
-- [ ] Action: Co-locate required styles (CSS modules/tokens) and shared layout primitives with the new component, updating import paths so no legacy global styles break.
-
-## Order discovery page by Popularity, Followers
-- [ ] Action: Extend the discovery API handler to order by popularity and follower counts; update serializers so the frontend receives normalized metrics.
-- [ ] Action: Handle sparse data by defining deterministic fallbacks (e.g., treat missing metrics as zero) and surface a subtle UI badge when metrics are unavailable.
-
-## NEW FEATURE User Registration/Login
-- [ ] Action: Choose session-cookie auth with Flask-Login; scaffold a `User` SQLAlchemy model with password hashing via `werkzeug.security` and migration scripts.
-- [ ] Action: Build registration/login/logout routes plus corresponding React forms, wiring form validation and error handling through shared auth hooks.
-- [ ] Action: Migrate existing download/job records by backfilling user ownership (anonymous -> system user) and enforcing foreign keys for new entries.
-
 ## NEW FEATURE FOR LOGGED IN USERS "My Playlists" 
 - [ ] Action: Implement playlist CRUD endpoints with authorization checks ensuring only the owner can mutate or delete; reuse SQLAlchemy relationships for tracks.
 - [ ] Action: Introduce optimistic updates in the playlist UI backed by paginated fetch hooks that cache results using React Query/SWR patterns.

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePlayer } from '../player/PlayerContext';
 import LyricsPanel from './LyricsPanel';
 
@@ -8,6 +8,23 @@ const formatTime = (s) => {
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, '0')}`;
 };
+
+const resolveApiBaseUrl = () => {
+  const envBase = (process.env.REACT_APP_API_BASE_URL || '').trim();
+  if (envBase) {
+    return envBase.replace(/\/$/, '');
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return window.location.origin;
+  }
+  return '';
+};
+
+const ArrowLeftIcon = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path fillRule="evenodd" d="M15.53 4.47a.75.75 0 010 1.06L9.06 12l6.47 6.47a.75.75 0 11-1.06 1.06l-7-7a.75.75 0 010-1.06l7-7a.75.75 0 011.06 0z" clipRule="evenodd" />
+  </svg>
+);
 
 const PlayerBar = () => {
   const {
@@ -40,12 +57,20 @@ const PlayerBar = () => {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    if (currentTrack) {
+      setCollapsed(false);
+    }
+  }, [currentTrack]);
+
+  const apiBaseUrl = useMemo(() => resolveApiBaseUrl(), []);
+
   if (!currentTrack) return null;
 
   const title = currentTrack.title || 'Unknown Title';
   const artists = Array.isArray(currentTrack.artists) ? currentTrack.artists.join(', ') : (currentTrack.artist || '');
-  const apiBaseUrl = process.env.NODE_ENV === 'production' ? window.location.origin : 'http://127.0.0.1:5000';
-  const canOpenLyrics = Boolean(currentTrack?.albumId && title);
+  const albumId = currentTrack?.albumId ?? null;
+  const canOpenLyrics = (albumId !== null && albumId !== undefined) && Boolean(title);
 
   return (
     <div
@@ -155,10 +180,11 @@ const PlayerBar = () => {
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setCollapsed(true); }}
-              className="px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-gray-800 text-slate-600 dark:text-gray-300"
+              className="inline-flex items-center justify-center rounded-md border border-slate-300 p-2 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               title="Hide player"
+              aria-label="Hide player"
             >
-              ⌄
+              <ArrowLeftIcon className="h-4 w-4 transform -rotate-90" />
             </button>
           </div>
         </div>
@@ -175,10 +201,11 @@ const PlayerBar = () => {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setCollapsed(false); }}
-            className="px-3 py-1 rounded bg-brand-600 text-white hover:bg-brand-700 dark:bg-brandDark-600 dark:hover:bg-brandDark-500 shadow"
+            className="inline-flex items-center justify-center rounded-full bg-brand-600 text-white hover:bg-brand-700 dark:bg-brandDark-600 dark:hover:bg-brandDark-500 shadow p-2"
             title="Show player"
+            aria-label="Show player"
           >
-            ⌃
+            <ArrowLeftIcon className="h-4 w-4 transform rotate-90" />
           </button>
         </div>
       )}
@@ -186,7 +213,7 @@ const PlayerBar = () => {
         visible={lyricsVisible}
         onClose={() => setLyricsVisible(false)}
         baseUrl={apiBaseUrl}
-        albumId={currentTrack?.albumId || null}
+        albumId={albumId}
         track={{ title, artists: Array.isArray(currentTrack.artists) ? currentTrack.artists : (currentTrack.artist ? [currentTrack.artist] : []) }}
       />
     </div>
