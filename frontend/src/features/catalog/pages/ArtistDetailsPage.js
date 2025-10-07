@@ -1,0 +1,172 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import AlbumGallery from '../../../shared/components/AlbumGallery';
+import AlbumCard, { AlbumCardVariant } from '../../../shared/components/AlbumCard';
+import { endpoints } from '../../../api/client';
+import { get } from '../../../api/http';
+
+const FALLBACK_IMAGE = 'https://via.placeholder.com/200?text=No+Image';
+
+const ArtistDetailsPage = () => {
+  const { artistId } = useParams();
+  const navigate = useNavigate();
+  const [artistDetails, setArtistDetails] = useState(null);
+  const [discography, setDiscography] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!artistId) {
+      setError('Artist ID is missing.');
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadArtist = async () => {
+      try {
+        const [detailsResponse, discographyResponse] = await Promise.all([
+          get(endpoints.artists.details(artistId)),
+          get(endpoints.artists.discography(artistId)),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setArtistDetails(detailsResponse);
+        setDiscography(discographyResponse?.discography || []);
+        setError(null);
+      } catch (requestError) {
+        console.error('Failed to load artist profile', requestError);
+        if (!cancelled) {
+          setError('We could not load this artist right now. Please try again later.');
+          setArtistDetails(null);
+          setDiscography([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadArtist();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [artistId]);
+
+  const handleAlbumSelect = (album) => {
+    navigate(`/album/${album.id}`);
+  };
+
+  const genresLabel = useMemo(() => {
+    if (!artistDetails?.genres?.length) {
+      return null;
+    }
+    return artistDetails.genres.join(', ');
+  }, [artistDetails]);
+
+  // Precompute Best-Of album card data (must be declared before any early returns)
+  const bestOfAlbum = useMemo(() => {
+    if (!artistDetails) return null;
+    return {
+      id: `bestof:${artistDetails.id || artistId}`,
+      name: `The Best Of ${artistDetails.name}`,
+      title: artistDetails.name,
+      image_url: artistDetails.image || FALLBACK_IMAGE,
+      spotify_url: null,
+    };
+  }, [artistDetails, artistId]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-xl mr-4 text-slate-900 dark:text-white">Loading artist information...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brandDark-500" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-center text-brandError-600 dark:text-brandError-500 text-xl">{error}</p>
+      </div>
+    );
+  }
+
+  if (!artistDetails) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-center text-slate-600 dark:text-gray-400 text-xl">No artist found with this ID.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <div className="container max-w-7xl mx-auto px-4 py-8">
+        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8 flex flex-col md:flex-row items-center md:items-center md:justify-between gap-6 ring-1 ring-brand-100 dark:ring-0">
+          <div className="flex-shrink-0 md:mr-6">
+            <img
+              src={artistDetails.image || FALLBACK_IMAGE}
+              alt={artistDetails.name}
+              className="w-48 h-48 md:w-64 md:h-64 rounded-full object-cover shadow-md"
+            />
+          </div>
+          <div className="flex-1 flex flex-col items-center text-center px-2">
+            <h1 className="text-5xl font-extrabold text-slate-900 dark:text-white mb-2">{artistDetails.name}</h1>
+            {genresLabel && (
+              <p className="text-lg text-slate-600 dark:text-gray-300 mb-2">
+                <span className="font-semibold">Genres:</span> {genresLabel}
+              </p>
+            )}
+            {typeof artistDetails.followers === 'number' && (
+              <p className="text-lg text-slate-600 dark:text-gray-300 mb-2">
+                <span className="font-semibold">Followers:</span> {artistDetails.followers.toLocaleString()}
+              </p>
+            )}
+            {typeof artistDetails.popularity === 'number' && (
+              <p className="text-lg text-slate-600 dark:text-gray-300 mb-4">
+                <span className="font-semibold">Popularity:</span> {artistDetails.popularity}% on Spotify
+              </p>
+            )}
+            {artistDetails.external_urls?.spotify && (
+              <a
+                href={artistDetails.external_urls.spotify}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center bg-brandSuccess-600 hover:bg-brandSuccess-700 text-white font-semibold py-2 px-5 rounded-full transition-colors duration-200"
+              >
+                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 0C5.373 0 0 5.373 0 12c0 6.627 5.373 12 12 12s12-5.373 12-12C24 5.373 18.627 0 12 0zm5.433 17.415a1 1 0 0 1-1.383.333c-3.096-1.892-6.992-2.322-11.573-1.28a1 1 0 0 1-.433-1.949c5.063-1.126 9.433-.62 13.004 1.497a1 1 0 0 1 .385 1.399zm1.649-3.256a1 1 0 0 1-1.383.345c-3.546-2.169-8.956-2.806-13.161-1.544a1 1 0 1 1-.57-1.92c4.73-1.403 10.657-.695 14.801 1.847a1 1 0 0 1 .313 1.272zm.14-3.392c-4.262-2.523-11.303-2.754-15.365-1.53a1 1 0 1 1-.59-1.914c4.596-1.418 12.283-1.149 17.062 1.685a1 1 0 0 1-1.107 1.759z" />
+                </svg>
+                View on Spotify
+              </a>
+            )}
+          </div>
+          {bestOfAlbum && (
+            <div className="w-full md:w-64 lg:w-72 md:ml-6">
+              <AlbumCard album={bestOfAlbum} variant={AlbumCardVariant.DISCOVERY} />
+            </div>
+          )}
+        </section>
+
+        <section className="bg-brand-50 dark:bg-gray-800 rounded-lg shadow-lg p-6 ring-1 ring-brand-100 dark:ring-0">
+          <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-6 text-center">Discography</h2>
+          {discography.length > 0 ? (
+            <AlbumGallery albums={discography} onSelect={handleAlbumSelect} variant={AlbumCardVariant.DISCOVERY} />
+          ) : (
+            <p className="text-center text-slate-600 dark:text-gray-400 text-lg">No albums or singles found for this artist.</p>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+};
+
+export default ArtistDetailsPage;

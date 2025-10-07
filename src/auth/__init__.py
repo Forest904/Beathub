@@ -14,7 +14,7 @@ login_manager.login_message = None
 def init_auth(app):
     """Attach Flask-Login to the Flask app and register auth blueprints."""
     from src.database.db_manager import User, db, ensure_system_user
-    from src.routes.auth_routes import auth_bp
+    from src.interfaces.http.routes import auth_bp
 
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"

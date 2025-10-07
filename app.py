@@ -12,26 +12,28 @@ from flask_cors import CORS
 
 # --- Import our new configuration and the main orchestrator ---
 from config import Config
-from src.spotify_content_downloader import SpotifyContentDownloader
-from src.spotdl_client import build_default_client
-from src.cd_burning_service import CDBurningService
-
-# --- Import db, DownloadedItem model, and the initialization function ---
+from src.core import ProgressBroker, BrokerPublisher
 from src.database.db_manager import initialize_database
 from src.auth import init_auth
-
-# --- Import Blueprints from new routes directory ---
-from src.routes.download_routes import download_bp
-from src.routes.artist_routes import artist_bp
-from src.routes.album_details_routes import album_details_bp
-from src.routes.cd_burning_routes import cd_burning_bp
-from src.routes.progress_routes import progress_bp
-from src.routes.config_routes import config_bp
-from src.routes.compilation_routes import compilation_bp
-from src.progress import ProgressBroker, BrokerPublisher
-from src.repository import DefaultDownloadRepository
-from src.burn_sessions import BurnSessionManager
-from src.jobs import JobQueue
+from src.domain.downloads import (
+    DownloadOrchestrator,
+    DefaultDownloadRepository,
+    JobQueue,
+    AudioCoverDownloadService,
+    FileManager,
+)
+from src.domain.catalog import MetadataService, LyricsService
+from src.domain.burning import CDBurningService, BurnSessionManager
+from src.infrastructure.spotdl import build_default_client
+from src.interfaces.http.routes import (
+    download_bp,
+    artist_bp,
+    album_details_bp,
+    cd_burning_bp,
+    progress_bp,
+    config_bp,
+    compilation_bp,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -146,8 +148,22 @@ def create_app():
             exc_info=True,
         )
 
-    # Initialize the main orchestrator (SpotifyContentDownloader) with DI
-    spotify_downloader = SpotifyContentDownloader(
+    # Build domain services to keep orchestration wiring at the app boundary
+    metadata_service = MetadataService(
+        spotify_client_id=app.config.get('SPOTIPY_CLIENT_ID'),
+        spotify_client_secret=app.config.get('SPOTIPY_CLIENT_SECRET'),
+    )
+    audio_service = AudioCoverDownloadService(
+        base_output_dir=app.config.get('BASE_OUTPUT_DIR'),
+        spotdl_audio_source=app.config.get('SPOTDL_AUDIO_SOURCE'),
+        spotdl_format=app.config.get('SPOTDL_FORMAT'),
+    )
+    lyrics_service = LyricsService(genius_access_token=app.config.get('GENIUS_ACCESS_TOKEN'))
+    file_manager = FileManager(base_output_dir=app.config.get('BASE_OUTPUT_DIR'))
+    download_repository = DefaultDownloadRepository()
+
+    # Initialize the main orchestrator with explicit dependencies
+    download_orchestrator = DownloadOrchestrator(
         base_output_dir=app.config.get('BASE_OUTPUT_DIR'),
         spotify_client_id=app.config.get('SPOTIPY_CLIENT_ID'),
         spotify_client_secret=app.config.get('SPOTIPY_CLIENT_SECRET'),
@@ -156,15 +172,19 @@ def create_app():
         spotdl_format=app.config.get('SPOTDL_FORMAT'),
         progress_publisher=progress_publisher,
         spotdl_client=spotdl_client,
-        download_repository=DefaultDownloadRepository(),
+        download_repository=download_repository,
+        metadata_service=metadata_service,
+        audio_service=audio_service,
+        lyrics_service=lyrics_service,
+        file_manager=file_manager,
     )
 
     # Expose orchestrator for routes
-    app.extensions['spotify_downloader'] = spotify_downloader
+    app.extensions['download_orchestrator'] = download_orchestrator
 
     # Initialize job queue orchestrator
     try:
-        job_queue = JobQueue(downloader=spotify_downloader, logger=app.logger, flask_app=app)
+        job_queue = JobQueue(downloader=download_orchestrator, logger=app.logger, flask_app=app)
         app.extensions['download_jobs'] = job_queue
         app.logger.info("Download job queue initialized with %s workers", job_queue.workers)
     except Exception as e:
