@@ -25,7 +25,9 @@ const Header = () => {
     await logout();
   };
 
-  const links = NAV_LINKS.filter((link) => (user ? true : link.to !== '/download'));
+  const links = user
+    ? [...NAV_LINKS, { label: 'My Playlists', to: '/playlists' }, { label: 'Favourites', to: '/favorites' }]
+    : NAV_LINKS.filter((link) => link.to !== '/download');
 
   return (
   <header className="relative bg-white text-slate-900 shadow dark:bg-slate-950 dark:text-slate-100 border-b border-brand-100 dark:border-transparent">

@@ -4,6 +4,8 @@ import AlbumGallery from '../../../shared/components/AlbumGallery';
 import AlbumCard, { AlbumCardVariant } from '../../../shared/components/AlbumCard';
 import { endpoints } from '../../../api/client';
 import { get } from '../../../api/http';
+import FavoriteButton from '../../../features/favorites/components/FavoriteButton.jsx';
+import FAVORITE_TOKENS from '../../../theme/tokens';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/200?text=No+Image';
 
@@ -82,6 +84,16 @@ const ArtistDetailsPage = () => {
     };
   }, [artistDetails, artistId]);
 
+  const favoriteMetadata = useMemo(
+    () => ({
+      name: artistDetails?.name,
+      subtitle: genresLabel,
+      image_url: artistDetails?.image,
+      url: artistDetails?.external_urls?.spotify,
+    }),
+    [artistDetails, genresLabel],
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -119,7 +131,20 @@ const ArtistDetailsPage = () => {
             />
           </div>
           <div className="flex-1 flex flex-col items-center text-center px-2">
-            <h1 className="text-5xl font-extrabold text-slate-900 dark:text-white mb-2">{artistDetails.name}</h1>
+            <div className="mb-2 flex items-center gap-3">
+              <h1 className="text-5xl font-extrabold text-slate-900 dark:text-white">{artistDetails.name}</h1>
+              <div className="flex items-center gap-2">
+                <span className={`${FAVORITE_TOKENS.badgeClasses.base} ${FAVORITE_TOKENS.badgeClasses.active}`}>
+                  Artist
+                </span>
+                <FavoriteButton
+                  itemType="artist"
+                  itemId={String(artistDetails.id || artistId)}
+                  metadata={favoriteMetadata}
+                  size="sm"
+                />
+              </div>
+            </div>
             {genresLabel && (
               <p className="text-lg text-slate-600 dark:text-gray-300 mb-2">
                 <span className="font-semibold">Genres:</span> {genresLabel}

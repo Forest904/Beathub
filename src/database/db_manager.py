@@ -5,7 +5,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import os  # Import os for path handling
 import logging
 from datetime import datetime
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 try:
     # SQLAlchemy 2.x
@@ -34,6 +34,18 @@ class User(UserMixin, db.Model):
 
     downloads = relationship("DownloadedItem", back_populates="owner", lazy=True)
     download_jobs = relationship("DownloadJob", back_populates="owner", lazy=True)
+    playlists = relationship(
+        "Playlist",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
+    favorites = relationship(
+        "Favorite",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -139,6 +151,171 @@ class DownloadedTrack(db.Model):
     # Relationship back to container item
     item = relationship('DownloadedItem', backref=db.backref('tracks', lazy=True))
     owner = relationship('User')
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'item_id': self.item_id,
+            'user_id': self.user_id,
+            'spotify_id': self.spotify_id,
+            'spotify_url': self.spotify_url,
+            'isrc': self.isrc,
+            'title': self.title,
+            'artists': self.artists,
+            'album_name': self.album_name,
+            'album_id': self.album_id,
+            'album_artist': self.album_artist,
+            'track_number': self.track_number,
+            'disc_number': self.disc_number,
+            'disc_count': self.disc_count,
+            'tracks_count': self.tracks_count,
+            'duration_ms': self.duration_ms,
+            'explicit': self.explicit,
+            'popularity': self.popularity,
+            'publisher': self.publisher,
+            'year': self.year,
+            'date': self.date,
+            'genres': self.genres,
+            'cover_url': self.cover_url,
+            'local_path': self.local_path,
+            'local_lyrics_path': self.local_lyrics_path,
+        }
+
+
+class Playlist(db.Model):
+    __tablename__ = 'playlists'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        ForeignKey('users.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    owner = relationship('User', back_populates='playlists')
+    entries = relationship(
+        'PlaylistTrack',
+        back_populates='playlist',
+        order_by='PlaylistTrack.position',
+        cascade='all, delete-orphan',
+        lazy='joined',
+    )
+
+    def to_dict(self, *, include_tracks: bool = False) -> dict:
+        data = {
+            'id': self.id,
+            'user_id': self.user_id,
+            'name': self.name,
+            'description': self.description,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'track_count': len(self.entries or []),
+        }
+        if include_tracks:
+            data['tracks'] = [entry.to_dict() for entry in self.entries]
+        return data
+
+
+class PlaylistTrack(db.Model):
+    __tablename__ = 'playlist_tracks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    playlist_id = db.Column(
+        db.Integer,
+        ForeignKey('playlists.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    track_id = db.Column(
+        db.Integer,
+        ForeignKey('downloaded_tracks.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    position = db.Column(db.Integer, nullable=False, default=0)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    track_snapshot = db.Column(db.JSON, nullable=True)
+
+    playlist = relationship('Playlist', back_populates='entries')
+    track = relationship('DownloadedTrack')
+
+    __table_args__ = (
+        UniqueConstraint('playlist_id', 'track_id', name='uq_playlist_track_once'),
+    )
+
+    def to_dict(self) -> dict:
+        source = self.track_snapshot or (self.track.to_dict() if self.track else {})
+        return {
+            'id': self.id,
+            'playlist_id': self.playlist_id,
+            'track_id': self.track_id,
+            'position': self.position,
+            'added_at': self.added_at.isoformat() if self.added_at else None,
+            'track': source,
+        }
+
+
+class Favorite(db.Model):
+    __tablename__ = 'favorites'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        ForeignKey('users.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    item_type = db.Column(db.String(32), nullable=False)
+    item_id = db.Column(db.String(128), nullable=False)
+    item_name = db.Column(db.String(255), nullable=False)
+    item_subtitle = db.Column(db.String(255), nullable=True)
+    item_image_url = db.Column(db.String(500), nullable=True)
+    item_url = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    owner = relationship('User', back_populates='favorites')
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'item_type', 'item_id', name='uq_favorites_unique_item'),
+        CheckConstraint("item_type IN ('artist', 'album', 'track')", name='ck_favorites_item_type'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'item_type': self.item_type,
+            'item_id': self.item_id,
+            'item_name': self.item_name,
+            'item_subtitle': self.item_subtitle,
+            'item_image_url': self.item_image_url,
+            'item_url': self.item_url,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+    @staticmethod
+    def summary_for_user(user_id: int) -> dict:
+        from sqlalchemy import func
+
+        rows = (
+            db.session.query(Favorite.item_type, func.count(Favorite.id))
+            .filter(Favorite.user_id == user_id)
+            .group_by(Favorite.item_type)
+            .all()
+        )
+        summary = {item_type: count for item_type, count in rows}
+        summary['total'] = sum(summary.values())
+        return summary
 
 
 class DownloadJob(db.Model):

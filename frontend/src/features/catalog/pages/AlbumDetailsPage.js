@@ -4,6 +4,8 @@ import TrackListDiscovery from '../components/TrackListDiscovery.jsx';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { endpoints } from '../../../api/client';
 import { get } from '../../../api/http';
+import FavoriteButton from '../../../features/favorites/components/FavoriteButton.jsx';
+import FAVORITE_TOKENS from '../../../theme/tokens';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/300x300.png?text=No+Cover';
 
@@ -99,6 +101,17 @@ const AlbumDetailsPage = () => {
     return list.map((t) => ({ ...t, albumId }));
   }, [albumDetails, albumId]);
 
+  const favoriteMetadata = useMemo(
+    () => ({
+      name: albumDetails?.title,
+      subtitle: albumDetails?.artist,
+      image_url: albumDetails?.image_url,
+      cover_url: albumDetails?.image_url,
+      spotify_url: albumDetails?.spotify_url,
+    }),
+    [albumDetails],
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -134,6 +147,17 @@ const AlbumDetailsPage = () => {
                 alt={`${albumDetails.title} Album Cover`}
                 className="absolute inset-0 w-full h-full object-cover"
               />
+              <div className="absolute right-3 top-3 flex items-center gap-2">
+                <span className={`${FAVORITE_TOKENS.badgeClasses.base} ${FAVORITE_TOKENS.badgeClasses.active}`}>
+                  Album
+                </span>
+                <FavoriteButton
+                  itemType="album"
+                  itemId={String(albumId)}
+                  metadata={favoriteMetadata}
+                  size="sm"
+                />
+              </div>
             </div>
           </div>
 
