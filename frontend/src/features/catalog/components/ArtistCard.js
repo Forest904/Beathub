@@ -1,6 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
+import FavoriteButton from '../../favorites/components/FavoriteButton.jsx';
+import FAVORITE_TOKENS from '../../../theme/tokens';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/150?text=No+Image';
 
@@ -11,12 +13,32 @@ const ArtistCard = ({ artist }) => {
   const metricsUnavailable =
     (!artist.popularity_available && !hasPopularity) ||
     (!artist.followers_available && !hasFollowers);
+  const genresLabel =
+    Array.isArray(artist.genres) && artist.genres.length > 0
+      ? artist.genres.slice(0, 3).join(', ')
+      : null;
+  const spotifyUrl = artist.external_urls?.spotify || artist.spotify_url || null;
+  const favoriteMetadata = {
+    name: artist.name,
+    subtitle: genresLabel || undefined,
+    image_url: imageUrl,
+    url: spotifyUrl || undefined,
+    spotify_url: spotifyUrl || undefined,
+  };
 
   return (
     <Link to={`/artist/${artist.id}`} className="block transform transition-transform duration-200 hover:scale-105">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden flex flex-col h-full ring-1 ring-brand-100 dark:ring-0">
         <div className="relative w-full h-48 sm:h-56 md:h-64 overflow-hidden">
           <img src={imageUrl} alt={artist.name} className="w-full h-full object-cover" />
+          <div className="absolute left-3 right-3 top-3 flex items-start justify-between gap-2">
+            <span className={`${FAVORITE_TOKENS.badgeClasses.base} ${FAVORITE_TOKENS.badgeClasses.active}`}>
+              Artist
+            </span>
+            <div className="flex-shrink-0">
+              <FavoriteButton itemType="artist" itemId={String(artist.id)} metadata={favoriteMetadata} size="sm" />
+            </div>
+          </div>
         </div>
         <div className="p-4 flex flex-col flex-grow gap-2">
           <h3 className="text-xl font-semibold text-slate-900 dark:text-white truncate">{artist.name}</h3>
@@ -78,6 +100,10 @@ ArtistCard.propTypes = {
     popularity: PropTypes.number,
     followers_available: PropTypes.bool,
     popularity_available: PropTypes.bool,
+    spotify_url: PropTypes.string,
+    external_urls: PropTypes.shape({
+      spotify: PropTypes.string,
+    }),
   }).isRequired,
 };
 

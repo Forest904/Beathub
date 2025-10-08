@@ -28,6 +28,8 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
     cover_url: album?.image_url,
     spotify_url: album?.spotify_url,
   };
+  const badgeLabel = isBestOf ? 'Best Of' : 'Album';
+  const badgeClassName = `${FAVORITE_TOKENS.badgeClasses.base} ${isBestOf ? 'bg-brandSuccess-100 text-brandSuccess-700 dark:bg-brandSuccess-700/30 dark:text-brandSuccess-300' : FAVORITE_TOKENS.badgeClasses.active}`;
 
   const handleCopyLink = useCallback(
     (event) => {
@@ -115,18 +117,20 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
           height="640"
           loading="lazy"
         />
-        <div className="absolute right-3 top-3 flex items-center gap-2">
+        <div className="absolute left-3 right-3 top-3 flex items-start justify-between gap-2">
+          <span className={badgeClassName}>
+            {badgeLabel}
+          </span>
           {!isBestOf && (
-            <span className={`${FAVORITE_TOKENS.badgeClasses.base} ${FAVORITE_TOKENS.badgeClasses.active}`}>
-              Album
-            </span>
+            <div className="flex-shrink-0">
+              <FavoriteButton
+                itemType="album"
+                itemId={String(album.id)}
+                metadata={favoriteMetadata}
+                size="sm"
+              />
+            </div>
           )}
-          <FavoriteButton
-            itemType="album"
-            itemId={String(album.id)}
-            metadata={favoriteMetadata}
-            size="sm"
-          />
         </div>
       </div>
       <div className="p-4 text-center">

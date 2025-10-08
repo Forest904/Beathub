@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import PlaylistCreateForm from '../components/PlaylistCreateForm.jsx';
 import PlaylistDetail from '../components/PlaylistDetail.jsx';
@@ -18,8 +18,6 @@ const MyPlaylistsPage = () => {
   const perPage = PLAYLIST_DEFAULT_PAGE_SIZE;
   const [selectedId, setSelectedId] = useState(null);
   const [formError, setFormError] = useState('');
-  const navigate = useNavigate();
-
   const listQuery = usePlaylistList({ page, perPage });
   const playlists = listQuery.data?.items || [];
   const pagination = listQuery.data?.pagination || {};
@@ -73,16 +71,6 @@ const MyPlaylistsPage = () => {
     if (!selectedId) return;
     await mutations.reorderTracks(selectedId, order);
   };
-
-  useEffect(() => {
-    if (!detailQuery.isSuccess) {
-      return;
-    }
-    const tracks = Array.isArray(playlist?.tracks) ? playlist.tracks : [];
-    if (tracks.length === 0) {
-      navigate('/browse');
-    }
-  }, [detailQuery.isSuccess, navigate, playlist]);
 
   if (loading) {
     return (

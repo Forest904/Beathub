@@ -16,6 +16,7 @@ import { useAuth } from '../../../shared/hooks/useAuth';
 const FILTERS = [{ key: 'all', label: 'All' }, ...FAVORITE_TYPES.map((type) => ({ key: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))];
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/200x200.png?text=No+Artwork';
+const TRACK_BG_COLORS = ['bg-brand-100', 'bg-brand-200', 'bg-brand-300', 'bg-brandWarning-100', 'bg-brandWarning-200', 'bg-brandError-100', 'bg-brandSuccess-100', 'bg-brandSuccess-200', 'bg-brandDark-400/40', 'bg-slate-200', 'bg-purple-200', 'bg-rose-200'];
 
 const FavoriteCard = ({ favorite }) => {
   const metadata = useMemo(
@@ -27,16 +28,38 @@ const FavoriteCard = ({ favorite }) => {
     }),
     [favorite.item_name, favorite.item_subtitle, favorite.item_image_url, favorite.item_url],
   );
+  const isTrack = favorite.item_type === 'track';
+  const favoriteTypeLabel = favorite.item_type
+    ? favorite.item_type.charAt(0).toUpperCase() + favorite.item_type.slice(1)
+    : 'Item';
+  const trackBackgroundClass = useMemo(() => {
+    if (!isTrack) {
+      return '';
+    }
+    const source = `${favorite.item_id || ''}-${favorite.item_name || ''}`;
+    const hash = Array.from(source).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return TRACK_BG_COLORS[hash % TRACK_BG_COLORS.length] || 'bg-brand-200';
+  }, [favorite.item_id, favorite.item_name, isTrack]);
 
   return (
     <div className="relative flex flex-col overflow-hidden rounded-xl bg-white shadow ring-1 ring-brand-100 transition hover:shadow-lg dark:bg-gray-800 dark:ring-gray-700">
       <div className="relative">
-        <img
-          src={favorite.item_image_url || FALLBACK_IMAGE}
-          alt={favorite.item_name}
-          className="h-48 w-full object-cover"
-          loading="lazy"
-        />
+        {isTrack ? (
+          <div
+            className={`flex h-48 w-full items-center justify-center px-4 text-center ${trackBackgroundClass || 'bg-brand-200'}`}
+          >
+            <span className="line-clamp-3 text-lg font-semibold text-slate-900 drop-shadow-sm dark:text-white">
+              {favorite.item_name || 'Untitled Track'}
+            </span>
+          </div>
+        ) : (
+          <img
+            src={favorite.item_image_url || FALLBACK_IMAGE}
+            alt={favorite.item_name}
+            className="h-48 w-full object-cover"
+            loading="lazy"
+          />
+        )}
         <div className="absolute right-2 top-2">
           <FavoriteButton
             itemType={favorite.item_type}
@@ -48,7 +71,7 @@ const FavoriteCard = ({ favorite }) => {
         <span
           className={`absolute left-2 top-2 ${FAVORITE_TOKENS.badgeClasses.base} ${FAVORITE_TOKENS.badgeClasses.active}`}
         >
-          {favorite.item_type}
+          {favoriteTypeLabel}
         </span>
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
@@ -60,24 +83,10 @@ const FavoriteCard = ({ favorite }) => {
             {favorite.item_subtitle}
           </p>
         )}
-        <div className="mt-auto flex justify-between text-xs text-slate-500 dark:text-gray-400">
-          <span>Added {new Date(favorite.created_at).toLocaleString()}</span>
-          {favorite.item_url && (
-            <a
-              href={favorite.item_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-brand-600 hover:text-brand-500 dark:text-brandDark-300"
-            >
-              Open
-            </a>
-          )}
-        </div>
       </div>
     </div>
   );
 };
-
 FavoriteCard.propTypes = {
   favorite: PropTypes.shape({
     item_type: PropTypes.string.isRequired,
@@ -86,7 +95,7 @@ FavoriteCard.propTypes = {
     item_subtitle: PropTypes.string,
     item_image_url: PropTypes.string,
     item_url: PropTypes.string,
-    created_at: PropTypes.string.isRequired,
+    created_at: PropTypes.string,
   }).isRequired,
 };
 

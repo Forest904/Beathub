@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { Link } from 'react-router-dom';
 
 import TrackTile from '../../../shared/components/TrackTile.jsx';
 
@@ -44,7 +45,8 @@ const PlaylistDetail = ({
         <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Tracks</h3>
         {orderedTracks.length === 0 ? (
           <p className="rounded-lg bg-brand-50 p-4 text-sm text-slate-600 dark:bg-gray-800 dark:text-gray-300">
-            This playlist is empty. Visit Discover and use the Add to playlist option to start filling it.
+            This playlist is empty. Head to the{' '}
+            <Link to="/browse" className="font-medium text-brand-600 hover:underline dark:text-brandDark-300">discovery page</Link>{' '}to add tracks.
           </p>
         ) : (
           <ul className="space-y-3">
