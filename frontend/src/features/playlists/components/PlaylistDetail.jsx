@@ -1,57 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 
 import TrackTile from '../../../shared/components/TrackTile.jsx';
 
-const emptyTrack = {
-  title: '',
-  artists: '',
-  spotify_id: '',
-  duration_ms: '',
-  album_name: '',
-};
-
 const PlaylistDetail = ({
   playlist,
-  onAddTrack,
   onRemoveTrack,
   onReorderTracks,
-  isMutating,
 }) => {
-  const [draftTrack, setDraftTrack] = useState(emptyTrack);
-  const [error, setError] = useState('');
-
   const orderedTracks = useMemo(() => {
     const items = playlist?.tracks || [];
     return [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }, [playlist]);
-
-  const handleInputChange = (field) => (event) => {
-    setDraftTrack((current) => ({ ...current, [field]: event.target.value }));
-  };
-
-  const handleAddTrack = async (event) => {
-    event.preventDefault();
-    const title = draftTrack.title.trim();
-    const spotifyId = draftTrack.spotify_id.trim();
-    if (!title || !spotifyId) {
-      setError('Provide at least a title and Spotify ID to add a track.');
-      return;
-    }
-    const payload = {
-      title,
-      spotify_id: spotifyId,
-      artists: draftTrack.artists
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean),
-      duration_ms: draftTrack.duration_ms ? Number(draftTrack.duration_ms) : undefined,
-      album_name: draftTrack.album_name.trim() || undefined,
-    };
-    setError('');
-    await onAddTrack(payload);
-    setDraftTrack(emptyTrack);
-  };
 
   const moveTrack = (entryId, direction) => {
     const currentOrder = orderedTracks.map((entry) => entry.id);
@@ -84,7 +44,7 @@ const PlaylistDetail = ({
         <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Tracks</h3>
         {orderedTracks.length === 0 ? (
           <p className="rounded-lg bg-brand-50 p-4 text-sm text-slate-600 dark:bg-gray-800 dark:text-gray-300">
-            This playlist is empty. Add a track using the form below.
+            This playlist is empty. Visit Discover and use the Add to playlist option to start filling it.
           </p>
         ) : (
           <ul className="space-y-3">
@@ -129,75 +89,6 @@ const PlaylistDetail = ({
         )}
       </section>
 
-      <section>
-        <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Add track manually</h3>
-        <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={handleAddTrack}>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-gray-300">
-            Title
-            <input
-              type="text"
-              value={draftTrack.title}
-              onChange={handleInputChange('title')}
-              required
-              className="rounded-lg border border-slate-200 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              placeholder="Song title"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-gray-300">
-            Spotify ID
-            <input
-              type="text"
-              value={draftTrack.spotify_id}
-              onChange={handleInputChange('spotify_id')}
-              required
-              className="rounded-lg border border-slate-200 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              placeholder="e.g. 4uLU6hMCjMI75M1A2tKUQC"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-gray-300">
-            Artists (comma separated)
-            <input
-              type="text"
-              value={draftTrack.artists}
-              onChange={handleInputChange('artists')}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              placeholder="Artist 1, Artist 2"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-gray-300">
-            Duration (ms)
-            <input
-              type="number"
-              value={draftTrack.duration_ms}
-              onChange={handleInputChange('duration_ms')}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              placeholder="210000"
-            />
-          </label>
-          <label className="md:col-span-2 flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-gray-300">
-            Album name (optional)
-            <input
-              type="text"
-              value={draftTrack.album_name}
-              onChange={handleInputChange('album_name')}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              placeholder="Album title"
-            />
-          </label>
-          {error && (
-            <p className="md:col-span-2 text-sm text-brandError-600 dark:text-brandError-400">{error}</p>
-          )}
-          <div className="md:col-span-2 flex justify-end">
-            <button
-              type="submit"
-              className="rounded-full bg-brand-600 px-4 py-2 font-medium text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-brandDark-500 dark:hover:bg-brandDark-400"
-              disabled={isMutating}
-            >
-              {isMutating ? 'Adding…' : 'Add track'}
-            </button>
-          </div>
-        </form>
-      </section>
     </div>
   );
 };
@@ -217,15 +108,12 @@ PlaylistDetail.propTypes = {
       }),
     ),
   }),
-  onAddTrack: PropTypes.func.isRequired,
   onRemoveTrack: PropTypes.func.isRequired,
   onReorderTracks: PropTypes.func.isRequired,
-  isMutating: PropTypes.bool,
 };
 
 PlaylistDetail.defaultProps = {
   playlist: null,
-  isMutating: false,
 };
 
 export default PlaylistDetail;
