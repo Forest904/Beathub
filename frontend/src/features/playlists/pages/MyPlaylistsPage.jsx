@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 
 import PlaylistCreateForm from '../components/PlaylistCreateForm.jsx';
 import PlaylistDetail from '../components/PlaylistDetail.jsx';
@@ -18,6 +18,7 @@ const MyPlaylistsPage = () => {
   const perPage = PLAYLIST_DEFAULT_PAGE_SIZE;
   const [selectedId, setSelectedId] = useState(null);
   const [formError, setFormError] = useState('');
+  const navigate = useNavigate();
 
   const listQuery = usePlaylistList({ page, perPage });
   const playlists = listQuery.data?.items || [];
@@ -63,11 +64,6 @@ const MyPlaylistsPage = () => {
     }
   };
 
-  const handleAddTrack = async (track) => {
-    if (!selectedId) return;
-    await mutations.addTracks(selectedId, [track]);
-  };
-
   const handleRemoveTrack = async (entry) => {
     if (!selectedId) return;
     await mutations.removeTrack(selectedId, entry.id);
@@ -78,17 +74,15 @@ const MyPlaylistsPage = () => {
     await mutations.reorderTracks(selectedId, order);
   };
 
-  const trackMutationPending = useMemo(
-    () =>
-      mutations.states.addTracks.isPending
-      || mutations.states.removeTrack.isPending
-      || mutations.states.reorder.isPending,
-    [
-      mutations.states.addTracks.isPending,
-      mutations.states.removeTrack.isPending,
-      mutations.states.reorder.isPending,
-    ],
-  );
+  useEffect(() => {
+    if (!detailQuery.isSuccess) {
+      return;
+    }
+    const tracks = Array.isArray(playlist?.tracks) ? playlist.tracks : [];
+    if (tracks.length === 0) {
+      navigate('/browse');
+    }
+  }, [detailQuery.isSuccess, navigate, playlist]);
 
   if (loading) {
     return (
@@ -184,10 +178,8 @@ const MyPlaylistsPage = () => {
           ) : playlist ? (
             <PlaylistDetail
               playlist={playlist}
-              onAddTrack={handleAddTrack}
               onRemoveTrack={handleRemoveTrack}
               onReorderTracks={handleReorderTracks}
-              isMutating={trackMutationPending}
             />
           ) : (
             <div className="rounded-2xl bg-white p-6 text-center text-slate-600 shadow ring-1 ring-brand-100 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
