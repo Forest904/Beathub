@@ -1,29 +1,5 @@
 # TODO
 
-## Prompt for Comprehensive Scalability & Cohesion Audit
-
-- [x] Map domain boundaries and ownership: catalogue every module/package, identify their responsibilities, dependencies, and shared primitives, then propose domain-aligned boundaries that reduce cross-cutting concerns. (Owner: Architecture, Priority: P0, Completed: 2025-10-07)
-- [X] Evaluate data flow contracts: trace API schemas, database models, and React props/state to ensure each boundary exchanges well-typed, versioned contracts; note where adapters or DTOs are required. 
-- [ ] Analyze service lifecycle and configuration: document initialization sequences, background jobs, and configuration inputs (env vars, feature flags) to surface areas requiring dependency injection or factories for testability. 
-- [ ] Inspect shared utilities and duplicate logic: locate repeated helpers across backend jobs, routes, and frontend hooks; schedule extractions into cohesive libraries with clear owners. 
-- [ ] Review asynchronous workflows: examine job queues, download progress brokers, and React async hooks for scalability risks (blocking I/O, unbounded concurrency) and outline mitigation tactics. 
-- [ ] Assess state management cohesion: audit React state usage to enforce a consistent pattern per feature and limit coupling between discovery, playlists, and downloads. 
-- [ ] Verify build and deployment pipelines: ensure Flask app factory, CLI runners, and frontend builds share composable configuration; note refactors to simplify local vs. production parity. 
-- [ ] Prioritize incremental refactor roadmap: rank findings by impact and effort, defining milestones and acceptance criteria for each planned refactor to update this TODO accordingly.
-
-
-## NEW FEATURE FOR LOGGED IN USERS "My Playlists"
-
-- [ ] Action: Implement playlist CRUD endpoints with authorization checks ensuring only the owner can mutate or delete; reuse SQLAlchemy relationships for tracks.
-- [ ] Action: Introduce optimistic updates in the playlist UI backed by paginated fetch hooks that cache results using React Query/SWR patterns.
-- [ ] Action: Reuse the discovery track tile components inside the playlist view, extracting shared presentation utilities to avoid duplication.
-
-## NEW FEATURE "User Favourites" (Artists / Albums / Songs)
-
-- [ ] Action: Model favorites via a polymorphic association table keyed by user and item type; expose aggregate queries for quick lookups.
-- [ ] Action: Synchronize favorites with discovery/download contexts by emitting events/hooks whenever a favorite toggles, so buttons update instantly across the app.
-- [ ] Action: Standardize favorite icons/badges in a shared design token file and apply them across cards, lists, and detail headers.
-
 # TODO IN THE FAR FUTURE
 
 ## Steps for Online Publication (No Burning Feature)
