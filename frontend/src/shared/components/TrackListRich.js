@@ -1,8 +1,6 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import PropTypes from 'prop-types';
 import { formatDuration } from '../utils/formatting';
-import CompilationContext from '../../features/compilations/context/CompilationContext.jsx';
-import { useAuth } from '../hooks/useAuth';
 
 const BADGE_VARIANTS = {
   gray: 'bg-slate-200 text-slate-700 dark:bg-gray-700 dark:text-gray-200',
@@ -26,8 +24,6 @@ Badge.defaultProps = {
 };
 
 const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExplicit, showIsrc, showDisc, showPopularity, onLyricsClick, enablePlay, onPlayTrack }) => {
-  const compilation = useContext(CompilationContext);
-  const { user } = useAuth();
   if (!tracks || tracks.length === 0) {
     return null;
   }
@@ -46,7 +42,6 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
             {(!compactForBurnPreview && showIsrc) && <th className="px-2 py-2">ISRC</th>}
             {showDisc && <th className="px-2 py-2">Disc</th>}
             {(!compactForBurnPreview && showPopularity) && <th className="px-2 py-2">Popularity</th>}
-            {(!compactForBurnPreview && compilation?.compilationMode && user) && <th className="px-2 py-2">Compilation</th>}
           </tr>
         </thead>
         <tbody>
@@ -55,8 +50,7 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
             const useShowIsrc = !compactForBurnPreview && showIsrc;
             const useShowPopularity = !compactForBurnPreview && showPopularity;
             const useEnablePlay = !compactForBurnPreview && enablePlay;
-            const useCompilationControls = !compactForBurnPreview && Boolean(compilation?.compilationMode) && Boolean(user);
-            const colSpan = 4 + (useEnablePlay ? 1 : 0) + (useShowExplicit ? 1 : 0) + (useShowIsrc ? 1 : 0) + (showDisc ? 1 : 0) + (useShowPopularity ? 1 : 0) + (useCompilationControls ? 1 : 0);
+            const colSpan = 4 + (useEnablePlay ? 1 : 0) + (useShowExplicit ? 1 : 0) + (useShowIsrc ? 1 : 0) + (showDisc ? 1 : 0) + (useShowPopularity ? 1 : 0);
             let lastDisc = null;
             const rows = [];
             tracks.forEach((track, index) => {
@@ -153,40 +147,6 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
                   )}
                   {useShowPopularity && (
                     <td className="px-2 py-2 text-slate-600 dark:text-gray-300">{track.popularity ?? 'N/A'}</td>
-                  )}
-                  {useCompilationControls && (
-                    <td className="px-2 py-2">
-                      {(() => {
-                        const id = track.spotify_id || track.id || track.url || track.uri;
-                        const inCart = id ? compilation.isInCompilation(id) : false;
-                        const handleToggle = (e) => {
-                          e.stopPropagation();
-                          if (!id) return;
-                          if (inCart) {
-                            compilation.remove(id);
-                          } else {
-                            const item = {
-                              spotify_id: track.spotify_id || id,
-                              title: track.title,
-                              artists: track.artists || [],
-                              duration_ms: track.duration_ms,
-                              albumId: track.albumId,
-                            };
-                            compilation.add(item);
-                          }
-                        };
-                        return (
-                          <button
-                            type="button"
-                            onClick={handleToggle}
-                            className={`px-2 py-1 rounded text-sm ${inCart ? 'bg-brandError-600 text-white hover:bg-brandError-700' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
-                            title={inCart ? 'Remove from compilation' : 'Add to compilation'}
-                          >
-                            {inCart ? 'Remove' : 'Add'}
-                          </button>
-                        );
-                      })()}
-                    </td>
                   )}
                 </tr>,
               );

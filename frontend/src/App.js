@@ -10,9 +10,7 @@ import DownloadPage from './features/downloads/pages/DownloadPage';
 import CDBurnerPage from './features/burner/pages/CDBurnerPage';
 import { ThemeProvider } from './theme/ThemeContext';
 import { PlayerProvider } from './player/PlayerContext';
-import { CompilationProvider } from './features/compilations/context/CompilationContext.jsx';
 import { AuthProvider } from './shared/hooks/useAuth';
-import CompilationSidebar from './features/compilations/components/CompilationSidebar.jsx';
 import PlayerBar from './shared/components/PlayerBar.jsx';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -26,30 +24,27 @@ const App = () => (
     <AuthProvider>
       <ThemeProvider>
         <PlayerProvider>
-          <CompilationProvider>
-            <Router>
-              <div className="flex min-h-screen flex-col bg-brand-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-                <Header />
-                <main className="flex-1 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-                  <Routes>
-                    <Route path="/" element={<ArtistBrowserPage />} />
-                    <Route path="/browse" element={<ArtistBrowserPage />} />
-                    <Route path="/download" element={<DownloadPage />} />
-                    <Route path="/playlists" element={<MyPlaylistsPage />} />
-                    <Route path="/favorites" element={<FavoritesPage />} />
-                    <Route path="/artist/:artistId" element={<ArtistDetailsPage />} />
-                    <Route path="/album/:albumId" element={<AlbumDetailsPage />} />
-                    <Route path="/burn-cd" element={<CDBurnerPage />} />
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/register" element={<RegisterPage />} />
-                  </Routes>
-                </main>
-                <Footer />
-              </div>
-              <CompilationSidebar />
-            </Router>
-            <PlayerBar />
-          </CompilationProvider>
+          <Router>
+            <div className="flex min-h-screen flex-col bg-brand-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+              <Header />
+              <main className="flex-1 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+                <Routes>
+                  <Route path="/" element={<ArtistBrowserPage />} />
+                  <Route path="/browse" element={<ArtistBrowserPage />} />
+                  <Route path="/download" element={<DownloadPage />} />
+                  <Route path="/playlists" element={<MyPlaylistsPage />} />
+                  <Route path="/favorites" element={<FavoritesPage />} />
+                  <Route path="/artist/:artistId" element={<ArtistDetailsPage />} />
+                  <Route path="/album/:albumId" element={<AlbumDetailsPage />} />
+                  <Route path="/burn-cd" element={<CDBurnerPage />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+                </Routes>
+              </main>
+              <Footer />
+            </div>
+          </Router>
+          <PlayerBar />
         </PlayerProvider>
       </ThemeProvider>
     </AuthProvider>
