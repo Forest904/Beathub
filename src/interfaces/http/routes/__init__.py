@@ -8,6 +8,8 @@ from .progress import progress_bp
 from .config import config_bp
 from .auth import auth_bp
 from .compilation import compilation_bp
+from .playlist import playlist_bp
+from .favorites import favorite_bp
 
 __all__ = [
     "download_bp",
@@ -18,4 +20,6 @@ __all__ = [
     "config_bp",
     "auth_bp",
     "compilation_bp",
+    "playlist_bp",
+    "favorite_bp",
 ]

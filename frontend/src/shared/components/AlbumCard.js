@@ -2,6 +2,8 @@ import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import FavoriteButton from '../../features/favorites/components/FavoriteButton.jsx';
+import FAVORITE_TOKENS from '../../theme/tokens';
 
 export const AlbumCardVariant = Object.freeze({
   DISCOVERY: 'discography',
@@ -19,6 +21,13 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
   const subHeading = !isBestOf
     ? album?.artist || (album?.title && album.title !== displayName ? album.title : '')
     : '';
+  const favoriteMetadata = {
+    name: displayName,
+    subtitle: subHeading,
+    image_url: album?.image_url,
+    cover_url: album?.image_url,
+    spotify_url: album?.spotify_url,
+  };
 
   const handleCopyLink = useCallback(
     (event) => {
@@ -97,7 +106,7 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
         isSelected ? 'border-4 border-brand-500' : 'border-2 border-transparent'
       }`}
     >
-      <div className="w-full aspect-square overflow-hidden">
+      <div className="relative w-full aspect-square overflow-hidden">
         <img
           src={album.image_url || FALLBACK_IMAGE}
           alt={`${displayName} Album Cover`}
@@ -106,6 +115,19 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
           height="640"
           loading="lazy"
         />
+        <div className="absolute right-3 top-3 flex items-center gap-2">
+          {!isBestOf && (
+            <span className={`${FAVORITE_TOKENS.badgeClasses.base} ${FAVORITE_TOKENS.badgeClasses.active}`}>
+              Album
+            </span>
+          )}
+          <FavoriteButton
+            itemType="album"
+            itemId={String(album.id)}
+            metadata={favoriteMetadata}
+            size="sm"
+          />
+        </div>
       </div>
       <div className="p-4 text-center">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1 truncate">{displayName}</h3>

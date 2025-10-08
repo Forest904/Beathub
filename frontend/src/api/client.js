@@ -46,5 +46,18 @@ export const endpoints = {
   config: {
     frontend: () => `${API_BASE_URL}/api/config/frontend`,
   },
+  playlists: {
+    list: () => `${API_BASE_URL}/api/playlists`,
+    detail: (id) => `${API_BASE_URL}/api/playlists/${id}`,
+    tracks: (id) => `${API_BASE_URL}/api/playlists/${id}/tracks`,
+    reorder: (id) => `${API_BASE_URL}/api/playlists/${id}/tracks/reorder`,
+  },
+  favorites: {
+    list: () => `${API_BASE_URL}/api/favorites`,
+    summary: () => `${API_BASE_URL}/api/favorites/summary`,
+    status: () => `${API_BASE_URL}/api/favorites/status`,
+    toggle: () => `${API_BASE_URL}/api/favorites/toggle`,
+    remove: (id) => `${API_BASE_URL}/api/favorites/${id}`,
+  },
   progressStream: () => `${API_BASE_URL}/api/progress/stream`,
 };

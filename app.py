@@ -33,6 +33,8 @@ from src.interfaces.http.routes import (
     progress_bp,
     config_bp,
     compilation_bp,
+    playlist_bp,
+    favorite_bp,
 )
 
 
@@ -205,6 +207,8 @@ def create_app():
     app.register_blueprint(progress_bp)
     app.register_blueprint(config_bp)
     app.register_blueprint(compilation_bp)
+    app.register_blueprint(playlist_bp)
+    app.register_blueprint(favorite_bp)
     # --- NEW: Register the CD Burning Blueprint ---
     app.register_blueprint(cd_burning_bp)
 
