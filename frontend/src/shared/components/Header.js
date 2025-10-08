@@ -1,7 +1,6 @@
 import React from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle.jsx';
-import CompilationToggle from '../../features/compilations/components/CompilationToggle.jsx';
 import { useAuth } from '../hooks/useAuth';
 
 const NAV_LINKS = [
@@ -11,9 +10,6 @@ const NAV_LINKS = [
 ];
 
 const Header = () => {
-  const location = useLocation();
-  const pathname = location.pathname || '';
-  const showCompilation = /^\/(?:$|browse|artist\/|album\/)/.test(pathname);
   const { user, logout } = useAuth();
   const displayName = user
     ? (user.email && typeof user.email === 'string' && user.email.includes('@')
@@ -67,9 +63,8 @@ const Header = () => {
           </nav>
         </div>
 
-        {/* Right: Compilation (discovery only) + Theme toggle */}
+        {/* Right: Theme toggle and account */}
         <div className="flex items-center gap-3">
-          {showCompilation && user && <CompilationToggle />}
           <ThemeToggle />
           {user ? (
             <div className="flex items-center gap-2">

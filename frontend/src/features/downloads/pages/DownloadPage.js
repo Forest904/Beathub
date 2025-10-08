@@ -311,7 +311,7 @@ const SpotifyDownloadPage = () => {
     fetchAlbums();
   }, [fetchAlbums, user]);
 
-  // If instructed, show the progress panel immediately (e.g., from compilation sidebar)
+  // If instructed, show the progress panel immediately (e.g., from navigation shortcuts)
   useEffect(() => {
     if (location.state && location.state.showProgressPanel) {
       setProgressVisible(true);
