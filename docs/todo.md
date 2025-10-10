@@ -2,86 +2,185 @@
 
 # TODO IN THE FAR FUTURE
 
-## Steps for Online Publication (No Burning Feature)
+## Online Web Deployment (Public SaaS Mode)
 
 ### Plan
-- Publish a "cloud mode" build where CD burning and local file serving is disabled, while discovery and downloads remain available.
-- Deliver via container image and simple reverse proxy; secure keys via environment variables.
+- Deliver a hosted version of CD-Collector that exposes discovery and download flows while
+  suppressing local-only tooling (e.g., CD burning). Harden security boundaries and provide a
+  reproducible deployment pipeline.
 
 ### Batches
 
-Batch 1 — Feature flags and hardening
-- [ ] Config: Add `PUBLIC_MODE=1` and `ENABLE_CD_BURNER=0` flags. In `app.create_app()`, conditionally skip `CDBurningService` and the CD routes.
-- [ ] Backend: Gate `/api/items/*` streaming endpoints behind `PUBLIC_MODE=0` (return 403 in public mode) to avoid serving local files remotely.
-- [ ] Frontend: Hide the "CD Burner" nav/page behind a feature flag fetched from `/api/config` (new tiny endpoint exposing public caps).
-- [ ] CORS: Restrict origins via environment variables when in public mode.
-- [ ] Acceptance: App runs with burning hidden/disabled; local streaming APIs blocked in public mode.
+Batch 0 — Discovery and requirements
+- [ ] Audit every route and background job for assumptions about local storage or LAN access.
+- [ ] Document required third-party services (Spotify, Genius, YouTube) and credential scopes.
+- [ ] Capture compliance requirements (GDPR/DMCA takedown workflow, logging retention policy).
+- [ ] Acceptance: Confluence-style page summarises constraints, data flows, and ownership.
 
-Batch 2 — Build and deploy
-- [ ] Dockerfile: Multi-stage build to compile React (`frontend/build`) and package Flask app; serve static via Flask or (optionally) Nginx.
-- [ ] Compose: `docker-compose.yml` with one service, volume-mounted `downloads/`, environment for Spotify/Genius keys.
-- [ ] Reverse proxy: Example Nginx config with HTTPS, gzip, and caching headers for static assets.
-- [ ] Acceptance: One-command run serves the app on HTTPS with all non-burning features.
+Batch 1 — Feature flags and surface hardening
+- [ ] Config: Introduce `PUBLIC_MODE`, `ENABLE_CD_BURNER`, and `ALLOW_STREAMING_EXPORT` flags; wire
+      them through `create_app()` and CLI entrypoints.
+- [ ] Backend: Guard `/api/items/*` streaming and any filesystem-returning endpoints when
+      `PUBLIC_MODE=1`; emit structured 403 errors.
+- [ ] Frontend: Add `/api/public-config` endpoint and hydrate a React context to hide gated
+      navigation, buttons, and tooltips.
+- [ ] Security: Enforce OAuth redirect allowlist, strict CORS, rate-limiting middleware, and
+      Content Security Policy headers in Flask.
+- [ ] Acceptance: Public build shows no burning/streaming options; blocked routes log policy
+      violations.
 
-Batch 3 — Observability and quotas
-- [ ] Logging: Route app logs to stdout and file; redact secrets.
-- [ ] Metrics (optional): Add `/healthz` and `/readyz`; capture basic request timing logs.
-- [ ] Rate limits: Apply simple IP-based limits on preview and download start endpoints.
-- [ ] Acceptance: Health endpoints green, logs useful for ops, rate limits in place.
+Batch 2 — Build system and artifacts
+- [ ] Dockerfile: Multi-stage with `node:XX` for React build, `python:XX-slim` runtime, non-root
+      user, and healthcheck script.
+- [ ] Docker Compose: Author `docker-compose.public.yml` with Postgres/Redis stubs (if needed),
+      environment variables, and persistent `downloads/` volume.
+- [ ] CI: GitHub Actions (or alternative) workflow to lint, test, build image, and push to a
+      registry with semantic tags.
+- [ ] Acceptance: `docker compose -f docker-compose.public.yml up` serves prod build locally.
 
-Batch 4 — Documentation
-- [ ] README: Public-mode instructions, required environment variables, how to rotate keys, and how to disable public mode locally.
-- [ ] Security notes: Keys, allowed origins, and common pitfalls.
+Batch 3 — Infrastructure automation
+- [ ] Terraform (or Pulumi) module that provisions container registry, secrets store, managed
+      database/cache (if required), and HTTPS ingress (ALB/Nginx ingress for Kubernetes).
+- [ ] Helm chart / Kustomize manifests referencing the container image, secrets, config maps, and
+      autoscaling thresholds.
+- [ ] Integrate secrets rotation via AWS Secrets Manager / GCP Secret Manager and document manual
+      rotation fallback.
+- [ ] Acceptance: Staging environment bootstrap succeeds with one command and passes smoke tests.
 
-## Steps for Executable Packaging
+Batch 4 — Observability and resilience
+- [ ] Health endpoints: `/healthz` (dependencies) and `/readyz` (queue depth).
+- [ ] Structured logging to stdout with request IDs; centralise with OpenTelemetry exporter.
+- [ ] Metrics: Emit download counts, error rates, queue latency; provide default Grafana dashboard.
+- [ ] SLOs: Define alert rules (availability, latency) and create PagerDuty/on-call runbook.
+- [ ] Acceptance: Synthetic checks alerting wired for staging/prod; dashboards populated.
+
+Batch 5 — Documentation and customer support
+- [ ] README section covering public mode env vars, default roles, quota system, and support
+      contacts.
+- [ ] Publish a Trust & Safety playbook (abuse reports, takedowns, offboarding).
+- [ ] Knowledge base article for end users (how to request downloads, rate limits, FAQ).
+- [ ] Acceptance: Documentation reviewed by support/security stakeholders.
+
+### Publication Runbook — Cloud Release
+1. Create release branch `release/web-vX.Y.Z` from main and bump app version.
+2. Update `.env.public.example` with final secrets placeholders and verify `make lint test` passes.
+3. Build container: `docker build -t registry.example.com/cd-collector:web-vX.Y.Z .` and push with
+   version + `latest-public` tags.
+4. Run staging smoke tests via `docker compose -f docker-compose.public.yml -p staging up` and execute
+   Postman collection.
+5. Promote image by updating Helm values (`image.tag`) and applying to staging via CI pipeline.
+6. After staging sign-off, tag release `web-vX.Y.Z`, merge release branch, and approve production
+   deployment in CI/CD (Helm upgrade against prod cluster).
+7. Post-deploy validation: check `/readyz`, Grafana dashboard, and run end-to-end download.
+8. Announce availability in changelog and notify support to monitor incoming tickets.
+
+## Desktop Application Packaging (Windows/macOS/Linux)
 
 ### Plan
-- Ship a desktop-friendly package (Windows first) bundling the Flask backend and built React assets, launching the app and opening the default browser.
+- Ship an installer-like experience for desktop users bundling backend + frontend, ensuring
+  offline-friendly defaults and auto-launch in the default browser.
 
 ### Batches
 
-Batch 1 — PyInstaller proof of concept
-- [ ] Create `entrypoint.py` that calls `create_app()` and `app.run()` with `DEBUG=False` and `threaded=True`.
-- [ ] PyInstaller spec: include `frontend/build` as data, and mark hidden imports used by SpotDL/Spotipy.
-- [ ] Ensure `.env` is optional; document environment fallbacks.
-- [ ] Acceptance: Single-folder distribution runs on a clean Windows VM.
+Batch 0 — Environment alignment
+- [ ] Create `entrypoint.py` that reads config, starts the Flask app via Waitress/Hypercorn, and
+      opens browser after server boot.
+- [ ] Refactor settings to allow `.env` overrides and sensible platform defaults (download path,
+      ffmpeg location, cache directory).
+- [ ] Add smoke tests to validate that critical CLI commands still work post-refactor.
+- [ ] Acceptance: App can start with `python entrypoint.py` on Windows/macOS/Linux.
 
-Batch 2 — Assets and config
-- [ ] Verify static routing (`static_folder='frontend/build'`) resolves in the frozen app; adjust relative paths if needed.
-- [ ] Bundle default `ffmpeg` discovery notes; prefer system `ffmpeg` with clear error message if missing.
-- [ ] Add version resource info (Windows icon, product name) to the executable.
-- [ ] Acceptance: Frontend loads, downloads work, logs write to `%LOCALAPPDATA%/CD-Collector/log`.
+Batch 1 — Packaging pipeline
+- [ ] PyInstaller spec: include `frontend/build`, templates, static assets, and mark hidden imports
+      (SpotDL, Spotipy, SQLAlchemy plugins).
+- [ ] Ensure bundled binaries (ffmpeg) are optional; detect presence and show actionable error if
+      missing.
+- [ ] Automate build via `scripts/package_desktop.py` that runs PyInstaller for each target.
+- [ ] Acceptance: Build artifacts land under `dist/<platform>/` with working executables.
 
-Batch 3 — One-file and installer (optional)
-- [ ] Test one-file mode; if startup time is acceptable, ship as alternative.
-- [ ] Build an NSIS/Inno Setup installer with Start Menu shortcut and file associations (optional).
-- [ ] Acceptance: Install/uninstall lifecycle verified; app auto-opens browser on first run.
+Batch 2 — UX polish and platform integration
+- [ ] Windows: Add icon resources, product metadata, and event log friendly logging path
+      (`%LOCALAPPDATA%/CD-Collector/logs`).
+- [ ] macOS: Create `.app` bundle with Info.plist, hardened runtime entitlement template, and
+      codesign instructions.
+- [ ] Linux: Provide `.AppImage` or `.deb` recipe with desktop file and MIME types.
+- [ ] Acceptance: Smoke test on clean VMs for each platform; confirm downloads complete and logs
+      flush to expected directories.
 
-Batch 4 — Cross-platform notes
-- [ ] macOS: Test code-signing requirements; provide `venv + pyinstaller` recipe.
-- [ ] Linux: Provide `.deb`/AppImage instructions or fallback to Docker.
+Batch 3 — Installer and auto-update (stretch)
+- [ ] Windows: Build NSIS/Inno Setup installer with Start Menu shortcut, uninstall script, and
+      optional context menu integration.
+- [ ] macOS: Generate DMG with background artwork and drag-to-Applications instructions.
+- [ ] Auto-update: Evaluate Sparkle (macOS) / Squirrel.Windows / appimageupdate; document decision.
+- [ ] Acceptance: Install/uninstall cycle verified; updates apply without data loss.
 
-## Steps for Telegram Bot
+Batch 4 — Release management
+- [ ] Versioning: Adopt semantic version tied to git tags and embed build metadata in app splash.
+- [ ] QA checklist per release (functional, antivirus scan, Windows Defender SmartScreen).
+- [ ] Distribute checksums (SHA256) and optional GPG signatures.
+- [ ] Acceptance: Release candidate promoted to stable after QA sign-off checklist passes.
+
+### Publication Runbook — Desktop Releases
+1. Cut release branch `release/desktop-vX.Y.Z`; update `VERSION` file and changelog desktop section.
+2. Run `python scripts/package_desktop.py --platform windows macos linux` inside clean CI runners.
+3. Virus-scan artifacts (Windows Defender, macOS Gatekeeper notarization, ClamAV for Linux).
+4. Upload installers and checksums to GitHub Releases (draft), attach upgrade notes, and request QA
+   sign-off.
+5. After approvals, publish GitHub Release, update website download links, and notify mailing list.
+6. Monitor crash/log telemetry and roll back by withdrawing binaries if high-severity issues emerge.
+
+## Telegram Bot Deployment
 
 ### Plan
-- A minimal Telegram bot to trigger downloads, track progress, and return results (links to files or status). Restrict access to allowed user IDs.
+- Provide a Telegram interface that allows whitelisted users to trigger downloads, monitor
+  progress, and retrieve links while respecting rate limits and security constraints.
 
 ### Batches
 
-Batch 1 — Bootstrap
-- [ ] Add `src/bots/telegram_bot.py` using `python-telegram-bot` (v20+). Read `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USER_IDS` from the environment.
-- [ ] Commands: `/start`, `/help`, `/download <spotify_link>`, `/status <job_id>`.
-- [ ] Wire `/download` to submit a job via existing `JobQueue` (async) and return the job ID.
-- [ ] Acceptance: Local bot responds; submits jobs; `/status` reflects queue state.
+Batch 0 — Foundations
+- [ ] Create `src/bots/telegram_bot.py` using `python-telegram-bot` (v20+) with dependency injection
+      for job submission and status queries.
+- [ ] Load `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS`, and `PUBLIC_BASE_URL` from config; add
+      schema validation and helpful startup errors.
+- [ ] Implement `/start`, `/help`, `/download <spotify_link>`, `/status <job_id>`, `/cancel <job_id>`
+      command handlers with logging context.
+- [ ] Acceptance: Local bot responds to whitelisted users and rejects others with clear messaging.
 
-Batch 2 — Progress and results
-- [ ] Subscribe the bot to `ProgressBroker` updates (in-process) to push progress messages back to the chat.
-- [ ] On completion, reply with a summary (item type, title, tracks). If running locally, offer a path; if public, offer a signed, time-limited download link (future).
-- [ ] Errors: Send a friendly failure message and include the logged error code.
-- [ ] Acceptance: End-to-end flow works for album/playlist/track links.
+Batch 1 — Job orchestration and feedback
+- [ ] Integrate with existing `JobQueue` or create `BotJobService` wrapper ensuring idempotent job
+      creation.
+- [ ] Subscribe to `ProgressBroker` to send incremental updates (percentage, track names) back to
+      the originating chat.
+- [ ] Provide rich completion summaries (title, duration, output path or download URL) and friendly
+      error fallbacks.
+- [ ] Acceptance: End-to-end playlist download triggered via Telegram completes with updates.
 
-Batch 3 — Deployment and safety
-- [ ] Add a small runner `python -m src.bots.telegram_bot` with graceful shutdown.
-- [ ] Containerize the bot (optional) or run alongside the app; document systemd service.
-- [ ] Rate limit per user (simple token bucket) and validate links to be Spotify only.
-- [ ] Acceptance: Bot remains responsive under load and rejects unknown users.
+Batch 2 — Reliability and monitoring
+- [ ] Add retry/backoff for Telegram API errors and network hiccups; centralise exception handling.
+- [ ] Implement per-user rate limiting (token bucket) and global concurrency guard to protect
+      backend resources.
+- [ ] Emit structured logs and Prometheus counters (commands, successes, failures).
+- [ ] Acceptance: Load test with bot emulator to ensure graceful throttling.
+
+Batch 3 — Deployment options
+- [ ] CLI runner `python -m src.bots.telegram_bot --config config/bot.toml` with graceful shutdown
+      and health endpoints.
+- [ ] Dockerfile stage `bot` to build lightweight container; share code volume with main image or
+      reuse base layer.
+- [ ] Systemd service template for bare-metal deployments; document environment files and log
+      rotation.
+- [ ] Acceptance: Bot can be deployed via Docker Compose service or systemd unit with minimal steps.
+
+### Publication Runbook — Telegram Bot Release
+1. Create release branch `release/telegram-vX.Y.Z`; update bot changelog and bump version constant in
+   `src/bots/telegram_bot.py`.
+2. Run unit/integration tests: `pytest tests/bots/test_telegram_bot.py` and manual smoke test against
+   staging bot using sandbox Telegram chat.
+3. Build and push bot container: `docker build -f Dockerfile.bot -t registry.example.com/cd-bot:vX.Y.Z .`.
+4. Deploy to staging using `docker compose -f deploy/telegram/docker-compose.yml up -d`; verify
+   health endpoint and command flow.
+5. Promote image to production via CI/CD (Helm release or systemd update), ensuring secrets are
+   rotated and `TELEGRAM_ALLOWED_USER_IDS` configured.
+6. Post-release checklist: confirm monitoring dashboards, audit logs for unauthorized access, and
+   broadcast update to whitelisted users if needed.
+
