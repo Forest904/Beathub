@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle.jsx';
 import { useAuth } from '../hooks/useAuth';
+import { useFeatureFlags } from '../context/FeatureFlagsContext';
 
 const NAV_LINKS = [
   { label: 'Discover', to: '/browse' },
@@ -11,6 +12,7 @@ const NAV_LINKS = [
 
 const Header = () => {
   const { user, logout } = useAuth();
+  const { enableCdBurner } = useFeatureFlags();
   const displayName = user
     ? (user.email && typeof user.email === 'string' && user.email.includes('@')
         ? user.email.split('@')[0]
@@ -21,9 +23,19 @@ const Header = () => {
     await logout();
   };
 
+  const baseLinks = NAV_LINKS.filter((link) => {
+    if (link.to === '/download' && !user) {
+      return false;
+    }
+    if (link.to === '/burn-cd' && !enableCdBurner) {
+      return false;
+    }
+    return true;
+  });
+
   const links = user
-    ? [...NAV_LINKS, { label: 'My Playlists', to: '/playlists' }, { label: 'Favourites', to: '/favorites' }]
-    : NAV_LINKS.filter((link) => link.to !== '/download');
+    ? [...baseLinks, { label: 'My Playlists', to: '/playlists' }, { label: 'Favourites', to: '/favorites' }]
+    : baseLinks;
 
   return (
   <header className="relative bg-white text-slate-900 shadow dark:bg-slate-950 dark:text-slate-100 border-b border-brand-100 dark:border-transparent">

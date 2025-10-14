@@ -45,6 +45,7 @@ export const endpoints = {
   },
   config: {
     frontend: () => `${API_BASE_URL}/api/config/frontend`,
+    public: () => `${API_BASE_URL}/api/config/public-config`,
   },
   playlists: {
     list: () => `${API_BASE_URL}/api/playlists`,

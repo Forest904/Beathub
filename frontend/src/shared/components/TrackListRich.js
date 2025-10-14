@@ -97,6 +97,7 @@ const TrackListRich = ({ tracks, compactForBurnPreview, showDiscHeaders, showExp
                         const hasLyrics = Boolean(track.local_lyrics_path || track.has_embedded_lyrics);
                         const lyricsKnown = ('local_lyrics_path' in track) || (typeof track.has_embedded_lyrics !== 'undefined');
                         if (!lyricsKnown) return null;
+                        if (typeof onLyricsClick !== 'function') return null;
                         const handleClick = (e) => {
                           e.stopPropagation();
                           if (typeof onLyricsClick === 'function') onLyricsClick(track);

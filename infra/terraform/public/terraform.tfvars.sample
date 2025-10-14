@@ -1,0 +1,14 @@
+# Sample values
+name = "cd-collector-staging"
+region = "us-east-1"
+vpc_id = "vpc-0123456789abcdef0"
+private_subnet_ids = ["subnet-aaa", "subnet-bbb"]
+public_subnet_ids  = ["subnet-ccc", "subnet-ddd"]
+db_username = "collector"
+db_password = "super-secret-password"
+db_engine_version = "15.5"
+cache_node_type = "cache.t4g.small"
+acm_domain_name = "app.example.com"
+acm_validation_domains = []
+route53_zone_id = "Z0123456789ABCDEFG"
+tags = { Environment = "staging" }

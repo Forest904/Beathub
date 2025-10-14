@@ -8,8 +8,12 @@ import Message from '../../../shared/components/Message';
 import { API_BASE_URL, endpoints } from '../../../api/client';
 import { get, post } from '../../../api/http';
 import useDownloadHistory from '../../downloads/hooks/useDownloadHistory';
+import { useFeatureFlags } from '../../../shared/context/FeatureFlagsContext';
 
 const CDBurnerPage = () => {
+  const { enableCdBurner, publicMode } = useFeatureFlags();
+  const featureDisabled = !enableCdBurner;
+
   const { items: downloadedItems, refresh: refreshDownloads } = useDownloadHistory();
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [burnerStatus, setBurnerStatus] = useState({
@@ -56,6 +60,7 @@ const CDBurnerPage = () => {
   }, [message, pushMessage]);
 
   const fetchDownloadedItems = useCallback(async () => {
+    if (featureDisabled) return;
     setIsLoadingItems(true);
     try {
       await refreshDownloads();
@@ -65,9 +70,10 @@ const CDBurnerPage = () => {
     } finally {
       setIsLoadingItems(false);
     }
-  }, [pushMessage, refreshDownloads]);
+  }, [featureDisabled, pushMessage, refreshDownloads]);
 
   const pollBurnerStatus = useCallback(async () => {
+    if (featureDisabled) return;
     try {
       const response = await get(endpoints.burner.status());
       setBurnerStatus(response);
@@ -81,10 +87,11 @@ const CDBurnerPage = () => {
     } catch (error) {
       console.error('Error polling burner status', error);
     }
-  }, [pushMessage, burnerStatus.is_burning, isBurningInitiating]);
+  }, [featureDisabled, pushMessage, burnerStatus.is_burning, isBurningInitiating]);
 
   const fetchDevices = useCallback(
     async (options = { showSpinner: false }) => {
+      if (featureDisabled) return;
       const { showSpinner } = options || {};
       if (showSpinner) setLoadingDevices(true);
       try {
@@ -104,10 +111,13 @@ const CDBurnerPage = () => {
         if (showSpinner) setLoadingDevices(false);
       }
     },
-    [pushMessage],
+    [featureDisabled, pushMessage],
   );
 
   useEffect(() => {
+    if (featureDisabled) {
+      return undefined;
+    }
     fetchDownloadedItems();
     pollBurnerStatus();
     fetchDevices({ showSpinner: true });
@@ -119,17 +129,21 @@ const CDBurnerPage = () => {
       clearInterval(statusInterval);
       clearInterval(deviceInterval);
     };
-  }, [fetchDownloadedItems, pollBurnerStatus, fetchDevices]);
+  }, [featureDisabled, fetchDownloadedItems, pollBurnerStatus, fetchDevices]);
 
   // Ensure BurnProgress does not linger when no burn is active
   useEffect(() => {
+    if (featureDisabled) return;
     if (!burnerStatus.is_burning && !isBurningInitiating) {
       setShowBurnProgress(false);
     }
-  }, [burnerStatus.is_burning, isBurningInitiating]);
+  }, [featureDisabled, burnerStatus.is_burning, isBurningInitiating]);
 
   // Prevent accidental navigation/refresh while burning or initiating
   useEffect(() => {
+    if (featureDisabled) {
+      return undefined;
+    }
     const shouldBlock = burnerStatus.is_burning || isBurningInitiating;
     const beforeUnload = (e) => {
       if (!shouldBlock) return;
@@ -142,7 +156,7 @@ const CDBurnerPage = () => {
     return () => {
       window.removeEventListener('beforeunload', beforeUnload);
     };
-  }, [burnerStatus.is_burning, isBurningInitiating]);
+  }, [featureDisabled, burnerStatus.is_burning, isBurningInitiating]);
 
   const selectedItem = useMemo(
     () => downloadedItems.find((item) => item.id === selectedItemId) || null,
@@ -150,11 +164,12 @@ const CDBurnerPage = () => {
   );
 
   const handleSelectItem = useCallback((item) => {
-    if (burnerStatus.is_burning || isBurningInitiating) return;
+    if (featureDisabled || burnerStatus.is_burning || isBurningInitiating) return;
     setSelectedItemId((current) => (current === item.id ? null : item.id));
-  }, [burnerStatus.is_burning, isBurningInitiating]);
+  }, [featureDisabled, burnerStatus.is_burning, isBurningInitiating]);
 
   const handleBurnCD = useCallback(async () => {
+    if (featureDisabled) return;
     if (!selectedItem) {
       pushMessage({ type: 'warning', text: 'Select a downloaded item to burn first.' });
       return;
@@ -190,9 +205,10 @@ const CDBurnerPage = () => {
     } finally {
       setIsBurningInitiating(false);
     }
-  }, [burnerStatus.is_burning, devices, pollBurnerStatus, pushMessage, selectedItem]);
+  }, [featureDisabled, burnerStatus.is_burning, devices, pollBurnerStatus, pushMessage, selectedItem]);
 
   const handleCancelBurn = useCallback(async () => {
+    if (featureDisabled) return;
     if (!activeSessionId) {
       return;
     }
@@ -203,10 +219,11 @@ const CDBurnerPage = () => {
       console.error('Failed to cancel burn', error);
       pushMessage({ type: 'error', text: 'Failed to cancel the burn.' });
     }
-  }, [activeSessionId, pollBurnerStatus, pushMessage]);
+  }, [featureDisabled, activeSessionId, pollBurnerStatus, pushMessage]);
 
   const handleSelectDevice = useCallback(
     async (device) => {
+      if (featureDisabled) return;
       try {
         const payload = { device_id: device ? device.id : null };
         await post(endpoints.burner.selectDevice(), payload);
@@ -218,7 +235,7 @@ const CDBurnerPage = () => {
         pushMessage({ type: 'error', text: errorMessage });
       }
     },
-    [fetchDevices, pollBurnerStatus, pushMessage],
+    [featureDisabled, fetchDevices, pollBurnerStatus, pushMessage],
   );
   // Removed status summary display; keep burnerStatus for internal logic only.
   const selectedDevice = useMemo(() => devices.find((device) => device.selected) || null, [devices]);
@@ -248,6 +265,7 @@ const CDBurnerPage = () => {
   const canStartByDevice = Boolean(selectedDevice && selectedDevice.present && selectedDevice.writable && !burnerStatus.is_burning);
 
   const fetchPreview = useCallback(async () => {
+    if (featureDisabled) return;
     if (!selectedItem) return;
     setPreviewLoading(true);
     setPreviewError(null);
@@ -265,10 +283,13 @@ const CDBurnerPage = () => {
     } finally {
       setPreviewLoading(false);
     }
-  }, [pushMessage, selectedItem]);
+  }, [featureDisabled, pushMessage, selectedItem]);
 
   // Auto-fetch preview only when both device and album are selected
   useEffect(() => {
+    if (featureDisabled) {
+      return undefined;
+    }
     if (selectedItem && selectedDevice) {
       const key = `${selectedItem.id}|${selectedDevice.id}`;
       if (lastPreviewItemIdRef.current !== key || !previewPlan) {
@@ -282,7 +303,21 @@ const CDBurnerPage = () => {
       setPreviewLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedItem?.id, selectedDevice?.id]);
+  }, [featureDisabled, selectedItem?.id, selectedDevice?.id]);
+
+  if (featureDisabled) {
+    const messageText = publicMode
+      ? 'CD burning is not available in the hosted version of BeatHub.'
+      : 'CD burning has been disabled for this deployment.';
+    return (
+      <div className="container mx-auto px-4 py-10">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-3xl font-semibold text-slate-900 dark:text-white mb-4">CD Burner</h1>
+          <Message type="warning" text={messageText} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">

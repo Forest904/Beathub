@@ -13,6 +13,7 @@ import { usePlayer } from '../../../player/PlayerContext';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { API_BASE_URL, endpoints } from '../../../api/client';
 import { get, post } from '../../../api/http';
+import { useFeatureFlags } from '../../../shared/context/FeatureFlagsContext';
 
 const extractSpotifyId = (link) => {
   if (!link) return null;
@@ -64,6 +65,8 @@ const SpotifyDownloadPage = () => {
   const location = useLocation();
   const player = usePlayer();
   const { user } = useAuth();
+  const { allowStreamingExport, publicMode } = useFeatureFlags();
+  const streamingDisabled = !allowStreamingExport;
   const {
     items: albums,
     loading: historyLoading,
@@ -87,6 +90,17 @@ const SpotifyDownloadPage = () => {
   const historySectionRef = useRef(null);
 
   const apiBaseUrl = API_BASE_URL;
+
+  useEffect(() => {
+    if (!streamingDisabled) {
+      return;
+    }
+    setLyricsVisible(false);
+    setLyricsTrack(null);
+    if (player && typeof player.stop === 'function') {
+      player.stop();
+    }
+  }, [player, streamingDisabled]);
 
   const fetchAlbums = useCallback(async (options = {}) => {
     const { silent = false } = options;
@@ -446,18 +460,24 @@ const SpotifyDownloadPage = () => {
   }, [sortedTracks]);
 
   const handleLyricsClick = useCallback((track) => {
+    if (streamingDisabled) {
+      return;
+    }
     setLyricsTrack(track || null);
     setLyricsVisible(true);
-  }, []);
+  }, [streamingDisabled]);
 
   const buildAudioUrl = useCallback((track) => {
-    if (!track || !selectedAlbumId) return null;
+    if (!track || !selectedAlbumId || streamingDisabled) return null;
     const primaryArtist = Array.isArray(track.artists) && track.artists.length > 0 ? track.artists[0] : '';
     const params = new URLSearchParams({ title: track.title || '', artist: primaryArtist || '' });
     return `${apiBaseUrl}/api/items/${selectedAlbumId}/audio?${params.toString()}`;
-  }, [apiBaseUrl, selectedAlbumId]);
+  }, [apiBaseUrl, selectedAlbumId, streamingDisabled]);
 
   const handlePlayTrack = useCallback((track, index) => {
+    if (streamingDisabled) {
+      return;
+    }
     if (!player || !sortedTracks || sortedTracks.length === 0) return;
     const queue = sortedTracks.map((t) => ({
       title: t.title,
@@ -468,7 +488,7 @@ const SpotifyDownloadPage = () => {
       artist: Array.isArray(t.artists) && t.artists.length > 0 ? t.artists[0] : '',
     }));
     player.playQueue(queue, index);
-  }, [player, sortedTracks, buildAudioUrl, selectedAlbumId]);
+  }, [player, sortedTracks, buildAudioUrl, selectedAlbumId, streamingDisabled]);
 
   return (
     <div className="min-h-screen">
@@ -507,6 +527,14 @@ const SpotifyDownloadPage = () => {
               ) : null
             }
           />
+          {streamingDisabled && (
+            <Message
+              type="info"
+              text={publicMode
+                ? 'Streaming previews and lyric exports are disabled in this hosted environment.'
+                : 'Streaming previews and lyric exports are disabled for this deployment.'}
+            />
+          )}
           {errorMessage && <Message type="error" text={errorMessage} />}
           <DownloadProgress
             visible={progressVisible}
@@ -552,21 +580,23 @@ const SpotifyDownloadPage = () => {
                 showIsrc={false}
                 showDisc={false}
                 showPopularity={false}
-                onLyricsClick={handleLyricsClick}
-                enablePlay
-                onPlayTrack={handlePlayTrack}
+                onLyricsClick={allowStreamingExport ? handleLyricsClick : undefined}
+                enablePlay={allowStreamingExport}
+                onPlayTrack={allowStreamingExport ? handlePlayTrack : undefined}
               />
             </div>
           )}
         </div>
       </div>
-      <LyricsPanel
-        visible={lyricsVisible}
-        onClose={() => setLyricsVisible(false)}
-        baseUrl={apiBaseUrl}
-        albumId={selectedAlbumId}
-        track={lyricsTrack}
-      />
+      {allowStreamingExport && (
+        <LyricsPanel
+          visible={lyricsVisible}
+          onClose={() => setLyricsVisible(false)}
+          baseUrl={apiBaseUrl}
+          albumId={selectedAlbumId}
+          track={lyricsTrack}
+        />
+      )}
       </>
       )}
     </div>

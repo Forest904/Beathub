@@ -32,6 +32,7 @@ def _get_csv_list(name: str, default: str) -> List[str]:
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your_super_secret_key_lmao'
+    PUBLIC_MODE = _get_bool('PUBLIC_MODE', False)
 
     # Database (BeatHub)
     # Always use the new DB filename; the app creates it and tables at startup.
@@ -89,8 +90,18 @@ class Config:
     # Runtime behavior
     # Turn Flask debug on/off from env; default off to avoid noisy console
     DEBUG = _get_bool('DEBUG', False)
+    ENABLE_CD_BURNER = _get_bool('ENABLE_CD_BURNER', not PUBLIC_MODE)
+    ALLOW_STREAMING_EXPORT = _get_bool('ALLOW_STREAMING_EXPORT', not PUBLIC_MODE)
+    ENABLE_RATE_LIMITING = _get_bool('ENABLE_RATE_LIMITING', PUBLIC_MODE)
+    RATE_LIMIT_REQUESTS = max(0, _get_int('RATE_LIMIT_REQUESTS', 120))
+    RATE_LIMIT_WINDOW_SECONDS = max(0, _get_int('RATE_LIMIT_WINDOW_SECONDS', 60))
+    READINESS_QUEUE_THRESHOLD = max(0, _get_int('READINESS_QUEUE_THRESHOLD', 25))
     # Control console logging; when disabled, logs go only to file
     ENABLE_CONSOLE_LOGS = _get_bool('ENABLE_CONSOLE_LOGS', False)
+    OTEL_SERVICE_NAME = os.getenv('OTEL_SERVICE_NAME', 'cd-collector')
+    OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT')
+    OTEL_EXPORTER_OTLP_HEADERS = os.getenv('OTEL_EXPORTER_OTLP_HEADERS')
+    OTEL_EXPORTER_OTLP_INSECURE = _get_bool('OTEL_EXPORTER_OTLP_INSECURE', True)
 
     # CD capacity configuration (minutes)
     # Primary target capacity (e.g., 80 for 80-min CD-R)
@@ -101,5 +112,11 @@ class Config:
         'CORS_ALLOWED_ORIGINS',
         'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5000,http://127.0.0.1:5000',
     )
-
-
+    OAUTH_REDIRECT_ALLOWLIST = _get_csv_list(
+        'OAUTH_REDIRECT_ALLOWLIST',
+        'http://localhost:3000,http://127.0.0.1:3000',
+    )
+    CONTENT_SECURITY_POLICY = os.getenv(
+        'CONTENT_SECURITY_POLICY',
+        "default-src 'self'; img-src 'self' data:; media-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'",
+    )

@@ -9,6 +9,7 @@ of duplicate links.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from queue import Empty, Queue
@@ -16,6 +17,12 @@ from typing import Any, Dict, Optional
 
 from config import Config
 from src.database.db_manager import db, DownloadJob
+from src.observability.metrics import (
+    observe_queue_wait_time,
+    record_download_failure,
+    record_download_success,
+    update_queue_gauge,
+)
 from src.support.identity import resolve_user_id
 from .history_service import persist_download_item
 
@@ -34,6 +41,8 @@ class Job:
     error: Optional[str] = None
     event: threading.Event = field(default_factory=threading.Event)
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    enqueued_at: float = field(default_factory=time.time)
+    started_at: Optional[float] = None
 
 
 class JobQueue:
@@ -70,6 +79,7 @@ class JobQueue:
             self._by_link[key] = job.id
             self._queue.put(job)
             self._persist_job(job)
+            update_queue_gauge(self._queue.qsize())
             return job
 
     def get(self, job_id: str) -> Optional[Job]:
@@ -99,7 +109,11 @@ class JobQueue:
                 return False
             job.cancel_event.set()
             self._update_job_status(job, status="cancelled", result={"status": "error", "error_code": "cancelled"})
+            update_queue_gauge(self._queue.qsize())
             return True
+
+    def qsize(self) -> int:
+        return self._queue.qsize()
 
     def _worker(self):
         while not self._shutdown:
@@ -107,6 +121,7 @@ class JobQueue:
                 job = self._queue.get(timeout=0.5)
             except Empty:
                 continue
+            update_queue_gauge(self._queue.qsize())
 
             try:
                 if self.flask_app is not None:
@@ -117,6 +132,7 @@ class JobQueue:
                     self._run_job(job)
             finally:
                 self._queue.task_done()
+                update_queue_gauge(self._queue.qsize())
 
     def _persist_job(self, job: Job) -> None:
         try:
@@ -172,6 +188,9 @@ class JobQueue:
                 return
             job.status = "in_progress"
             self._update_job_status(job, status=job.status)
+            job.started_at = time.time()
+            if job.enqueued_at:
+                observe_queue_wait_time(max(0.0, job.started_at - job.enqueued_at))
 
         max_attempts = max(1, Config.DOWNLOAD_MAX_RETRIES)
         last_error: Optional[str] = None
@@ -190,6 +209,10 @@ class JobQueue:
                         self._update_job_status(job, status=job.status, result=job.result)
                         persist_download_item(result, explicit_user_id=job.user_id)
                         job.event.set()
+                        if job.started_at:
+                            record_download_success(time.time() - job.started_at)
+                        else:
+                            record_download_success()
                         self.logger.info("Job %s completed", job.id)
                         return
                     # Map error code and message for retry decision
@@ -238,6 +261,10 @@ class JobQueue:
         job.result = {"status": "error", "message": last_error or "Job failed"}
         self._update_job_status(job, status=job.status, result=job.result, error=job.error)
         job.event.set()
+        if job.started_at:
+            record_download_failure(time.time() - job.started_at)
+        else:
+            record_download_failure()
         self.logger.error("Job %s failed: %s", job.id, job.error)
 
 

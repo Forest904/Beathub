@@ -16,12 +16,40 @@ logger = logging.getLogger(__name__)
 cd_burning_bp = Blueprint('cd_burning_bp', __name__, url_prefix='/api/cd-burner')
 
 
+def _policy_violation_response(policy: str, message: str):
+    return jsonify({
+        "error": "policy_violation",
+        "policy": policy,
+        "message": message,
+    }), 403
+
+
+def _enforce_burner_enabled(action: str):
+    if current_app.config.get('ENABLE_CD_BURNER', False):
+        return None
+    logger.warning(
+        "CD burner endpoint blocked by policy",
+        extra={
+            "policy": "cd_burner_disabled",
+            "action": action,
+            "path": request.path,
+        },
+    )
+    return _policy_violation_response(
+        "cd_burner_disabled",
+        "CD burning is disabled for this deployment.",
+    )
+
+
 @cd_burning_bp.route('/status', methods=['GET'])
 def get_burner_status():
     """
     Endpoint to check the status of the CD burner and any ongoing burning operation.
     The status is retrieved from the global CD_BURN_STATUS_MANAGER.
     """
+    guard = _enforce_burner_enabled('status')
+    if guard:
+        return guard
     logger.info("Received request for CD burner status.")
     try:
         mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
@@ -43,6 +71,9 @@ def start_cd_burn():
     Endpoint to initiate the CD burning process for a selected downloaded item.
     Expects a JSON payload with 'download_item_id'.
     """
+    guard = _enforce_burner_enabled('burn')
+    if guard:
+        return guard
     data = request.get_json()
     download_item_id = data.get('download_item_id')
     logger.info(f"Received request to start CD burn for DownloadedItem ID: {download_item_id}")
@@ -121,6 +152,9 @@ def preview_burn_plan():
     Payload: { "download_item_id": int }
     Returns: JSON plan with track order, resolved files, durations, lyrics presence, and CD-Text.
     """
+    guard = _enforce_burner_enabled('preview')
+    if guard:
+        return guard
     try:
         data = request.get_json(silent=True) or {}
         download_item_id = data.get('download_item_id')
@@ -149,6 +183,9 @@ def preview_burn_plan():
 @cd_burning_bp.route('/devices', methods=['GET'])
 def list_devices():
     """List optical recorders with dynamic media status (Windows/IMAPI2)."""
+    guard = _enforce_burner_enabled('devices')
+    if guard:
+        return guard
     try:
         cd_burner = current_app.extensions.get('cd_burning_service')
         mgr: BurnSessionManager = current_app.extensions.get('burn_sessions')
@@ -174,6 +211,9 @@ def list_devices():
 @cd_burning_bp.route('/cancel', methods=['POST'])
 def cancel_burn():
     """Request cancellation of an in-progress burn by session_id."""
+    guard = _enforce_burner_enabled('cancel')
+    if guard:
+        return guard
     try:
         data = request.get_json(silent=True) or {}
         session_id = data.get('session_id') or request.args.get('session_id')
@@ -206,6 +246,9 @@ def cancel_burn():
 @cd_burning_bp.route('/select-device', methods=['POST'])
 def select_device():
     """Select or clear the active recorder by device_id (Windows/IMAPI2)."""
+    guard = _enforce_burner_enabled('select_device')
+    if guard:
+        return guard
     try:
         data = request.get_json(silent=True) or {}
         has_device_field = 'device_id' in data

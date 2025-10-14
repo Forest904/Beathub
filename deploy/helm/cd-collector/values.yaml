@@ -1,0 +1,74 @@
+image:
+  repository: ghcr.io/example/cd-collector
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1024Mi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: cd-collector
+    alb.ingress.kubernetes.io/healthcheck-path: /readyz
+  hosts:
+    - host: app.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - app.example.com
+      secretName: cd-collector-cert
+
+env:
+  PUBLIC_MODE: "1"
+  ALLOW_STREAMING_EXPORT: "0"
+  READINESS_QUEUE_THRESHOLD: "25"
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_HEADERS: ""
+  OTEL_EXPORTER_OTLP_INSECURE: "1"
+  OTEL_SERVICE_NAME: "cd-collector"
+
+secretRefs:
+  - name: cd-collector-secrets
+    optional: false
+
+config:
+  SPOTDL_FORMAT: "mp3"
+  SPOTDL_AUDIO_SOURCE: "youtube-music"
+  DOWNLOAD_QUEUE_WORKERS: 4
+
+service:
+  type: ClusterIP
+  port: 80
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "5000"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,19 +1,57 @@
 import os
 import shutil
 import logging
-from flask import Blueprint, request, jsonify, send_file
+import time
+from flask import Blueprint, request, jsonify, send_file, current_app
 import json
-from flask_login import login_required
+from flask_login import login_required, current_user
 from src.database.db_manager import db, DownloadedItem
 from src.domain.catalog import LyricsService
 import re
 
 from src.domain.downloads.history_service import persist_download_item
+from src.observability.metrics import (
+    record_download_attempt,
+    record_download_failure,
+    record_download_success,
+)
 from src.support.identity import resolve_user_id
 
 logger = logging.getLogger(__name__)
 
 download_bp = Blueprint('download_bp', __name__, url_prefix='/api')
+
+
+def _policy_violation_response(policy: str, message: str):
+    return jsonify({
+        'error': 'policy_violation',
+        'policy': policy,
+        'message': message,
+    }), 403
+
+
+def _enforce_streaming_policy(action: str):
+    if current_app.config.get('ALLOW_STREAMING_EXPORT', True):
+        return None
+    user_id = None
+    try:
+        if getattr(current_user, 'is_authenticated', False):
+            user_id = getattr(current_user, 'id', None)
+    except Exception:
+        user_id = None
+    current_app.logger.warning(
+        "Streaming endpoint blocked by policy",
+        extra={
+            'policy': 'streaming_disabled',
+            'action': action,
+            'path': request.path,
+            'user_id': user_id,
+        },
+    )
+    return _policy_violation_response(
+        'streaming_disabled',
+        'Media streaming is disabled for this deployment.',
+    )
 
 def _persist_download_item(result: dict) -> None:
     """Persist DownloadedItem metadata for completed downloads (idempotent)."""
@@ -51,6 +89,8 @@ def download_spotify_item_api():
         return jsonify({"status": "error", "message": "Spotify link is required."}), 400
 
     logger.info(f"Received download request for: {spotify_link} (async={async_mode})")
+    record_download_attempt()
+    start_time = time.time()
 
     # If job queue is available, use it for idempotent handling and parallelism
     if jobs is not None:
@@ -64,6 +104,8 @@ def download_spotify_item_api():
         result = spotify_downloader.download_spotify_content(spotify_link, user_id=_resolve_user_id())
 
     if not isinstance(result, dict):
+        if jobs is None:
+            record_download_failure(time.time() - start_time)
         return jsonify({"status": "error", "message": "Unexpected orchestrator response."}), 500
 
     if result.get("status") == "success":
@@ -78,6 +120,8 @@ def download_spotify_item_api():
 
         logger.info(f"Attempting to save to DB: Type='{item_type}', ID='{spotify_id}', Title='{title}', Artist='{artist}'")
         _persist_download_item(result)
+        if jobs is None:
+            record_download_success(time.time() - start_time)
 
         return jsonify(result), 200
 
@@ -85,6 +129,8 @@ def download_spotify_item_api():
     message = result.get("message", "")
     error_code = result.get("error_code")
     status_code = 500 if error_code in ("provider_error", "internal_error") else 400
+    if jobs is None:
+        record_download_failure(time.time() - start_time)
     return jsonify(result), status_code
 
 
@@ -196,6 +242,9 @@ def delete_downloaded_item(item_id):
 @login_required
 def get_item_metadata_by_id(item_id: int):
     """Return the saved spotify_metadata.json for a downloaded item by DB id."""
+    guard = _enforce_streaming_policy('item_metadata_by_id')
+    if guard:
+        return guard
     item = DownloadedItem.query.get(item_id)
     if not item:
         return jsonify({'error': 'Item not found'}), 404
@@ -220,6 +269,9 @@ def get_item_metadata_by_id(item_id: int):
 @login_required
 def get_item_metadata_by_spotify(spotify_id: str):
     """Return the saved spotify_metadata.json for a downloaded item by Spotify id."""
+    guard = _enforce_streaming_policy('item_metadata_by_spotify')
+    if guard:
+        return guard
     item = DownloadedItem.query.filter_by(spotify_id=spotify_id, user_id=_resolve_user_id()).first()
     if not item:
         return jsonify({'error': 'Item not found'}), 404
@@ -253,6 +305,9 @@ def get_item_lyrics(item_id: int):
       3) If no .txt found, read embedded lyrics from the audio file via LyricsService.
       4) If still not found, attempt fuzzy match among .txt basenames.
     """
+    guard = _enforce_streaming_policy('item_lyrics')
+    if guard:
+        return guard
     title = (request.args.get('title') or '').strip()
     artist = (request.args.get('artist') or '').strip()
     if not title:
@@ -431,6 +486,9 @@ def stream_item_audio(item_id: int):
       - title: track title (required)
       - artist: primary artist name (optional)
     """
+    guard = _enforce_streaming_policy('item_audio')
+    if guard:
+        return guard
     title = (request.args.get('title') or '').strip()
     artist = (request.args.get('artist') or '').strip()
     if not title:
@@ -540,6 +598,9 @@ def get_item_cover_by_spotify(spotify_id: str):
     Returns 200 with image/jpeg|image/png if present as cover.jpg/cover.png in the item's folder.
     If not present, generates an SVG placeholder with the item title centered.
     """
+    guard = _enforce_streaming_policy('item_cover')
+    if guard:
+        return guard
     item = DownloadedItem.query.filter_by(spotify_id=spotify_id).first()
     if not item:
         return jsonify({'error': 'Item not found'}), 404

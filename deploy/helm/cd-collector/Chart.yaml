@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cd-collector
+description: Helm chart for the CD-Collector SaaS deployment
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

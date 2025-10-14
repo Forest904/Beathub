@@ -111,10 +111,42 @@ On first run, the SQLite DB and tables are created automatically.
 - [Architecture](docs/architecture.md)
 - [Structure](docs/structure.md)
 - [TODO / Roadmap](docs/todo.md)
+- [Observability](docs/observability/README.md)
+- [Infrastructure](docs/infra/bootstrap.md)
+- [Trust & Safety](docs/support/trust-and-safety.md)
+- [Knowledge Base](docs/support/knowledge-base.md)
+
+## Public SaaS Mode
 
 ## License
 
 No license specified. Add one if you plan to distribute.
+
+## Public SaaS Mode
+
+When `PUBLIC_MODE=1`, the application runs in read-only download mode suitable for hosted customers:
+
+- `PUBLIC_MODE`: Enables gated UI mode (hides burning, direct audio streaming).
+- `ALLOW_STREAMING_EXPORT`: Set `0` to disable raw audio/lyrics streaming endpoints (default when `PUBLIC_MODE=1`).
+- `ENABLE_CD_BURNER`: Should remain `0` in public deployments; CD burning is Windows-only.
+- `READINESS_QUEUE_THRESHOLD`: Maximum in-process queue depth before readiness fails.
+- `OTEL_*`: Optional OpenTelemetry endpoint/headers for logs and traces.
+- `BASE_OUTPUT_DIR`: Default `downloads`; in SaaS mode point to a persistent volume or object storage adapter.
+
+Default roles:
+- `system` (internal automation)
+- `user` (authenticated end users; no admin surfaces exposed yet)
+
+Quotas:
+- Concurrent queue depth limited by `DOWNLOAD_QUEUE_WORKERS` (default 2).
+- Rate limiting defaults to 120 requests/min per IP (configurable via `RATE_LIMIT_REQUESTS`/`RATE_LIMIT_WINDOW_SECONDS`).
+
+Support contacts:
+- Email: `support@example.com`
+- Trust & Safety escalations: `safety@example.com`
+- Status page: https://status.example.com (configure with your provider)
+
+Refer to `docs/support/knowledge-base.md` for end-user guidance and `docs/support/trust-and-safety.md` for moderation workflows.
 
 ## CD Burning API
 

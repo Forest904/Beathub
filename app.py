@@ -1,13 +1,19 @@
 import os
 import logging
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime
+from urllib.parse import urlparse
+from uuid import uuid4
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
 # --- Flask specific imports ---
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, request, jsonify, g
 from flask_cors import CORS
 
 # --- Import our new configuration and the main orchestrator ---
@@ -35,7 +41,9 @@ from src.interfaces.http.routes import (
     compilation_bp,
     playlist_bp,
     favorite_bp,
+    health_bp,
 )
+from src.observability import configure_structured_logging, metrics_blueprint, init_tracing
 
 
 logger = logging.getLogger(__name__)
@@ -59,8 +67,8 @@ def configure_logging(log_dir: str) -> str:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
 
-    # Clear any pre-existing handlers to avoid duplicates
-    root.handlers = []
+    # Preserve structured handlers; remove existing FileHandlers to avoid duplicates
+    root.handlers = [h for h in root.handlers if not isinstance(h, logging.FileHandler)]
 
     formatter = logging.Formatter(
         fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -100,6 +108,35 @@ def configure_logging(log_dir: str) -> str:
 def create_app():
     app = Flask(__name__, static_folder='frontend/build', static_url_path='') # Assuming frontend/build now for static files
     app.config.from_object(Config)
+    app.config.update(
+        {
+            'PUBLIC_MODE': Config.PUBLIC_MODE,
+            'ENABLE_CD_BURNER': Config.ENABLE_CD_BURNER,
+            'ALLOW_STREAMING_EXPORT': Config.ALLOW_STREAMING_EXPORT,
+            'ENABLE_RATE_LIMITING': Config.ENABLE_RATE_LIMITING,
+            'RATE_LIMIT_REQUESTS': Config.RATE_LIMIT_REQUESTS,
+            'RATE_LIMIT_WINDOW_SECONDS': Config.RATE_LIMIT_WINDOW_SECONDS,
+            'READINESS_QUEUE_THRESHOLD': Config.READINESS_QUEUE_THRESHOLD,
+            'OAUTH_REDIRECT_ALLOWLIST': tuple(Config.OAUTH_REDIRECT_ALLOWLIST),
+            'CONTENT_SECURITY_POLICY': Config.CONTENT_SECURITY_POLICY,
+            'OTEL_EXPORTER_OTLP_ENDPOINT': Config.OTEL_EXPORTER_OTLP_ENDPOINT,
+            'OTEL_EXPORTER_OTLP_HEADERS': Config.OTEL_EXPORTER_OTLP_HEADERS,
+            'OTEL_EXPORTER_OTLP_INSECURE': Config.OTEL_EXPORTER_OTLP_INSECURE,
+            'OTEL_SERVICE_NAME': Config.OTEL_SERVICE_NAME,
+        }
+    )
+    configure_structured_logging(app)
+    init_tracing(app)
+
+    @app.before_request
+    def _assign_request_id():
+        g.request_id = request.headers.get('X-Request-ID') or uuid4().hex
+
+    @app.after_request
+    def _inject_request_id(response):
+        if getattr(g, 'request_id', None):
+            response.headers.setdefault('X-Request-ID', g.request_id)
+        return response
     allowed_origins = sorted({
         origin.strip()
         for origin in Config.CORS_ALLOWED_ORIGINS
@@ -112,6 +149,112 @@ def create_app():
         supports_credentials=True,
         expose_headers=["Content-Disposition"],
     )
+
+    app.extensions['feature_flags'] = {
+        'public_mode': app.config['PUBLIC_MODE'],
+        'enable_cd_burner': app.config['ENABLE_CD_BURNER'],
+        'allow_streaming_export': app.config['ALLOW_STREAMING_EXPORT'],
+        'readiness_queue_threshold': app.config['READINESS_QUEUE_THRESHOLD'],
+    }
+
+    redirect_allowlist = {origin.rstrip('/') for origin in app.config['OAUTH_REDIRECT_ALLOWLIST'] if origin}
+
+    def _is_redirect_allowed(target: str) -> bool:
+        if not target:
+            return False
+        try:
+            parsed = urlparse(target)
+        except Exception:
+            return False
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip('/')
+        return normalized in redirect_allowlist
+
+    if redirect_allowlist:
+
+        @app.before_request
+        def _enforce_redirect_allowlist():
+            endpoint = request.endpoint or ""
+            if not endpoint.startswith("auth."):
+                return None
+            candidate = request.args.get("redirect") or request.args.get("redirect_uri")
+            if not candidate:
+                return None
+            if _is_redirect_allowed(candidate):
+                return None
+            app.logger.warning(
+                "Blocked disallowed OAuth redirect",
+                extra={
+                    "policy": "redirect_allowlist",
+                    "path": request.path,
+                    "redirect": candidate,
+                },
+            )
+            return jsonify(
+                {
+                    "error": "policy_violation",
+                    "policy": "redirect_allowlist",
+                    "message": "Redirect URI is not permitted for this deployment.",
+                }
+            ), 400
+
+    if (
+        app.config['ENABLE_RATE_LIMITING']
+        and app.config['RATE_LIMIT_REQUESTS'] > 0
+        and app.config['RATE_LIMIT_WINDOW_SECONDS'] > 0
+    ):
+        rate_limit_state = {
+            'lock': threading.RLock(),
+            'buckets': defaultdict(deque),
+        }
+        app.extensions['rate_limiter'] = rate_limit_state
+
+        @app.before_request
+        def _apply_rate_limit():
+            # Skip rate limiting for CORS preflight
+            if request.method == "OPTIONS":
+                return None
+            limit = app.config['RATE_LIMIT_REQUESTS']
+            window = app.config['RATE_LIMIT_WINDOW_SECONDS']
+            if limit <= 0 or window <= 0:
+                return None
+            identifier = (
+                request.headers.get('X-Forwarded-For', '')
+                or request.remote_addr
+                or 'unknown'
+            ).split(',')[0].strip()
+            now = time.time()
+            with rate_limit_state['lock']:
+                bucket = rate_limit_state['buckets'].setdefault(identifier, deque())
+                threshold = now - window
+                while bucket and bucket[0] <= threshold:
+                    bucket.popleft()
+                if len(bucket) >= limit:
+                    app.logger.warning(
+                        "Rate limit exceeded",
+                        extra={
+                            "policy": "rate_limit",
+                            "ip": identifier,
+                            "path": request.path,
+                        },
+                    )
+                    return jsonify(
+                        {
+                            "error": "rate_limited",
+                            "policy": "rate_limit",
+                            "message": "Too many requests. Please slow down.",
+                        }
+                    ), 429
+                bucket.append(now)
+
+    csp_policy = app.config.get('CONTENT_SECURITY_POLICY')
+    if csp_policy:
+
+        @app.after_request
+        def _apply_csp(response):
+            response.headers.setdefault('Content-Security-Policy', csp_policy)
+            return response
 
     # Initialize database
     initialize_database(app)
@@ -194,11 +337,16 @@ def create_app():
 
     # Initialize the CD Burning Service
     # This will log its initialization at app startup
-    cd_burning_service_instance = CDBurningService(app_logger=app.logger, base_output_dir=app.config.get('BASE_OUTPUT_DIR'))
-    # This allows blueprints to access it via current_app.extensions['cd_burning_service']
-    app.extensions['cd_burning_service'] = cd_burning_service_instance
-    # Burn session manager for per-session state
-    app.extensions['burn_sessions'] = BurnSessionManager()
+    if app.config['ENABLE_CD_BURNER']:
+        cd_burning_service_instance = CDBurningService(app_logger=app.logger, base_output_dir=app.config.get('BASE_OUTPUT_DIR'))
+        # This allows blueprints to access it via current_app.extensions['cd_burning_service']
+        app.extensions['cd_burning_service'] = cd_burning_service_instance
+        # Burn session manager for per-session state
+        app.extensions['burn_sessions'] = BurnSessionManager()
+    else:
+        app.logger.info("CD Burning service disabled by configuration.")
+        app.extensions['cd_burning_service'] = None
+        app.extensions['burn_sessions'] = None
 
     # --- Register Blueprints ---
     app.register_blueprint(download_bp)
@@ -209,6 +357,8 @@ def create_app():
     app.register_blueprint(compilation_bp)
     app.register_blueprint(playlist_bp)
     app.register_blueprint(favorite_bp)
+    app.register_blueprint(metrics_blueprint)
+    app.register_blueprint(health_bp)
     # --- NEW: Register the CD Burning Blueprint ---
     app.register_blueprint(cd_burning_bp)
 

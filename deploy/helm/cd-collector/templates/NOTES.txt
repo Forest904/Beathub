@@ -1,0 +1,9 @@
+1. Get the application URL by running:
+  {{- if .Values.ingress.enabled }}
+  echo "https://{{ (index .Values.ingress.hosts 0).host }}"
+  {{- else }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "cd-collector.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl port-forward --namespace {{ .Release.Namespace }} $POD_NAME 5000:5000
+  {{- end }}
+2. Verify readiness:
+  curl -H "Host: {{ (index .Values.ingress.hosts 0).host }}" https://{{ (index .Values.ingress.hosts 0).host }}/readyz

@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      PUBLIC_MODE: "1"
+      ALLOW_STREAMING_EXPORT: "0"
+      BASE_OUTPUT_DIR: "/app/downloads"
+      READINESS_QUEUE_THRESHOLD: "${READINESS_QUEUE_THRESHOLD:-25}"
+      SPOTIPY_CLIENT_ID: "${SPOTIPY_CLIENT_ID:-}"
+      SPOTIPY_CLIENT_SECRET: "${SPOTIPY_CLIENT_SECRET:-}"
+      GENIUS_ACCESS_TOKEN: "${GENIUS_ACCESS_TOKEN:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-1}"
+      OTEL_SERVICE_NAME: "${OTEL_SERVICE_NAME:-cd-collector}"
+    volumes:
+      - downloads-data:/app/downloads
+    healthcheck:
+      test: ["CMD", "python", "/app/scripts/healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+
+  # Optional Redis stub for future background job offloading.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+volumes:
+  downloads-data:
