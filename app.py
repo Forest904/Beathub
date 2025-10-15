@@ -269,13 +269,30 @@ def create_app():
         # Progress hook publishes to broker for SSE
         def _spotdl_progress(ev: dict):
             try:
-                app.logger.info(
-                    "SpotDL: %s - %s (%s%%)",
-                    ev.get('song_display_name'), ev.get('status'), ev.get('progress')
-                )
+                severity = (ev.get('severity') or '').lower()
+                if severity == 'error':
+                    app.logger.error(
+                        "SpotDL error: %s | status=%s | provider=%s | url=%s | detail=%s",
+                        ev.get('song_display_name'),
+                        ev.get('status'),
+                        ev.get('audio_provider'),
+                        ev.get('spotify_url'),
+                        ev.get('error_message') or ev.get('status'),
+                    )
+                elif severity == 'warning':
+                    app.logger.warning(
+                        "SpotDL warning: %s - %s",
+                        ev.get('song_display_name'),
+                        ev.get('status'),
+                    )
+                else:
+                    app.logger.info(
+                        "SpotDL: %s - %s (%s%%)",
+                        ev.get('song_display_name'), ev.get('status'), ev.get('progress')
+                    )
                 app.extensions['progress_broker'].publish(ev)
             except Exception:
-                pass
+                app.logger.debug("Failed to publish SpotDL progress event", exc_info=True)
         spotdl_client.set_progress_callback(_spotdl_progress, web_ui=True)
         app.extensions['spotdl_client'] = spotdl_client
         app.logger.info(

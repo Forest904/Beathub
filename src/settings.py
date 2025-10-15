@@ -24,7 +24,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _parse_audio_providers(value: Optional[object]) -> List[str]:
-    """Normalize audio provider configuration into a unique ordered list."""
+    """Normalize audio provider configuration into a unique ordered list with safe fallbacks."""
     if value is None:
         tokens: List[str] = []
     elif isinstance(value, str):
@@ -47,12 +47,17 @@ def _parse_audio_providers(value: Optional[object]) -> List[str]:
             continue
         key = token.lower()
         key = aliases.get(key, key)
-        if key not in normalized:
+        if key and key not in normalized:
             normalized.append(key)
-    if not normalized:
-        return ["youtube-music"]
-    return normalized
 
+    if not normalized:
+        normalized = ["youtube-music", "youtube"]
+    else:
+        # Always keep a general YouTube fallback so SpotDL can retry when music-only links fail.
+        if "youtube" not in normalized:
+            normalized.append("youtube")
+
+    return normalized
 
 class AppSettings(BaseModel):
     """Application-wide settings with SpotDL-related options."""
@@ -70,6 +75,9 @@ class AppSettings(BaseModel):
     threads: int = Field(default=Config.SPOTDL_THREADS)
     overwrite: str = Field(default="skip")
     preload: bool = Field(default=_env_bool("SPOTDL_PRELOAD", False))
+    filter_results: bool = Field(default=_env_bool('SPOTDL_FILTER_RESULTS', True))
+    cookie_file: Optional[str] = Field(default=os.getenv('SPOTDL_COOKIE_FILE'))
+    yt_dlp_args: Optional[str] = Field(default=os.getenv('SPOTDL_YTDLP_ARGS'))
 
     # Lyrics via SpotDL providers (we'll favor Genius if token present)
     lyrics_providers: List[str] = Field(
@@ -78,7 +86,7 @@ class AppSettings(BaseModel):
     genius_token: Optional[str] = Field(default=Config.GENIUS_ACCESS_TOKEN)
 
     # Subprocess/console output suppression for SpotDL + children
-    suppress_subprocess_output: bool = Field(default=_env_bool("SPOTDL_SUPPRESS_OUTPUT", True))
+    suppress_subprocess_output: bool = Field(default=_env_bool("SPOTDL_SUPPRESS_OUTPUT", False))
 
     @field_validator("overwrite")
     @classmethod
@@ -125,6 +133,9 @@ def build_spotdl_downloader_options(settings: AppSettings):
         lyrics_providers=settings.lyrics_providers,
         preload=settings.preload,
         genius_token=settings.genius_token,
+        filter_results=settings.filter_results,
+        cookie_file=settings.cookie_file,
+        yt_dlp_args=settings.yt_dlp_args,
     )
 
 

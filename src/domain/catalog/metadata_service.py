@@ -1,7 +1,11 @@
 # src/metadata_service.py
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
 import logging
+import threading
+from typing import Any, Callable, Optional
+
+import spotipy
+from spotipy.exceptions import SpotifyException
+from spotipy.oauth2 import SpotifyClientCredentials
 
 from config import Config
 from src.utils.cache import TTLCache, MISSING
@@ -14,25 +18,70 @@ class MetadataService:
                  spotify_client=None):
         """Initializes the MetadataService using keys from Config by default."""
         # Fallback to values from Config if not explicitly provided
-        spotify_client_id = spotify_client_id or Config.SPOTIPY_CLIENT_ID
-        spotify_client_secret = spotify_client_secret or Config.SPOTIPY_CLIENT_SECRET
+        self._spotify_client_id = spotify_client_id or Config.SPOTIPY_CLIENT_ID
+        self._spotify_client_secret = spotify_client_secret or Config.SPOTIPY_CLIENT_SECRET
+
+        self._spotify_client_lock = threading.RLock()
+        self._spotify_client_warned = False
 
         self.sp = spotify_client
         if not self.sp:
-            if spotify_client_id and spotify_client_secret:
-                try:
-                    self.sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-                        client_id=spotify_client_id,
-                        client_secret=spotify_client_secret
-                    ))
-                    logger.info("Spotipy client initialized successfully in MetadataService.")
-                except Exception as e:
-                    logger.error(f"Failed to initialize Spotipy client in MetadataService: {e}")
-                    self.sp = None
-            else:
-                logger.warning("Spotify client ID and secret not provided in Config or args. MetadataService will be limited.")
+            self._initialize_spotify_client()
+        else:
+            logger.info("Spotipy client injected into MetadataService.")
 
         self._cache = TTLCache(maxsize=Config.METADATA_CACHE_MAXSIZE, ttl=Config.METADATA_CACHE_TTL_SECONDS)
+
+    def _initialize_spotify_client(self, *, log_success_as_debug: bool = False) -> bool:
+        if not self._spotify_client_id or not self._spotify_client_secret:
+            if not self._spotify_client_warned:
+                logger.warning("Spotify client ID and secret not provided in Config or args. MetadataService will be limited.")
+                self._spotify_client_warned = True
+            self.sp = None
+            return False
+        with self._spotify_client_lock:
+            try:
+                client = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+                    client_id=self._spotify_client_id,
+                    client_secret=self._spotify_client_secret
+                ))
+            except Exception as exc:
+                logger.error("Failed to initialize Spotipy client in MetadataService: %s", exc, exc_info=True)
+                self.sp = None
+                return False
+            else:
+                self.sp = client
+                message = "Spotipy client initialized successfully in MetadataService."
+                if log_success_as_debug:
+                    logger.debug("%s (refreshed)", message)
+                else:
+                    logger.info(message)
+                return True
+
+    def _refresh_spotify_client(self) -> bool:
+        logger.debug("Refreshing Spotipy client credentials in MetadataService.")
+        return self._initialize_spotify_client(log_success_as_debug=True)
+
+    def _call_spotify_with_retry(self, action: str, call: Callable[[], Any]) -> Optional[Any]:
+        if not self.sp:
+            logger.error('Spotipy client not initialized. Cannot %s.', action)
+            return None
+        try:
+            return call()
+        except SpotifyException as exc:
+            if exc.http_status == 401:
+                logger.warning('Spotify token expired during %s. Attempting to refresh credentials.', action)
+                if self._refresh_spotify_client():
+                    try:
+                        return call()
+                    except SpotifyException as retry_exc:
+                        logger.error('Spotify API call failed after token refresh during %s: %s', action, retry_exc, exc_info=True)
+                        return None
+            logger.error('Spotify API call failed during %s: %s', action, exc, exc_info=True)
+            return None
+        except Exception as exc:
+            logger.error('Unexpected error during %s: %s', action, exc, exc_info=True)
+            return None
 
     def _get_item_type(self, spotify_link):
         """Determines the type of Spotify item from its link."""
@@ -67,13 +116,13 @@ class MetadataService:
         if cached is not MISSING:
             return cached
 
-        if not self.sp:
-            logger.error("Spotipy client not initialized. Cannot fetch album by ID.")
-            return None
-        try:
-            album_info = self.sp.album(album_id)
-            album_data = None
-            if album_info:
+        album_info = self._call_spotify_with_retry(
+            f'fetch album metadata for {album_id}',
+            lambda: self.sp.album(album_id)
+        )
+        album_data = None
+        if album_info:
+            try:
                 album_data = {
                     'spotify_id': album_info['id'],
                     'title': album_info['name'],
@@ -84,11 +133,11 @@ class MetadataService:
                     'release_date': album_info.get('release_date'),
                     'total_tracks': album_info.get('total_tracks')
                 }
-            self._cache.set(cache_key, album_data)
-            return album_data
-        except Exception as e:
-            logger.exception(f"Error fetching Spotify album details for ID {album_id}: {e}")
-            return None
+            except Exception as exc:
+                logger.exception(f"Error processing Spotify album details for ID {album_id}: {exc}")
+                album_data = None
+        self._cache.set(cache_key, album_data)
+        return album_data
 
     def get_metadata_from_link(self, spotify_link):
         """ Fetches metadata for a given Spotify link (track, album, or playlist). """
@@ -97,13 +146,9 @@ class MetadataService:
         if cached is not MISSING:
             return cached
 
-        if not self.sp:
-            logger.error("Spotipy client not initialized. Cannot fetch metadata.")
-            return None
-
         item_type = self._get_item_type(spotify_link)
         try:
-            if item_type == "album":
+            if item_type == 'album':
                 album_id = self._extract_id_from_url(spotify_link)
                 if not album_id:
                     logger.warning(f"Could not parse album ID from {spotify_link}")
@@ -111,7 +156,7 @@ class MetadataService:
                 result = self.get_album_by_id(album_id)
                 self._cache.set(cache_key, result)
                 return result
-            elif item_type == "track":
+            if item_type == 'track':
                 track_id = self._extract_id_from_url(spotify_link)
                 if not track_id:
                     logger.warning(f"Could not parse track ID from {spotify_link}")
@@ -119,7 +164,10 @@ class MetadataService:
                 raw_track_key = ('track_metadata_raw', track_id)
                 track_info = self._cache.get(raw_track_key, MISSING)
                 if track_info is MISSING:
-                    track_info = self.sp.track(track_id)
+                    track_info = self._call_spotify_with_retry(
+                        f'fetch track metadata for {track_id}',
+                        lambda: self.sp.track(track_id)
+                    )
                     if track_info:
                         self._cache.set(raw_track_key, track_info)
                     else:
@@ -136,7 +184,7 @@ class MetadataService:
                 }
                 self._cache.set(cache_key, result)
                 return result
-            elif item_type == "playlist":
+            if item_type == 'playlist':
                 playlist_id = self._extract_id_from_url(spotify_link)
                 if not playlist_id:
                     logger.warning(f"Could not parse playlist ID from {spotify_link}")
@@ -144,7 +192,10 @@ class MetadataService:
                 raw_playlist_key = ('playlist_metadata_raw', playlist_id)
                 playlist_info = self._cache.get(raw_playlist_key, MISSING)
                 if playlist_info is MISSING:
-                    playlist_info = self.sp.playlist(playlist_id)
+                    playlist_info = self._call_spotify_with_retry(
+                        f'fetch playlist metadata for {playlist_id}',
+                        lambda: self.sp.playlist(playlist_id)
+                    )
                     if playlist_info:
                         self._cache.set(raw_playlist_key, playlist_info)
                     else:
@@ -160,11 +211,10 @@ class MetadataService:
                 }
                 self._cache.set(cache_key, result)
                 return result
-            else:
-                logger.warning(f"Unsupported Spotify link type: {spotify_link}")
-                return None
-        except Exception as e:
-            logger.exception(f"Error fetching Spotify metadata for {spotify_link}: {e}")
+            logger.warning(f"Unsupported Spotify link type: {spotify_link}")
+            return None
+        except Exception as exc:
+            logger.exception(f"Error fetching Spotify metadata for {spotify_link}: {exc}")
             return None
 
     def get_tracks_details(self, spotify_id, item_type, image_url_from_metadata):
@@ -174,31 +224,13 @@ class MetadataService:
         if cached is not MISSING:
             return cached
 
-        if not self.sp:
-            logger.error("Spotipy client not initialized. Cannot fetch detailed track list.")
-            return []
-
-        detailed_tracks_list = []
-        try:
-            if item_type == "album":
-                album_tracks_response = self.sp.album_tracks(spotify_id)
-                for track_item in album_tracks_response['items']:
-                    track_artists = [a['name'] for a in track_item.get('artists', [])]
-                    detailed_tracks_list.append({
-                        'spotify_id': track_item['id'],
-                        'title': track_item['name'],
-                        'artists': track_artists,
-                        'duration_ms': track_item.get('duration_ms'),
-                        'track_number': track_item.get('track_number'),
-                        'disc_number': track_item.get('disc_number'),
-                        'explicit': track_item.get('explicit'),
-                        'spotify_url': track_item.get('external_urls', {}).get('spotify'),
-                        'album_image_url': image_url_from_metadata,
-                    })
-            elif item_type == "track":
-                track_item = self.sp.track(spotify_id)
+        def _load_album_tracks():
+            response = self.sp.album_tracks(spotify_id)
+            items = response.get('items', [])
+            detailed = []
+            for track_item in items:
                 track_artists = [a['name'] for a in track_item.get('artists', [])]
-                detailed_tracks_list.append({
+                detailed.append({
                     'spotify_id': track_item['id'],
                     'title': track_item['name'],
                     'artists': track_artists,
@@ -207,44 +239,81 @@ class MetadataService:
                     'disc_number': track_item.get('disc_number'),
                     'explicit': track_item.get('explicit'),
                     'spotify_url': track_item.get('external_urls', {}).get('spotify'),
-                    'album_name': track_item.get('album',{}).get('name'),
-                    'album_spotify_id': track_item.get('album',{}).get('id'),
                     'album_image_url': image_url_from_metadata,
                 })
-            elif item_type == "playlist":
-                playlist_items_response = self.sp.playlist_items(spotify_id)
-                all_playlist_tracks = playlist_items_response['items']
-                while playlist_items_response['next']:
-                    playlist_items_response = self.sp.next(playlist_items_response)
-                    all_playlist_tracks.extend(playlist_items_response['items'])
+            return detailed
 
-                for item in all_playlist_tracks:
-                    track_item = item.get('track')
-                    if track_item and track_item.get('id'):
-                        album_images = track_item.get('album',{}).get('images', [])
-                        playlist_track_album_image_url = album_images[0]['url'] if album_images else None
-                        track_artists = [a['name'] for a in track_item.get('artists', [])]
-                        detailed_tracks_list.append({
-                            'spotify_id': track_item['id'],
-                            'title': track_item['name'],
-                            'artists': track_artists,
-                            'duration_ms': track_item.get('duration_ms'),
-                            'track_number': track_item.get('track_number'),
-                            'disc_number': track_item.get('disc_number'),
-                            'explicit': track_item.get('explicit'),
-                            'spotify_url': track_item.get('external_urls', {}).get('spotify'),
-                            'album_name': track_item.get('album',{}).get('name'),
-                            'album_spotify_id': track_item.get('album',{}).get('id'),
-                            'album_image_url': playlist_track_album_image_url,
-                            'added_at': item.get('added_at'),
-                            'added_by_id': item.get('added_by', {}).get('id'),
-                        })
-        except Exception as e:
-            logger.exception(f"Error fetching detailed track list for {item_type} ID {spotify_id}: {e}")
-        else:
-            self._cache.set(cache_key, detailed_tracks_list)
+        def _load_single_track():
+            track_item = self.sp.track(spotify_id)
+            track_artists = [a['name'] for a in track_item.get('artists', [])]
+            return [{
+                'spotify_id': track_item['id'],
+                'title': track_item['name'],
+                'artists': track_artists,
+                'duration_ms': track_item.get('duration_ms'),
+                'track_number': track_item.get('track_number'),
+                'disc_number': track_item.get('disc_number'),
+                'explicit': track_item.get('explicit'),
+                'spotify_url': track_item.get('external_urls', {}).get('spotify'),
+                'album_name': track_item.get('album', {}).get('name'),
+                'album_spotify_id': track_item.get('album', {}).get('id'),
+                'album_image_url': image_url_from_metadata,
+            }]
+
+        def _load_playlist_tracks():
+            playlist_items_response = self.sp.playlist_items(spotify_id)
+            all_playlist_tracks = list(playlist_items_response.get('items', []))
+            while playlist_items_response.get('next'):
+                next_response = self._call_spotify_with_retry(
+                    f'fetch next playlist page for {spotify_id}',
+                    lambda resp=playlist_items_response: self.sp.next(resp)
+                )
+                if not next_response:
+                    break
+                playlist_items_response = next_response
+                all_playlist_tracks.extend(playlist_items_response.get('items', []))
+            detailed = []
+            for item in all_playlist_tracks:
+                track_item = item.get('track')
+                if track_item and track_item.get('id'):
+                    album_images = track_item.get('album', {}).get('images', [])
+                    playlist_track_album_image_url = album_images[0]['url'] if album_images else None
+                    track_artists = [a['name'] for a in track_item.get('artists', [])]
+                    detailed.append({
+                        'spotify_id': track_item['id'],
+                        'title': track_item['name'],
+                        'artists': track_artists,
+                        'duration_ms': track_item.get('duration_ms'),
+                        'track_number': track_item.get('track_number'),
+                        'disc_number': track_item.get('disc_number'),
+                        'explicit': track_item.get('explicit'),
+                        'spotify_url': track_item.get('external_urls', {}).get('spotify'),
+                        'album_name': track_item.get('album', {}).get('name'),
+                        'album_spotify_id': track_item.get('album', {}).get('id'),
+                        'album_image_url': playlist_track_album_image_url,
+                        'added_at': item.get('added_at'),
+                        'added_by_id': item.get('added_by', {}).get('id'),
+                    })
+            return detailed
+
+        loaders = {
+            'album': _load_album_tracks,
+            'track': _load_single_track,
+            'playlist': _load_playlist_tracks,
+        }
+
+        loader = loaders.get(item_type)
+        if loader is None:
+            logger.warning("Unsupported item_type '%s' for detailed track retrieval.", item_type)
+            return []
+
+        detailed_tracks_list = self._call_spotify_with_retry(
+            f'fetch detailed track list for {item_type} {spotify_id}',
+            loader
+        )
+        if detailed_tracks_list is None:
+            return []
+
+        self._cache.set(cache_key, detailed_tracks_list)
         return detailed_tracks_list
-
-
-
 

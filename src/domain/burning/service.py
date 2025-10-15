@@ -482,8 +482,8 @@ class CDBurningService:
             artist = track.get('artist') or 'Unknown Artist'
             sanitized_title = re.sub(r'[\\/:*?"<>|]', '_', title).strip()
             sanitized_title = re.sub(r'_{2,}', '_', sanitized_title)
-            mp3_file_name_pattern = f"{re.escape(sanitized_title)}\.mp3"
-            fallback_name_pattern = f"{re.escape(artist)} - {re.escape(sanitized_title)}\.mp3"
+            mp3_file_name_pattern = f"{re.escape(sanitized_title)}\\.mp3"
+            fallback_name_pattern = f"{re.escape(artist)} - {re.escape(sanitized_title)}\\.mp3"
 
             found_mp3 = None
             for path in all_files:
@@ -715,7 +715,7 @@ class CDBurningService:
             # Replace multiple underscores with a single one
             sanitized_title = re.sub(r'_{2,}', '_', sanitized_title)
             # This pattern attempts to match files named after the sanitized title
-            mp3_file_name_pattern = f"{re.escape(sanitized_title)}\.mp3"
+            mp3_file_name_pattern = f"{re.escape(sanitized_title)}\\.mp3"
             found_mp3_path = None
 
             # Search exact sanitized in recursive list
@@ -727,7 +727,7 @@ class CDBurningService:
 
             # Fallback for "Artist - Title.mp3" format if initial match fails
             if not found_mp3_path:
-                fallback_name_pattern = f"{re.escape(track['artist'])} - {re.escape(sanitized_title)}\.mp3"
+                fallback_name_pattern = f"{re.escape(track['artist'])} - {re.escape(sanitized_title)}\\.mp3"
                 for f_path in all_files:
                     base = os.path.basename(f_path)
                     if re.fullmatch(fallback_name_pattern, base, re.IGNORECASE):
@@ -1078,3 +1078,6 @@ class CDBurningService:
             except Exception:
                 pass
             self._active_session_id = None
+
+
+

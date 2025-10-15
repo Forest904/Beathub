@@ -397,6 +397,12 @@ def build_default_client(app_logger: Optional[logging.Logger] = None) -> SpotdlC
             providers = None
         if providers:
             app_logger.info("SpotDL audio providers configured: %s", list(providers))
+        yt_args = getattr(opts, "yt_dlp_args", None)
+        if yt_args:
+            app_logger.info("SpotDL custom yt-dlp args detected.")
+        cookie_file = getattr(opts, "cookie_file", None)
+        if cookie_file:
+            app_logger.info("SpotDL cookie file configured: %s", cookie_file)
 
     if not settings.spotify_client_id or not settings.spotify_client_secret:
         raise RuntimeError(

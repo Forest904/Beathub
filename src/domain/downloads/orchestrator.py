@@ -1,11 +1,12 @@
 import logging
 import os
 import re
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set
 import threading
 
 import spotipy  # Spotipy remains for browse/metadata endpoints
 from spotipy.oauth2 import SpotifyClientCredentials
+from spotipy.exceptions import SpotifyException
 from config import Config
 from src.utils.cache import TTLCache, MISSING
 
@@ -69,18 +70,10 @@ class DownloadOrchestrator:
         self.file_manager = file_manager or FileManager(base_output_dir=self.base_output_dir)
 
         # Initialize Spotipy for browse endpoints regardless of download pipeline
-        self.sp = None  # Initialize to None
-        if self._spotify_client_id and self._spotify_client_secret:
-            try:
-                self.sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-                    client_id=self._spotify_client_id,
-                    client_secret=self._spotify_client_secret
-                ))
-                logger.info("Spotipy instance initialized within DownloadOrchestrator.")
-            except Exception as e:
-                logger.error(f"Failed to initialize Spotipy in DownloadOrchestrator: {e}", exc_info=True)
-        else:
-            logger.warning("Spotify client ID or secret missing. Spotipy instance for direct searches will not be available.")
+        self._spotify_client_lock = threading.RLock()
+        self._spotify_client_warned = False
+        self.sp: Optional[spotipy.Spotify] = None
+        self._initialize_spotify_client()
 
         # Progress publisher (optional)
         self.progress_publisher: Optional[ProgressPublisher] = progress_publisher
@@ -102,6 +95,57 @@ class DownloadOrchestrator:
         self._popular_artist_pool_size = Config.POPULAR_ARTIST_POOL_SIZE
 
         logger.info("DownloadOrchestrator initialized with decoupled services and configuration passed.")
+
+    def _initialize_spotify_client(self, *, log_success_as_debug: bool = False) -> bool:
+        if not self._spotify_client_id or not self._spotify_client_secret:
+            if not self._spotify_client_warned:
+                logger.warning("Spotify client ID or secret missing. Spotipy instance for direct searches will not be available.")
+                self._spotify_client_warned = True
+            self.sp = None
+            return False
+        with self._spotify_client_lock:
+            try:
+                client = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+                    client_id=self._spotify_client_id,
+                    client_secret=self._spotify_client_secret
+                ))
+            except Exception as exc:
+                logger.error("Failed to initialize Spotipy in DownloadOrchestrator: %s", exc, exc_info=True)
+                self.sp = None
+                return False
+            else:
+                self.sp = client
+                message = "Spotipy instance initialized within DownloadOrchestrator."
+                if log_success_as_debug:
+                    logger.debug("%s (refreshed)", message)
+                else:
+                    logger.info(message)
+                return True
+
+    def _refresh_spotify_client(self) -> bool:
+        logger.debug("Refreshing Spotipy client credentials in DownloadOrchestrator.")
+        return self._initialize_spotify_client(log_success_as_debug=True)
+
+    def _call_spotify_with_retry(self, action: str, call: Callable[[], Any]) -> Optional[Any]:
+        if not self.sp:
+            logger.error('Spotipy client not initialized. Cannot %s.', action)
+            return None
+        try:
+            return call()
+        except SpotifyException as exc:
+            if exc.http_status == 401:
+                logger.warning('Spotify token expired during %s. Attempting to refresh credentials.', action)
+                if self._refresh_spotify_client():
+                    try:
+                        return call()
+                    except SpotifyException as retry_exc:
+                        logger.error('Spotify API call failed after token refresh during %s: %s', action, retry_exc, exc_info=True)
+                        return None
+            logger.error('Spotify API call failed during %s: %s', action, exc, exc_info=True)
+            return None
+        except Exception as exc:
+            logger.error('Unexpected error during %s: %s', action, exc, exc_info=True)
+            return None
 
     def get_spotipy_instance(self):
         """ Provides access to the initialized Spotipy instance. """
@@ -177,10 +221,8 @@ class DownloadOrchestrator:
         cache_entry = self._artist_cache.get(artist_id, MISSING)
         if cache_entry is not MISSING:
             return cache_entry
-        if not self.sp:
-            logger.error('Spotipy client not initialized. Cannot fetch artist details.')
-            return None
-        try:
+
+        def _lookup() -> Optional[Dict[str, Any]]:
             artist_data = self.sp.artist(artist_id)
             if not artist_data:
                 return None
@@ -188,24 +230,21 @@ class DownloadOrchestrator:
             if normalized:
                 self._artist_cache.set(artist_id, normalized)
             return normalized
-        except Exception as exc:
-            logger.error('Error fetching artist details for %s: %s', artist_id, exc, exc_info=True)
-            return None
+
+        result = self._call_spotify_with_retry(f'fetch artist details for {artist_id}', _lookup)
+        return result
 
     def fetch_artist_discography(self, artist_id: str, market: str = 'US') -> List[Dict[str, Any]]:
         cache_key = (artist_id, market)
         cached = self._artist_discography_cache.get(cache_key, MISSING)
         if cached is not MISSING:
             return cached
-        if not self.sp:
-            logger.error('Spotipy client not initialized. Cannot fetch artist discography.')
-            return []
-        discography: List[Dict[str, Any]] = []
-        seen_titles: Set[str] = set()
-        try:
+
+        def _load_discography() -> List[Dict[str, Any]]:
+            discography: List[Dict[str, Any]] = []
+            seen_titles: Set[str] = set()
             albums_results = self.sp.artist_albums(artist_id, album_type='album,single', country=market, limit=50)
             if not albums_results:
-                self._artist_discography_cache.set(cache_key, discography)
                 return discography
 
             def _ingest(items: Sequence[Dict[str, Any]]) -> None:
@@ -236,12 +275,13 @@ class DownloadOrchestrator:
             while albums_results.get('next'):
                 albums_results = self.sp.next(albums_results)
                 _ingest(albums_results.get('items', []))
-        except Exception as exc:
-            logger.error('Error fetching artist discography for %s: %s', artist_id, exc, exc_info=True)
-            return []
-        self._artist_discography_cache.set(cache_key, discography)
-        return discography
+            return discography
 
+        result = self._call_spotify_with_retry(f'fetch artist discography for {artist_id}', _load_discography)
+        if result is None:
+            return []
+        self._artist_discography_cache.set(cache_key, result)
+        return result
 
 
     def fetch_popular_artists(self, limit: Optional[int] = None, market: str = 'US') -> List[Dict[str, Any]]:
@@ -1145,15 +1185,22 @@ class DownloadOrchestrator:
 
                     partial_failures = True
                     provider = getattr(song, "audio_provider", None)
+                    detail_fallback = "Audio provider did not return a media file."
                     detail = getattr(song, "download_error", None) or getattr(song, "error_message", None)
                     if isinstance(detail, Exception):
                         detail = str(detail)
                     if not detail:
-                        detail = getattr(song, "log", None)
-                    if isinstance(detail, dict):
-                        detail = detail.get("message") or detail.get("error")
+                        detail = getattr(song, "error_message", None) or getattr(song, "error", None)
                     if not detail:
-                        detail = "Audio provider did not return a media file."
+                        detail = getattr(song, "log", None)
+                        if isinstance(detail, dict):
+                            detail = detail.get("message") or detail.get("error")
+                    if not detail:
+                        detail = getattr(song, "last_error", None)
+                    if isinstance(detail, Exception):
+                        detail = str(detail)
+                    if not detail:
+                        detail = detail_fallback
                     failed_entry = {
                         "index": index,
                         "title": display_name or song_url or f"Track {index}",
@@ -1191,7 +1238,10 @@ class DownloadOrchestrator:
                 if successful_downloads == 0 and failed_tracks:
                     audio_failed = True
                     if error_result is None:
-                        error_result = {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
+                        message = detail if detail and detail != detail_fallback else f"Audio download failed for {title_name}."
+                        error_result = {"status": "error", "error_code": "download_failed", "message": message}
+                    elif detail and detail != detail_fallback:
+                        error_result["message"] = detail
                 elif partial_failures and publisher is not None:
                     try:
                         publisher.publish({
@@ -1489,6 +1539,4 @@ class DownloadOrchestrator:
             response_payload["partial_success"] = True
 
         return response_payload
-
-
 

@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from flask import g, has_request_context, request
+from flask import g, has_app_context, has_request_context, request
 
 try:
     from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
@@ -20,7 +20,11 @@ class RequestContextFilter(logging.Filter):
     """Attach request-scoped metadata to log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = getattr(g, "request_id", None)
+        if has_app_context():
+            record.request_id = getattr(g, "request_id", None)
+        else:
+            record.request_id = None
+
         if has_request_context():
             record.path = request.path
             record.method = request.method
@@ -97,3 +101,5 @@ def configure_structured_logging(app) -> None:
         otlp_handler.setFormatter(json_formatter)
         otlp_handler.addFilter(context_filter)
         root.addHandler(otlp_handler)
+
+
