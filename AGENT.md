@@ -25,5 +25,6 @@ frontend/               # React UI (CRA)
 downloads/              # Default output dir (ignored)
 ```
 - Keep feature code alongside its domain (e.g., downloader helpers under src/download_service.py).
-
-Stick to these guidelines and Codex will behave predictably in this repo.
+- Avoid deep nesting of directories—keep related files close together.
+- Separate frontend (React) and backend (Flask) code clearly.
+- Do not make unit tests it would be lost tokens. 
