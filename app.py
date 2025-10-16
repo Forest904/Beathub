@@ -98,7 +98,7 @@ def configure_logging(log_dir: str) -> str:
 
 
 def create_app():
-    app = Flask(__name__, static_folder='frontend/build', static_url_path='') # Assuming frontend/build now for static files
+    app = Flask(__name__, static_folder='web/build', static_url_path='') # Assuming web/build now for static files
     app.config.from_object(Config)
     allowed_origins = sorted({
         origin.strip()
@@ -216,8 +216,8 @@ def create_app():
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve_react_app(path):
-        # Adjust path to serve from 'frontend/build' assuming that's where your compiled React app is
-        react_build_dir = os.path.join(app.root_path, 'frontend', 'build')
+        # Adjust path to serve from 'web/build' assuming that's where your compiled React app is
+        react_build_dir = os.path.join(app.root_path, 'web', 'build')
         if path != "" and os.path.exists(os.path.join(react_build_dir, path)):
             return send_from_directory(react_build_dir, path)
         else:

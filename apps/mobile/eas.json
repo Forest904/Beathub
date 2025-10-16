@@ -1,0 +1,20 @@
+﻿{
+  "cli": {
+    "version": ">= 3.19.0"
+  },
+  "build": {
+    "dev-apk": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "release-apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}

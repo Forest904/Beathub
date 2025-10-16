@@ -3,7 +3,7 @@
 # Desktop Application Packaging (Windows/macOS/Linux)
 
 ## Plan
-- Ship an installer-like experience for desktop users bundling backend + frontend, ensuring
+- Ship an installer-like experience for desktop users bundling backend + web, ensuring
   offline-friendly defaults and auto-launch in the default browser.
 
 ### Batches
@@ -17,7 +17,7 @@ Batch 0 — Environment alignment
 - [ ] Acceptance: App can start with `python entrypoint.py` on Windows/macOS/Linux.
 
 Batch 1 — Packaging pipeline
-- [ ] PyInstaller spec: include `frontend/build`, templates, static assets, and mark hidden imports
+- [ ] PyInstaller spec: include `web/build`, templates, static assets, and mark hidden imports
       (SpotDL, Spotipy, SQLAlchemy plugins).
 - [ ] Ensure bundled binaries (ffmpeg) are optional; detect presence and show actionable error if
       missing.

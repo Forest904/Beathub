@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """
 Core progress primitives shared by background jobs and HTTP adapters.
 
@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 import threading
 import time
-from queue import Queue, Empty
-from typing import Dict, Iterator
+from queue import Empty, Queue
+from typing import Dict, Iterator, Optional
 
 
 class ProgressBroker:
@@ -20,9 +20,11 @@ class ProgressBroker:
         self._lock = threading.RLock()
         self._subscribers: Dict[int, Queue] = {}
         self._next_id = 1
+        self._last_event: Optional[dict] = None
 
     def publish(self, event: dict) -> None:
         with self._lock:
+            self._last_event = dict(event)
             for q in self._subscribers.values():
                 q.put(event)
 
@@ -49,6 +51,10 @@ class ProgressBroker:
         finally:
             with self._lock:
                 self._subscribers.pop(sid, None)
+
+    def snapshot(self) -> Optional[dict]:
+        with self._lock:
+            return dict(self._last_event) if self._last_event is not None else None
 
 
 class ProgressPublisher:

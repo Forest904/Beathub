@@ -1,6 +1,6 @@
 # BeatHub
 
-BeatHub is a full-stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the frontend is a React app served by Flask in production.
+BeatHub is a full-stack app to search artists and albums on Spotify, download Spotify content (albums, tracks, playlists) via spotDL, extract lyrics embedded by spotDL (optionally leveraging a Genius token), organize files locally, and optionally burn them to an audio CD. The backend is a Flask API with SQLite via SQLAlchemy; the web client lives in a pnpm workspace (`web/`) and a companion Expo Android client ships from `apps/mobile`.
 
 ## Features
 
@@ -9,27 +9,29 @@ BeatHub is a full-stack app to search artists and albums on Spotify, download Sp
 - Extract and save embedded lyrics via SpotDL (Genius token optional)
 - Store downloaded items in SQLite with metadata and paths
 - Burn Audio CDs on Windows via IMAPI v2 (COM) with `pydub`/`ffmpeg` for audio prep
-- React UI (Create React App) with API proxy to the Flask server
+- React web client (Create React App) and Android Expo scaffold sharing the same data layer via `@cd-collector/shared`
 
 ## Tech Stack
 
 - Backend: `Python 3.11+`, `Flask`, `Flask-SQLAlchemy`, `flask-cors`
 - Integrations: `spotipy` (Spotify Web API), `spotdl`, `pydub`/`ffmpeg`
 - DB: SQLite (file at `src/database/instance/beathub.db`)
-- Frontend: React (CRA), `axios`, Tailwind (optional)
+- Web: React (CRA), `@tanstack/react-query`, Tailwind, shared monorepo packages
+- Mobile: Expo (Android), NativeWind, React Query, shared monorepo packages
 
 ## Prerequisites
 
 - Python `3.11+`
-- Node.js `18+` and npm (for the frontend)
+- Node.js `18+` and [pnpm](https://pnpm.io/) `9+`
 - `ffmpeg` available on `PATH` (required by `pydub`)
 - Windows: Uses built-in IMAPI v2 via COM (`comtypes`). No external burner CLI required.
 - Non-Windows: CD burning is currently supported only on Windows; Linux/macOS are not supported in this build.
 - Spotify API credentials (optional: Genius token for SpotDL lyrics)
+- Expo CLI (optional) if you prefer globally installed tooling (`npm i -g expo-cli`)
 
 ## Quick Start
 
-1) Clone and set up Python environment
+1. **Backend** – create a virtual environment and install dependencies:
 
 ```bash
 python -m venv .venv
@@ -38,7 +40,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-2) Create a `.env` at the repo root
+2. **Environment** – create a `.env` at the repo root:
 
 ```env
 # Flask
@@ -61,23 +63,39 @@ SPOTDL_FORMAT=mp3
 SPOTDL_THREADS=1
 ```
 
-3) Frontend (development or production)
+3. **Install workspace dependencies** – from the repo root (Corepack keeps `pnpm@9.12.3` in sync):
 
-- Dev mode (recommended while iterating UI):
-  ```bash
-  cd frontend
-  npm install
-  npm start
-  # Opens http://localhost:3000, proxies API to http://localhost:5000
-  ```
-- Production build served by Flask:
-  ```bash
-  cd frontend
-  npm install
-  npm run build  # creates frontend/build used by Flask static serving
-  ```
+```bash
+corepack enable
+corepack prepare pnpm@9.12.3 --activate
+pnpm install
+```
 
-4) Run the backend
+4. **Run the web client** – launches CRA dev server proxied to Flask (set the ESLint toggle in the shell before starting):
+
+```bash
+# PowerShell (per session)
+$env:DISABLE_ESLINT_PLUGIN = "true"
+pnpm dev:web
+# -> http://localhost:3000 (or the next free port if prompted)
+```
+
+5. **Build the production web bundle** – generated output is served by Flask from `web/build`:
+
+```bash
+pnpm build:web
+```
+
+6. **Run the mobile (Expo) workspace** – Android only scaffold:
+
+```bash
+pnpm mobile:start    # Expo dev server with Android target
+pnpm mobile:android  # Build & install native Android binary via Gradle
+```
+
+Expo reads `EXPO_PUBLIC_API_BASE_URL` from your shell to point at the Flask API (defaults to same host).
+
+7. **Run the backend**:
 
 ```bash
 python app.py  # Starts Flask on http://localhost:5000
@@ -85,11 +103,29 @@ python app.py  # Starts Flask on http://localhost:5000
 
 On first run, the SQLite DB and tables are created automatically.
 
-## CLI Status
+## Developer Tooling
 
-- No standalone CLI commands or entry points are shipped.
-- Legacy CLI helpers have been retired; interact via the Flask HTTP API and the React UI.
-- No external consumers depend on a CLI interface at this time.
+- `pnpm lint` � ESLint (flat config) across `web/`, `apps/mobile/`, and shared packages
+- `pnpm format` / `pnpm format:write` � Prettier check/apply
+- VS Code tasks (`.vscode/tasks.json`)
+  - `pnpm dev:web`
+  - `pnpm mobile:start`
+  - `pnpm mobile:android`
+- Dev server ESLint toggle: before `pnpm dev:web`, set `DISABLE_ESLINT_PLUGIN=true` in that shell (PowerShell: `$env:DISABLE_ESLINT_PLUGIN = "true"`).
+- Shared package build helpers: `pnpm shared:build`, `pnpm shared:watch`
+- Shared TypeScript configuration (`tsconfig.base.json`) powers both web and mobile packages
+- Shared business logic lives in `packages/shared` (`@cd-collector/shared`)
+
+## Mobile Builds (APK)
+
+Local EAS profiles are configured in `apps/mobile/eas.json`:
+
+```bash
+pnpm mobile:apk:dev     # eas build --platform android --local --profile dev-apk
+pnpm mobile:apk:release # eas build --platform android --local --profile release-apk
+```
+
+Install the resulting APK with `adb install <path-to-apk>`.
 
 ## Troubleshooting
 
@@ -99,12 +135,7 @@ On first run, the SQLite DB and tables are created automatically.
 - `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed.
 - No burner detected (Windows): Ensure you have an optical recorder and run the app with sufficient privileges. IMAPI v2 is built into modern Windows.
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
-
-## Development
-
-- Lint/format: not configured; follow existing style
-- Do not commit the SQLite DB or `downloads/` directory
-- Environment variables are loaded via `python-dotenv` from `.env`
+- Expo unable to reach the API: export `EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:5000` (your machine IP) before launching `pnpm mobile:start`.
 
 ## Documentation
 
@@ -118,12 +149,13 @@ No license specified. Add one if you plan to distribute.
 
 ## CD Burning API
 
-- Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` — returns `202 Accepted` with `{ "session_id": "..." }`.
-- Poll status: `GET /api/cd-burner/status?session_id=<id>` — returns per-session state (`is_burning`, `progress_percentage`, etc.). If `session_id` omitted, returns the most recent session.
+- Start burn: `POST /api/cd-burner/burn` with JSON `{ "download_item_id": <id> }` � returns `202 Accepted` with `{ "session_id": "..." }`.
+- Poll status: `GET /api/cd-burner/status?session_id=<id>` � returns per-session state (`is_burning`, `progress_percentage`, etc.). If `session_id` is omitted, returns the most recent session.
+- Progress polling: `GET /api/progress/snapshot` returns the latest event (used by mobile polling); SSE remains available at `/api/progress/stream`.
 
 ## CD Burning (Windows)
 
-CD burning is implemented on Windows using the built-in IMAPI v2 COM interfaces. Audio preparation (MP3 → WAV) uses `pydub`, which requires `ffmpeg` on your system `PATH`.
+CD burning is implemented on Windows using the built-in IMAPI v2 COM interfaces. Audio preparation (MP3 + WAV) uses `pydub`, which requires `ffmpeg` on your system `PATH`.
 
 Platform & Dependencies
 - Windows 10/11 only (IMAPI v2)
@@ -132,17 +164,17 @@ Platform & Dependencies
 
 Workflow
 1. Insert a blank CD-R/RW into your burner.
-2. List devices: `GET /api/cd-burner/devices` — shows device `id`, `present`, `writable`.
+2. List devices: `GET /api/cd-burner/devices` � shows device `id`, `present`, `writable`.
 3. Select device (optional, defaults to first): `POST /api/cd-burner/select-device` with `{ "device_id": "<id>" }`.
 4. Start burn: `POST /api/cd-burner/burn` with `{ "download_item_id": <id> }` for a previously downloaded item.
-5. View progress: UI CDBurner page or connect to `/api/progress/stream` (SSE).
+5. View progress: UI CD Burner page, `/api/progress/snapshot`, or `/api/progress/stream` (SSE).
 6. Cancel (optional): `POST /api/cd-burner/cancel` with `{ "session_id": "..." }`.
 
 Progress Phases
-- Preparing: 0–5% (validation, device/disc checks)
-- Converting: 5–50% (MP3 to WAV, per-track updates)
-- Staging: 50–60% (IMAPI staging, per-track updates)
-- Burning: 60–100% (disc write progress via IMAPI)
+- Preparing: 0�5% (validation, device/disc checks)
+- Converting: 5�50% (MP3 to WAV, per-track updates)
+- Staging: 50�60% (IMAPI staging, per-track updates)
+- Burning: 60�100% (disc write progress via IMAPI)
 
 CD-TEXT
 - The service sets album title/artist and per-track titles/artists when supported by the OS/device. Display varies by player.
@@ -150,4 +182,3 @@ CD-TEXT
 Notes
 - The service expects a `spotify_metadata.json` file in the content directory to determine track order and titles.
 - Non-Windows platforms are not supported in this build.
-

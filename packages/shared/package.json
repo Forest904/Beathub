@@ -1,0 +1,42 @@
+{
+  "name": "@cd-collector/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api/index.d.ts",
+      "default": "./dist/api/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "default": "./dist/storage/index.js"
+    },
+    "./eventing": {
+      "types": "./dist/eventing/index.d.ts",
+      "default": "./dist/eventing/index.js"
+    },
+    "./react-query": {
+      "types": "./dist/react-query/index.d.ts",
+      "default": "./dist/react-query/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "clean": "powershell -Command \"if (Test-Path dist) { Remove-Item dist -Recurse -Force }\""
+  },
+  "dependencies": {
+    "axios": "^1.9.0"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.90.2",
+    "react": ">=18",
+    "react-dom": ">=18"
+  }
+}

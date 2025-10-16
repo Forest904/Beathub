@@ -77,3 +77,4 @@ frontend/build/
 # SQLite defaults
 db.sqlite3
 db.sqlite3-journal
+node_modules

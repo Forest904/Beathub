@@ -1,4 +1,4 @@
-# Repository Guidelines for Codex Agents
+﻿# Repository Guidelines for Codex Agents
 
 This repository already embeds many conventions. Follow the playbook below whenever you touch the codebase.
 
@@ -17,14 +17,13 @@ This repository already embeds many conventions. Follow the playbook below whene
 ```
 app.py                  # Flask app factory and wiring
 config.py               # Configuration defaults/env loading
-src/
-  routes/               # Flask blueprints
-  database/             # SQLAlchemy models & init helpers
-  downloads/, lyrics/, jobs/, progress/, etc.
-frontend/               # React UI (CRA)
+src/                    # Python application modules & blueprints
+web/                    # React web client (CRA) within the pnpm workspace
+apps/mobile/            # Expo Android client scaffold
+packages/shared/        # Shared API clients, storage, React Query hooks
 downloads/              # Default output dir (ignored)
 ```
 - Keep feature code alongside its domain (e.g., downloader helpers under src/download_service.py).
 - Avoid deep nesting of directories—keep related files close together.
-- Separate frontend (React) and backend (Flask) code clearly.
+- Separate web/mobile clients and backend code clearly.
 - Do not make unit tests it would be lost tokens. 

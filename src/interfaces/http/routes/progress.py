@@ -1,5 +1,5 @@
-import logging
-from flask import Blueprint, Response
+﻿import logging
+from flask import Blueprint, Response, jsonify
 from flask_cors import cross_origin
 
 from config import Config
@@ -36,3 +36,16 @@ def stream_progress():
     }
     return Response(_gen(), headers=headers)
 
+
+@progress_bp.route('/progress/snapshot')
+@cross_origin(origins=Config.CORS_ALLOWED_ORIGINS, supports_credentials=True)
+def progress_snapshot():
+    broker = _get_broker()
+    if broker is None:
+        return Response('progress unavailable', status=503)
+
+    snapshot = broker.snapshot()
+    if snapshot is None:
+        return Response(status=204)
+
+    return jsonify(snapshot)

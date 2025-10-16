@@ -7,7 +7,7 @@ to centralise those expectations so future changes remain compatible.
 ### Download Items (`/api/albums`)
 
 - **Source:** `DownloadedItem` rows persisted by the orchestrator.
-- **Frontend mapper:** `toDownloadItem` in `frontend/src/api/mappers.js`.
+- **Frontend mapper:** `toDownloadItem` in `packages/shared/src/api/mappers.ts`.
 - **Required fields:** `id`, `spotify_id`, `name`, `title`, `artist`,
   `image_url`, `spotify_url`, `local_path`, `is_favorite`, `item_type`.
 - The frontend treats `name` as the primary display value. The mapper now
