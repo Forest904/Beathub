@@ -8,6 +8,12 @@ Development will occur in **Visual Studio Code** using a **pnpm monorepo** so th
 **Distribution:** Local **APK** only (side-load for internal testers).  
 No Google Play submission, no observability, no analytics, no performance gates, and no user-facing settings.
 
+**Networking default:** Mobile development targets the Flask API using Expo env overrides:
+- `EXPO_PUBLIC_EMULATOR_API_BASE_URL` (default `http://10.0.2.2:5000`)
+- `EXPO_PUBLIC_DEVICE_API_BASE_URL` (set to your workstation LAN IP, e.g. `http://192.168.1.36:5000`)
+- Optional `EXPO_PUBLIC_API_BASE_URL` if both targets should use the same host.
+Metro must be restarted after changing these values.
+
 ---
 
 ## Android Target & Project Conventions

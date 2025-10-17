@@ -22,8 +22,13 @@ pnpm install
 pnpm mobile:start
 ```
 
-By default the Android emulator points at `http://10.0.2.2:5000`, which hits the Flask server on your host machine.  
-Set `EXPO_PUBLIC_API_BASE_URL` before launching Metro if you need to override it (physical device, staging backend, etc.).
+Networking defaults are controlled via Expo public env vars (see `.env`):
+
+- `EXPO_PUBLIC_EMULATOR_API_BASE_URL` -> used when running on an emulator (defaults to `http://10.0.2.2:5000`)
+- `EXPO_PUBLIC_DEVICE_API_BASE_URL` -> used on a physical device (set this to your host machine’s LAN IP, e.g. `http://192.168.1.36:5000`)
+- `EXPO_PUBLIC_API_BASE_URL` -> optional shared override if you want both targets to hit the same backend
+
+Restart Metro after editing these values so Expo picks up the changes.
 
 ## Building APKs Locally
 

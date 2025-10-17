@@ -93,7 +93,13 @@ pnpm mobile:start    # Expo dev server with Android target
 pnpm mobile:android  # Build & install native Android binary via Gradle
 ```
 
-The Android workspace defaults API calls to `http://10.0.2.2:5000`, which loops back to the Flask server on your machine. Set `EXPO_PUBLIC_API_BASE_URL` before `pnpm mobile:start` if you need a different backend.
+Android networking uses Expo public env vars (see `.env`):
+
+- `EXPO_PUBLIC_EMULATOR_API_BASE_URL` (default `http://10.0.2.2:5000`)
+- `EXPO_PUBLIC_DEVICE_API_BASE_URL` (set to your workstation LAN IP, e.g. `http://192.168.1.36:5000`)
+- Optional `EXPO_PUBLIC_API_BASE_URL` to force both targets to the same host.
+
+Restart Metro after changing these values.
 
 7. **Run the backend**:
 

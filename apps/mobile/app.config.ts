@@ -1,4 +1,28 @@
 import { ConfigContext, ExpoConfig } from "expo/config";
+import path from "node:path";
+import fs from "node:fs";
+
+const loadEnvIfPresent = (envPath: string) => {
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+  const envFile = fs.readFileSync(envPath, "utf8");
+  for (const line of envFile.split(/\r?\n/)) {
+    if (!line || line.startsWith("#")) continue;
+    const [rawKey, ...rest] = line.split("=");
+    if (!rawKey) continue;
+    const key = rawKey.trim();
+    if (!key.startsWith("EXPO_PUBLIC_")) continue;
+    if (process.env[key] !== undefined) continue;
+    const value = rest.join("=").trim();
+    process.env[key] = value;
+  }
+};
+
+const repoEnvPath = path.resolve(__dirname, "..", "..", ".env");
+const mobileEnvPath = path.resolve(__dirname, ".env");
+loadEnvIfPresent(repoEnvPath);
+loadEnvIfPresent(mobileEnvPath);
 
 const androidPackage = "com.cdcollector.mobile";
 
@@ -45,5 +69,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   extra: {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
+    emulatorApiBaseUrl: process.env.EXPO_PUBLIC_EMULATOR_API_BASE_URL ?? "http://10.0.2.2:5000",
+    deviceApiBaseUrl: process.env.EXPO_PUBLIC_DEVICE_API_BASE_URL ?? "",
   },
 });

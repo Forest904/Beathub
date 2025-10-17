@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "dev": "expo start --android",
     "lint": "eslint --ext .ts,.tsx src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@cd-collector/shared": "workspace:*",
