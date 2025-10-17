@@ -1,6 +1,13 @@
 ﻿import { httpGet } from "./httpClient.js";
 import { endpoints } from "./endpoints.js";
-import type { ArtistSummary, DownloadItem, PaginatedArtists } from "./types.js";
+import type {
+  ArtistSummary,
+  DownloadItem,
+  PaginatedArtists,
+  PlaylistDetail,
+  PlaylistSummary,
+  PlaylistTrack,
+} from "./types.js";
 
 export const toDownloadItem = (raw: Record<string, unknown>): DownloadItem => ({
   id: Number(raw?.id ?? 0),
@@ -48,3 +55,34 @@ export const fetchArtists = async (
     pagination: data?.pagination ?? {},
   };
 };
+
+export const toPlaylistSummary = (raw: Record<string, unknown>): PlaylistSummary => ({
+  id: Number(raw?.id ?? 0),
+  user_id: raw?.user_id != null ? Number(raw.user_id) : undefined,
+  name: String(raw?.name ?? ""),
+  description: raw?.description !== undefined && raw?.description !== null ? String(raw.description) : null,
+  created_at: raw?.created_at ? String(raw.created_at) : null,
+  updated_at: raw?.updated_at ? String(raw.updated_at) : null,
+  track_count: Number(
+    raw?.track_count ?? (Array.isArray(raw?.tracks) ? raw.tracks.length : 0),
+  ),
+});
+
+export const toPlaylistTrack = (raw: Record<string, unknown>): PlaylistTrack => ({
+  id: Number(raw?.id ?? 0),
+  playlist_id: Number(raw?.playlist_id ?? 0),
+  track_id: raw?.track_id != null ? Number(raw.track_id) : null,
+  position: Number(raw?.position ?? 0),
+  added_at: raw?.added_at ? String(raw.added_at) : null,
+  track:
+    raw?.track && typeof raw.track === "object" && raw.track !== null
+      ? (raw.track as Record<string, unknown>)
+      : null,
+});
+
+export const toPlaylistDetail = (raw: Record<string, unknown>): PlaylistDetail => ({
+  ...toPlaylistSummary(raw),
+  tracks: Array.isArray(raw?.tracks)
+    ? raw.tracks.map((item) => toPlaylistTrack(item as Record<string, unknown>))
+    : [],
+});

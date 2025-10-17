@@ -5,7 +5,8 @@
     "allowJs": false,
     "noEmit": true,
     "strict": true,
-    "types": ["nativewind/types"]
+    "moduleResolution": "Bundler",
+    "types": ["nativewind/types", "node"]
   },
   "include": ["src", "app.config.ts", "index.ts", "nativewind-env.d.ts"],
   "exclude": ["node_modules", "dist"]

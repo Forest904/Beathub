@@ -38,5 +38,9 @@
     "@tanstack/react-query": "^5.90.2",
     "react": ">=18",
     "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2"
   }
 }

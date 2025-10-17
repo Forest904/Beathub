@@ -16,8 +16,8 @@ No Google Play submission, no observability, no analytics, no performance gates,
 - **Target SDK:** Latest stable Android
 - **Package name:** `com.yourorg.yourapp` (single ID)
 - **Permissions (minimal):**
-  - `INTERNET` — network access
-  - `FOREGROUND_SERVICE` and `WAKE_LOCK` — for playback and foreground notifications
+  - `INTERNET` - network access
+  - `FOREGROUND_SERVICE` and `WAKE_LOCK` - for playback and foreground notifications
   - Scoped storage via **Expo FileSystem** (no legacy `WRITE_EXTERNAL_STORAGE`)
 - **Android-first UX:**
   - System back handling
@@ -27,7 +27,7 @@ No Google Play submission, no observability, no analytics, no performance gates,
 
 ---
 
-## Batch 0 — Workspace Preparation and Shared Foundations
+## Batch 0 - Workspace Preparation and Shared Foundations
 
 - [x] Convert repo to a **pnpm workspace** hosting:
   - `web/`
@@ -48,8 +48,8 @@ No Google Play submission, no observability, no analytics, no performance gates,
     - `pnpm mobile:start`  
     - `pnpm mobile:android`
   - Scripts:
-    - `pnpm mobile:apk:dev` → dev APK
-    - `pnpm mobile:apk:release` → release APK
+    - `pnpm mobile:apk:dev` -> dev APK
+    - `pnpm mobile:apk:release` -> release APK
   - Local install instructions via `adb install <apk>`
 - [x] **Acceptance**
   - App boots in **Expo Go** or as an **APK** on Android.
@@ -59,79 +59,112 @@ No Google Play submission, no observability, no analytics, no performance gates,
 
 ---
 
-## Batch 1 — Read-Only Catalog and Download Monitoring
+## Batch 1 - Read-Only Catalog and Download Monitoring
 
-- [ ] Navigation:
-  - Implement **Discover**, **Releases**, **Playlists**, and **Download Queue** with `@react-navigation`
-  - Ensure correct **Android back behavior**
-- [ ] Lists:
-  - Port web list/grid to React Native **`FlatList`** and **`SectionList`**
-  - Use **`expo-image`** for caching
-  - Reuse **shared view models** from `packages/shared`
-- [ ] Live updates:
-  - Replace web **EventSource (SSE)** with **polling-based subscription**
-  - Shared polling interval: 3–5s with jitter/backoff
-- [ ] UX:
-  - Skeleton loaders, empty/error states, and Android-native snackbars for transient feedback
-- [ ] **Acceptance**
-  - Users browse catalog data and view live download queue updates
-  - Smooth scroll performance across Android devices
-  - Graceful degradation during network interruptions
+### Goals
+Deliver a navigation shell and read-only media catalog so internal testers can browse content and monitor download progress backed by the existing services.
 
----
+### Scope
 
-## Batch 2 — Authentication and Job Control
+- [X] Navigation
+  - Add `@react-navigation/native`, `@react-navigation/native-stack`, `@react-navigation/bottom-tabs`, `react-native-screens`, and `react-native-safe-area-context` under `apps/mobile`.
+  - Create `apps/mobile/src/navigation/index.tsx` exporting a root stack hosting a bottom tab navigator with screens for Discover, Releases, Playlists, and Download Queue.
+  - Wire the navigation container into `App.tsx`, enable the Android back handler helpers, and confirm nested stacks respect hardware back.
+  - Configure deep link prefixes for `yourapp://` so future auth work can share the same root navigator.
+- [X] Lists and Detail Views
+  - Port the web catalog list and grid patterns into reusable components (`CatalogList`, `CatalogGrid`) using `FlatList` and `SectionList` as appropriate.
+  - Render artwork through `expo-image` with memory and disk caching enabled plus placeholder fallbacks from the design tokens.
+  - Source data via shared hooks such as `useDiscoverCatalog`, `useReleaseGroups`, `usePlaylistSummaries`, and `useDownloadQueue`; keep screen components thin and push mapping logic into `packages/shared`.
+  - Provide read-only release and playlist detail screens to validate navigation flows even without interactive controls.
+- [X] Live Updates
+  - Swap the web SSE transport for a polling abstraction (`usePollingResource`) exposed from `packages/shared`, returning cached data compatible with React Query.
+  - Default interval to 3-5 seconds with +/- 750 ms jitter; pause polling when the app is backgrounded by listening to `AppState`.
+  - Ensure download queue updates hydrate the shared cache so every screen stays in sync.
+- [X] UX Polish
+  - Add skeleton loaders (e.g. `moti/skeleton` or lightweight shimmer) and empty/error placeholders that reuse shared copy and icons.
+  - Surface transient errors via a snackbar component (either `react-native-paper` or a minimal custom one) that hooks into the shared toast bus.
+  - Profile low-end Android devices through the Expo dev menu; memoize list rows and provide stable `keyExtractor` values to protect scrolling performance.
+- [X] Acceptance
+  - Navigating among Discover, Releases, Playlists, and Download Queue behaves correctly with Android back navigation.
+  - Catalog and download data render quickly, recover from offline states, and reflect server updates within five seconds under normal conditions.
+  - No auth or mutation logic ships yet; all screens remain read-only while exercising the shared contracts.
 
-- [ ] Auth model:
-  - Token-based auth with web using cookies and mobile using headers
-  - Store tokens in **SecureStore** (secret) and **AsyncStorage** (non-secret)
-  - Handle token refresh via shared HTTP layer
-- [ ] Screens:
-  - **Login/Logout** and gated navigation for download initiation
-  - No settings or preference screens
-- [ ] Job actions:
-  - Enable **start/cancel download** using shared service hooks
-  - Apply **optimistic UI updates** and reconcile with server response
-- [ ] Security hygiene:
-  - Hide tokens from logs
-  - Clear credentials and local cache on logout
-- [ ] **Acceptance**
-  - Authenticated users can start/cancel jobs
-  - Session persists across app restarts
-  - Mobile and web reflect consistent job states
+
 
 ---
 
-## Batch 3 — Device-Dependent Capabilities (Android Only)
+## Batch 2 - Authentication and Job Control
 
-> No user settings screen; use fixed defaults for all configurations.
+### Goals
+- Enforce authenticated access before users can initiate or manage download jobs.
+- Share the core auth lifecycle (login, refresh, logout) with the web client while respecting platform storage constraints.
+- Deliver start/cancel controls that feel instant on mobile and stay consistent with the web UI.
 
-- [ ] Playback:
-  - Integrate **`react-native-track-player`** (preferred) or **`expo-av`**
-  - Implement **Android MediaSession** for lockscreen and Bluetooth controls
-  - Add **foreground playback notification** with play/pause/skip actions
-- [ ] Offline caching (optional):
-  - Implement **Expo FileSystem**-based caching with scoped storage
-  - Enable manual clear/download controls from Downloads screen
-  - Verify cache integrity with checksum or ETag validation
-- [ ] Deep links (optional):
-  - Support `yourapp://track/:id` for local navigation testing
-  - Omit HTTPS App Links since there is no public domain
-- [ ] Simplifications:
-  - **No push notifications**
-  - **No user settings**
-- [ ] **Acceptance**
-  - Users can play tracks locally and control playback via notification or lockscreen
-  - Offline caching (if enabled) functions correctly and can be manually cleared
-  - Player and download logic match shared contracts
+### Scope
+
+- [ ] **Auth model**
+  - Extend the shared HTTP client to attach auth headers, retry on 401 with refresh, and broadcast logout on irrecoverable failures.
+  - Implement a cross-platform credential vault that stores refresh/secret values in SecureStore and non-secret metadata in AsyncStorage.
+  - Add bootstrap logic that rehydrates sessions on cold start and blocks navigation until auth state is resolved.
+- [ ] **Screens & flows**
+  - Build a dedicated login stack (email/password for now) with inline error states and submit throttling; redirect authenticated users back to the main tab navigator.
+  - Surface a logout affordance in the Downloads tab header overflow and apply a confirmation step before clearing data.
+  - Gate job controls behind auth-aware guards so guests see a prompt to log in instead of actionable buttons.
+- [ ] **Job actions**
+  - Wire startDownload and cancelDownload mutations from packages/shared with optimistic cache updates and eventual reconciliation from polling responses.
+  - Provide inline progress indicators and status toasts for success/failure, rolling back optimistic state if the server rejects the change.
+  - Ensure the mobile queue remains in sync with concurrent actions triggered from the web client or background jobs.
+- [ ] **Security hygiene**
+  - Redact token material from logs, analytics events, and crash reports.
+  - On logout, purge cached queries, reset mutation queues, clear persisted storage, and wipe any temporary download artifacts tied to the session.
+  - Guard against stale refresh tokens by checking expiry timestamps and forcing relogin when refresh fails.
+
+### Acceptance
+- Authenticated users can start and cancel download jobs on mobile with state reflected in subsequent refreshes.
+- Session state survives app restarts and surfaces an inline login when credentials expire.
+- Mobile and web maintain consistent job state after concurrent actions, including rollback on error.
+- Logging out removes all sensitive data and returns the app to a guest-safe navigation state.
+
+---
+
+## Batch 3 - Device-Dependent Capabilities (Android Only)
+
+### Goals
+- Deliver reliable Android playback integrated with system surfaces even without iOS parity.
+- Provide offline access and deep link affordances where they create concrete value for testers.
+- Keep the scope tight by omitting push notifications and end-user preferences.
+
+### Scope
+
+- [ ] **Playback**
+  - Integrate `expo-av` as the definitive playback engine, configuring background audio, notification channel, and lifecycle hooks within the managed workflow.
+  - Configure Android MediaSession with lockscreen, notification, and Bluetooth transport controls mapped to shared playback commands.
+  - Present a foreground playback notification with play/pause/skip actions plus artwork synced to the active track.
+  - Handle audio focus changes and noisy events (for example, headphones unplugged) to pause gracefully.
+- [ ] **Offline caching (optional)**
+  - Use Expo FileSystem with scoped storage to persist downloaded audio and related metadata.
+  - Track disk usage, enforce a fixed cache cap (512 MB-1 GB), and expose a manual clear/download management affordance within the Downloads tab.
+  - Validate file integrity via checksum or ETag comparison before marking a download complete.
+- [ ] **Deep links (optional)**
+  - Support `yourapp://track/:id` to jump into playback or detail views; ensure links authenticate before navigation.
+  - Register intent filters in `app.config.ts` while skipping HTTPS App Links since there is no public domain.
+- [ ] **Simplifications**
+  - No push notifications.
+  - No user-facing playback or cache settings; rely on fixed defaults from shared config.
+
+### Acceptance
+- Users can play tracks locally, control playback from the notification tray or lockscreen, and observe responsive Bluetooth controls.
+- Offline caching (when enabled) stores tracks, survives app restarts, and can be cleared through the Downloads tab without leftover files.
+- Deep links (when enabled) navigate correctly and respect auth guards.
+- Playback and download state remain aligned with shared domain expectations under error and background conditions.
 
 ---
 
 ## Deliverables & Ops (APK Only)
 
 - **Build Outputs**
-  - Development APK → `eas build --platform android --local --profile dev-apk`
-  - Release APK → `eas build --platform android --local --profile release-apk`
+  - Development APK -> `eas build --platform android --local --profile dev-apk`
+  - Release APK -> `eas build --platform android --local --profile release-apk`
 - **Signing**
   - Use **debug keystore** or locally generated release keystore (`keytool`)
   - No Play Console signing required
@@ -156,8 +189,8 @@ No Google Play submission, no observability, no analytics, no performance gates,
 Since there are **no user settings**:
 
 - **Theme:** follows system light/dark mode  
-- **Audio quality:** fixed to “standard”  
-- **Cache limit:** fixed (e.g., 512 MB–1 GB)  
+- **Audio quality:** fixed to "standard"  
+- **Cache limit:** fixed (e.g., 512 MB-1 GB)  
 - **Push notifications:** omitted  
 - **User preferences:** not stored or exposed
 

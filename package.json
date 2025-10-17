@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.12.3",
+  "pnpm": {
+    "overrides": {
+      "@babel/core": "7.24.7"
+    }
+  },
   "scripts": {
     "postinstall": "pnpm --filter @cd-collector/shared build",
     "shared:build": "pnpm --filter @cd-collector/shared build",

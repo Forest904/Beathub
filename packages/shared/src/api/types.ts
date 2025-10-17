@@ -56,3 +56,50 @@ export interface PaginatedArtists {
   artists: ArtistSummary[];
   pagination: Partial<Pagination>;
 }
+
+export interface PlaylistSummary {
+  id: number;
+  user_id?: number;
+  name: string;
+  description: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  track_count: number;
+}
+
+export interface PlaylistTrack {
+  id: number;
+  playlist_id: number;
+  track_id: number | null;
+  position: number;
+  added_at: string | null;
+  track: Record<string, unknown> | null;
+}
+
+export interface PlaylistDetail extends PlaylistSummary {
+  tracks: PlaylistTrack[];
+}
+
+export interface PaginatedPlaylists {
+  items: PlaylistSummary[];
+  pagination: Record<string, unknown>;
+}
+
+export interface DownloadProgressSnapshot {
+  event?: string;
+  status?: string;
+  phase?: string;
+  overall_total?: number;
+  overall_completed?: number;
+  overall_progress?: number;
+  song_id?: string;
+  song_name?: string;
+  song_display_name?: string;
+  song_status?: string;
+  song_progress?: number;
+  progress?: number;
+  error_message?: string | null;
+  errorMessage?: string | null;
+  severity?: string | null;
+  [key: string]: unknown;
+}
