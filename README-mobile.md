@@ -19,11 +19,11 @@ pnpm install
 
 ```bash
 # Start Metro with Android target
-export EXPO_PUBLIC_API_BASE_URL=http://<your-computer-ip>:5000
 pnpm mobile:start
 ```
 
-The API URL defaults to the same origin as the Metro server. Override `EXPO_PUBLIC_API_BASE_URL` when running on a device.
+By default the Android emulator points at `http://10.0.2.2:5000`, which hits the Flask server on your host machine.  
+Set `EXPO_PUBLIC_API_BASE_URL` before launching Metro if you need to override it (physical device, staging backend, etc.).
 
 ## Building APKs Locally
 

@@ -93,7 +93,7 @@ pnpm mobile:start    # Expo dev server with Android target
 pnpm mobile:android  # Build & install native Android binary via Gradle
 ```
 
-Expo reads `EXPO_PUBLIC_API_BASE_URL` from your shell to point at the Flask API (defaults to same host).
+The Android workspace defaults API calls to `http://10.0.2.2:5000`, which loops back to the Flask server on your machine. Set `EXPO_PUBLIC_API_BASE_URL` before `pnpm mobile:start` if you need a different backend.
 
 7. **Run the backend**:
 
@@ -135,7 +135,7 @@ Install the resulting APK with `adb install <path-to-apk>`.
 - `spotdl` not found: Installed via `requirements.txt`. Ensure the app runs with the same Python where dependencies were installed.
 - No burner detected (Windows): Ensure you have an optical recorder and run the app with sufficient privileges. IMAPI v2 is built into modern Windows.
 - Rate limits or spotDL failures: Try lowering `SPOTDL_THREADS` (e.g., `1`), ensure your own Spotify credentials are set (used by both the app and spotDL), and consider switching audio source (`SPOTDL_AUDIO_SOURCE`) if throttling persists.
-- Expo unable to reach the API: export `EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:5000` (your machine IP) before launching `pnpm mobile:start`.
+- Expo unable to reach the API: confirm Flask is running on port 5000; for remote targets export `EXPO_PUBLIC_API_BASE_URL=http://<server-ip>:5000` before launching `pnpm mobile:start`.
 
 ## Documentation
 

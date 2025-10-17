@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # config.py
 import os
-from typing import List
+import socket
+from typing import List, Optional
 
 # This assumes config.py is at the root of your project
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -28,6 +29,19 @@ def _get_csv_list(name: str, default: str) -> List[str]:
     raw = os.getenv(name)
     source = raw if raw is not None else default
     return [token.strip() for token in source.split(",") if token and token.strip()]
+
+
+def _get_local_ipv4() -> Optional[str]:
+    try:
+        hostname = socket.gethostname()
+        candidate = socket.gethostbyname(hostname)
+        if candidate and not candidate.startswith("127."):
+            return candidate
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return None
 
 
 class Config:
@@ -97,9 +111,21 @@ class Config:
     CD_CAPACITY_MINUTES = _get_int('CD_CAPACITY_MINUTES', 80)
 
     # CORS
-    CORS_ALLOWED_ORIGINS = _get_csv_list(
-        'CORS_ALLOWED_ORIGINS',
-        'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5000,http://127.0.0.1:5000',
+    _default_cors = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173,"
+        "http://localhost:5000,"
+        "http://127.0.0.1:5000,"
+        "http://localhost:8081,"
+        "http://127.0.0.1:8081,"
+        "http://10.0.2.2:8081,"
+        "exp://127.0.0.1:8081,"
+        "exp://10.0.2.2:8081"
     )
+    _local_ipv4 = _get_local_ipv4()
+    if _local_ipv4:
+        _default_cors += f",http://{_local_ipv4}:8081,exp://{_local_ipv4}:8081"
 
-
+    CORS_ALLOWED_ORIGINS = _get_csv_list('CORS_ALLOWED_ORIGINS', _default_cors)
