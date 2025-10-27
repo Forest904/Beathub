@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import PlaylistCreateForm from '../components/PlaylistCreateForm.jsx';
@@ -18,6 +18,9 @@ const MyPlaylistsPage = () => {
   const perPage = PLAYLIST_DEFAULT_PAGE_SIZE;
   const [selectedId, setSelectedId] = useState(null);
   const [formError, setFormError] = useState('');
+  const listContainerRef = useRef(null);
+  const detailContainerRef = useRef(null);
+
   const listQuery = usePlaylistList({ page, perPage });
   const playlists = listQuery.data?.items || [];
   const pagination = listQuery.data?.pagination || {};
@@ -27,10 +30,33 @@ const MyPlaylistsPage = () => {
       setSelectedId(null);
       return;
     }
-    if (!selectedId || !playlists.some((item) => item.id === selectedId)) {
-      setSelectedId(playlists[0].id);
+
+    if (selectedId && !playlists.some((item) => item.id === selectedId)) {
+      setSelectedId(null);
     }
   }, [playlists, selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      return undefined;
+    }
+
+    const handleClickAway = (event) => {
+      const listEl = listContainerRef.current;
+      const detailEl = detailContainerRef.current;
+
+      if (listEl?.contains(event.target) || detailEl?.contains(event.target)) {
+        return;
+      }
+
+      setSelectedId(null);
+    };
+
+    document.addEventListener('click', handleClickAway);
+    return () => {
+      document.removeEventListener('click', handleClickAway);
+    };
+  }, [selectedId]);
 
   const detailQuery = usePlaylist(selectedId);
   const playlist = detailQuery.data;
@@ -72,10 +98,14 @@ const MyPlaylistsPage = () => {
     await mutations.reorderTracks(selectedId, order);
   };
 
+  const handleSelectPlaylist = (item) => {
+    setSelectedId((current) => (current === item.id ? null : item.id));
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-brand-50 dark:bg-slate-950">
-        <p className="text-slate-600 dark:text-gray-300">Loading your playlists…</p>
+        <p className="text-slate-600 dark:text-gray-300">Loading your playlists...</p>
       </div>
     );
   }
@@ -101,18 +131,24 @@ const MyPlaylistsPage = () => {
 
   return (
     <div className="min-h-screen bg-brand-50 py-8 dark:bg-slate-950">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 lg:flex-row">
-        <div className="lg:w-1/3 space-y-6">
-          <PlaylistCreateForm
-            onCreate={handleCreatePlaylist}
-            isSubmitting={mutations.states.create.isPending}
-          />
-          {formError && (
-            <p className="rounded-lg bg-brandError-100 p-3 text-sm text-brandError-700 dark:bg-brandError-900/40 dark:text-brandError-300">
-              {formError}
-            </p>
-          )}
-          <div className="rounded-2xl bg-white p-6 shadow ring-1 ring-brand-100 dark:bg-gray-900 dark:ring-gray-700">
+      <div className="mx-auto max-w-7xl space-y-6 px-4">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-4">
+            <PlaylistCreateForm
+              onCreate={handleCreatePlaylist}
+              isSubmitting={mutations.states.create.isPending}
+            />
+            {formError && (
+              <p className="rounded-lg bg-brandError-100 p-3 text-sm text-brandError-700 dark:bg-brandError-900/40 dark:text-brandError-300">
+                {formError}
+              </p>
+            )}
+          </div>
+
+          <div
+            ref={listContainerRef}
+            className="rounded-2xl bg-white p-6 shadow ring-1 ring-brand-100 dark:bg-gray-900 dark:ring-gray-700"
+          >
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Your playlists</h2>
               <span className="text-sm text-slate-500 dark:text-gray-400">
@@ -120,12 +156,12 @@ const MyPlaylistsPage = () => {
               </span>
             </div>
             {listQuery.isLoading ? (
-              <p className="text-sm text-slate-600 dark:text-gray-300">Loading playlists…</p>
+              <p className="text-sm text-slate-600 dark:text-gray-300">Loading playlists...</p>
             ) : (
               <PlaylistList
                 playlists={playlists}
                 activePlaylistId={selectedId}
-                onSelect={(item) => setSelectedId(item.id)}
+                onSelect={handleSelectPlaylist}
                 onDelete={handleDeletePlaylist}
               />
             )}
@@ -158,26 +194,29 @@ const MyPlaylistsPage = () => {
           </div>
         </div>
 
-        <div className="lg:w-2/3">
-          {detailQuery.isLoading ? (
-            <div className="rounded-2xl bg-white p-6 text-center text-slate-600 shadow ring-1 ring-brand-100 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
-              Loading playlist details…
-            </div>
-          ) : playlist ? (
-            <PlaylistDetail
-              playlist={playlist}
-              onRemoveTrack={handleRemoveTrack}
-              onReorderTracks={handleReorderTracks}
-            />
-          ) : (
-            <div className="rounded-2xl bg-white p-6 text-center text-slate-600 shadow ring-1 ring-brand-100 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
-              Select a playlist from the list or create a new one to get started.
-            </div>
-          )}
-        </div>
+        {selectedId && (
+          <div ref={detailContainerRef}>
+            {detailQuery.isLoading ? (
+              <div className="rounded-2xl bg-white p-6 text-center text-slate-600 shadow ring-1 ring-brand-100 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
+                Loading playlist details...
+              </div>
+            ) : playlist ? (
+              <PlaylistDetail
+                playlist={playlist}
+                onRemoveTrack={handleRemoveTrack}
+                onReorderTracks={handleReorderTracks}
+              />
+            ) : (
+              <div className="rounded-2xl bg-white p-6 text-center text-slate-600 shadow ring-1 ring-brand-100 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
+                We couldn't load this playlist. Try selecting another one.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 export default MyPlaylistsPage;
+

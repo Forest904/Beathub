@@ -117,20 +117,18 @@ const AlbumCard = ({ album, onDelete, onSelect, variant, isSelected, disabled })
           height="640"
           loading="lazy"
         />
-        <div className="absolute left-3 right-3 top-3 flex items-start justify-between gap-2">
+        <div className="absolute left-3 right-3 top-3 flex flex-wrap items-start justify-between gap-2">
           <span className={badgeClassName}>
             {badgeLabel}
           </span>
-          {!isBestOf && (
-            <div className="flex-shrink-0">
-              <FavoriteButton
-                itemType="album"
-                itemId={String(album.id)}
-                metadata={favoriteMetadata}
-                size="sm"
-              />
-            </div>
-          )}
+          <div className="flex-shrink-0">
+            <FavoriteButton
+              itemType="album"
+              itemId={String(album.id)}
+              metadata={favoriteMetadata}
+              size="sm"
+            />
+          </div>
         </div>
       </div>
       <div className="p-4 text-center">

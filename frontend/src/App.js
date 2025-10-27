@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Header from './shared/components/Header';
 import Footer from './shared/components/Footer';
+import ScrollToTop from './shared/components/ScrollToTop.jsx';
 import ArtistBrowserPage from './features/catalog/pages/ArtistBrowserPage';
 import ArtistDetailsPage from './features/catalog/pages/ArtistDetailsPage';
 import AlbumDetailsPage from './features/catalog/pages/AlbumDetailsPage';
@@ -25,6 +26,7 @@ const App = () => (
       <ThemeProvider>
         <PlayerProvider>
           <Router>
+            <ScrollToTop />
             <div className="flex min-h-screen flex-col bg-brand-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
               <Header />
               <main className="flex-1 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">

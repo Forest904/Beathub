@@ -22,6 +22,7 @@ const PlaylistList = ({ playlists, activePlaylistId, onSelect, onDelete }) => {
             <button
               type="button"
               onClick={() => onSelect(playlist)}
+              aria-pressed={isActive}
               className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition ${
                 isActive
                   ? 'border-brand-500 bg-brand-100 text-brand-800 shadow-sm dark:border-brandDark-400 dark:bg-brandDark-900/40 dark:text-brandDark-200'
