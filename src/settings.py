@@ -9,9 +9,9 @@ provides helpers to build SpotDL downloader options.
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from config import Config
 
@@ -57,46 +57,78 @@ def _parse_audio_providers(value: Optional[object]) -> List[str]:
 class AppSettings(BaseModel):
     """Application-wide settings with SpotDL-related options."""
 
+    model_config = ConfigDict(extra="ignore")
+
     # App
-    base_output_dir: str = Field(default=Config.BASE_OUTPUT_DIR)
+    base_output_dir: str
 
     # Spotify credentials
-    spotify_client_id: Optional[str] = Field(default=Config.SPOTIPY_CLIENT_ID)
-    spotify_client_secret: Optional[str] = Field(default=Config.SPOTIPY_CLIENT_SECRET)
+    spotify_client_id: Optional[str] = None
+    spotify_client_secret: Optional[str] = None
 
     # SpotDL downloader options
-    audio_providers: List[str] = Field(default_factory=lambda: _parse_audio_providers(Config.SPOTDL_AUDIO_SOURCE))
-    format: str = Field(default=Config.SPOTDL_FORMAT)
-    threads: int = Field(default=Config.SPOTDL_THREADS)
-    overwrite: str = Field(default="skip")
-    preload: bool = Field(default=_env_bool("SPOTDL_PRELOAD", False))
+    audio_providers: List[str] = Field(default_factory=lambda: ["youtube-music"])
+    format: str = "mp3"
+    threads: int = 6
+    overwrite: str = "skip"
+    preload: bool = False
+    simple_tui: bool = Field(default=Config.SPOTDL_SIMPLE_TUI)
 
     # Lyrics via SpotDL providers (we'll favor Genius if token present)
-    lyrics_providers: List[str] = Field(
-        default_factory=lambda: ["genius"] if Config.GENIUS_ACCESS_TOKEN else []
-    )
-    genius_token: Optional[str] = Field(default=Config.GENIUS_ACCESS_TOKEN)
+    lyrics_providers: List[str] = Field(default_factory=list)
+    genius_token: Optional[str] = None
 
     # Subprocess/console output suppression for SpotDL + children
-    suppress_subprocess_output: bool = Field(default=_env_bool("SPOTDL_SUPPRESS_OUTPUT", True))
+    suppress_subprocess_output: bool = True
 
     @field_validator("overwrite")
     @classmethod
-    def _validate_overwrite(cls, v: str) -> str:
+    def _validate_overwrite(cls, value: str) -> str:
         allowed = {"skip", "force", "metadata"}
-        if v not in allowed:
+        if value not in allowed:
             return "skip"
-        return v
+        return value
 
     @field_validator("audio_providers", mode="before")
     @classmethod
-    def _normalize_audio_providers(cls, value):
+    def _normalize_audio_providers(cls, value: Optional[object]) -> List[str]:
         return _parse_audio_providers(value)
 
+    @field_validator("threads", mode="before")
+    @classmethod
+    def _coerce_threads(cls, value: object) -> int:
+        try:
+            threads = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 1
+        return max(1, min(threads, 32))
 
-def load_app_settings() -> AppSettings:
-    """Load settings merging config defaults with environment overrides."""
-    return AppSettings()
+    @field_validator("preload", mode="before")
+    @classmethod
+    def _coerce_preload(cls, value: object) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+        return bool(value)
+
+
+def load_app_settings(overrides: Optional[Dict[str, Any]] = None) -> AppSettings:
+    """Load settings merging config defaults with optional runtime overrides."""
+    data: Dict[str, Any] = {
+        "base_output_dir": Config.BASE_OUTPUT_DIR,
+        "spotify_client_id": Config.SPOTIPY_CLIENT_ID,
+        "spotify_client_secret": Config.SPOTIPY_CLIENT_SECRET,
+        "audio_providers": Config.SPOTDL_AUDIO_SOURCE,
+        "format": Config.SPOTDL_FORMAT,
+        "threads": Config.SPOTDL_THREADS,
+        "preload": getattr(Config, "SPOTDL_PRELOAD", False),
+        "simple_tui": getattr(Config, "SPOTDL_SIMPLE_TUI", True),
+        "lyrics_providers": ["genius"] if Config.GENIUS_ACCESS_TOKEN else [],
+        "genius_token": Config.GENIUS_ACCESS_TOKEN,
+        "suppress_subprocess_output": _env_bool("SPOTDL_SUPPRESS_OUTPUT", True),
+    }
+    if overrides:
+        data.update(overrides)
+    return AppSettings.model_validate(data)
 
 
 def build_spotdl_downloader_options(settings: AppSettings):
@@ -124,6 +156,7 @@ def build_spotdl_downloader_options(settings: AppSettings):
         overwrite=settings.overwrite,
         lyrics_providers=settings.lyrics_providers,
         preload=settings.preload,
+        simple_tui=settings.simple_tui,
         genius_token=settings.genius_token,
     )
 

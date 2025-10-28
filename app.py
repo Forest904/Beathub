@@ -24,6 +24,7 @@ from src.domain.downloads import (
 )
 from src.domain.catalog import MetadataService, LyricsService
 from src.domain.burning import CDBurningService, BurnSessionManager
+from src.support.app_settings import apply_download_settings, get_download_settings
 from src.infrastructure.spotdl import build_default_client
 from src.interfaces.http.routes import (
     download_bp,
@@ -35,6 +36,8 @@ from src.interfaces.http.routes import (
     compilation_bp,
     playlist_bp,
     favorite_bp,
+    settings_bp,
+    status_bp,
 )
 
 
@@ -100,6 +103,10 @@ def configure_logging(log_dir: str) -> str:
 def create_app():
     app = Flask(__name__, static_folder='frontend/build', static_url_path='') # Assuming frontend/build now for static files
     app.config.from_object(Config)
+
+    runtime_download_settings = get_download_settings(app)
+    apply_download_settings(app, runtime_download_settings, refresh_client=False)
+
     allowed_origins = sorted({
         origin.strip()
         for origin in Config.CORS_ALLOWED_ORIGINS
@@ -120,9 +127,11 @@ def create_app():
     # Prepare progress broker and SpotDL client first so we can inject
     app.extensions['progress_broker'] = ProgressBroker()
     progress_publisher = BrokerPublisher(app.extensions['progress_broker'])
+    app.extensions['spotdl_ready'] = False
     spotdl_client = None
     try:
         spotdl_client = build_default_client(app_logger=app.logger)
+        app.extensions['spotdl_ready'] = True
         # Progress hook publishes to broker for SSE
         def _spotdl_progress(ev: dict):
             try:
@@ -144,6 +153,7 @@ def create_app():
     except Exception as e:
         # Log full traceback to aid diagnosing missing deps (ffmpeg/yt-dlp),
         # credential issues, or Windows event loop quirks.
+        app.extensions['spotdl_ready'] = False
         app.logger.warning(
             "SpotDL client not initialized; download features unavailable: %s",
             e,
@@ -209,6 +219,8 @@ def create_app():
     app.register_blueprint(compilation_bp)
     app.register_blueprint(playlist_bp)
     app.register_blueprint(favorite_bp)
+    app.register_blueprint(settings_bp)
+    app.register_blueprint(status_bp)
     # --- NEW: Register the CD Burning Blueprint ---
     app.register_blueprint(cd_burning_bp)
 
@@ -257,3 +269,7 @@ if __name__ == '__main__':
     logger.info("Starting Flask application...")
     # Enable threaded mode so SSE can stream while downloads run in parallel requests
     app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
+
+
+
+

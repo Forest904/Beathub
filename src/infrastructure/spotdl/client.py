@@ -24,6 +24,7 @@ import io
 import os
 
 from src.settings import load_app_settings, build_spotdl_downloader_options
+from src.utils.cancellation import CancellationRequested
 
 
 logger = logging.getLogger(__name__)
@@ -188,7 +189,6 @@ class SpotdlClient:
             try:
                 # Cooperative cancellation check
                 if cancel_event is not None and cancel_event.is_set():
-                    from .utils.cancellation import CancellationRequested
                     raise CancellationRequested("Download canceled by user")
                 # Enrich events with stable per-song identifiers so the UI can
                 # render multiple concurrent progress bars.
@@ -237,7 +237,6 @@ class SpotdlClient:
             except Exception as e:  # pragma: no cover - do not break downloads on UI errors
                 # If cancellation is raised, re-raise so the engine call can unwind
                 try:
-                    from .utils.cancellation import CancellationRequested
                     if isinstance(e, CancellationRequested):
                         raise
                 except Exception:
@@ -345,7 +344,6 @@ class SpotdlClient:
             results: List[Tuple[Any, Optional[Path]]] = []
             for i in range(0, len(song_list), batch_size):
                 if cancel_event.is_set():
-                    from .utils.cancellation import CancellationRequested
                     raise CancellationRequested("Download canceled by user")
                 chunk = song_list[i:i + batch_size]
                 try:
@@ -353,7 +351,6 @@ class SpotdlClient:
                 except Exception as e:
                     # If progress callback signaled cancellation inside SpotDL, propagate
                     try:
-                        from .utils.cancellation import CancellationRequested
                         if isinstance(e, CancellationRequested):
                             raise
                     except Exception:
@@ -384,6 +381,35 @@ class SpotdlClient:
             self.set_progress_callback(progress_callback, cancel_event=cancel_event)
         songs = self.search([spotify_link])
         return self.download_songs(songs)
+
+    def is_initialized(self) -> bool:
+        return self._spotdl is not None and self._engine_thread is not None and self._engine_thread.is_alive()
+
+    def shutdown(self) -> None:
+        """Best-effort teardown so a fresh client can be created.
+
+        Ensures the engine thread exits and clears the global SpotifyClient
+        singleton so SpotDL can be reinitialized with new credentials.
+        """
+        with self._lock:
+            try:
+                if self._engine_queue is not None:
+                    self._engine_queue.put(None)
+            except Exception:
+                pass
+        try:
+            if self._engine_thread is not None and self._engine_thread.is_alive():
+                self._engine_thread.join(timeout=5)
+        except Exception:
+            pass
+        self._spotdl = None
+        try:
+            from spotdl.utils.spotify import SpotifyClient  # type: ignore
+
+            SpotifyClient._instance = None  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
 
 
 def build_default_client(app_logger: Optional[logging.Logger] = None) -> SpotdlClient:

@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../shared/hooks/useAuth";
+import { fetchDownloadSettings, fetchSettingsStatus, updateDownloadSettings } from "../api";
 
 const deriveUsername = (user) => {
   if (!user) return "";
@@ -21,6 +22,23 @@ const formatErrors = (errors) => {
   return Object.values(errors)
     .flat()
     .join(" ");
+};
+
+const DOWNLOAD_SETTINGS_STORAGE_KEY = "download-settings:v1";
+const THREADS_DEFAULT = 6;
+
+const DEFAULT_DOWNLOAD_SETTINGS = {
+  base_output_dir: "./downloads",
+  threads: THREADS_DEFAULT,
+  preload: true,
+};
+
+const clampThreads = (value) => {
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) {
+    return 1;
+  }
+  return Math.min(12, Math.max(1, Math.round(numeric)));
 };
 
 const useAutoDismiss = (status, setter, delay = 3000) => {
@@ -56,8 +74,16 @@ const AccountSettingsPage = () => {
   });
   const [passwordStatus, setPasswordStatus] = useState(null);
 
+  const [downloadSettings, setDownloadSettings] = useState(DEFAULT_DOWNLOAD_SETTINGS);
+  const [downloadDefaults, setDownloadDefaults] = useState(DEFAULT_DOWNLOAD_SETTINGS);
+  const [downloadStatus, setDownloadStatus] = useState(null);
+  const [downloadLoading, setDownloadLoading] = useState(true);
+  const downloadHydratedRef = useRef(false);
+  const [spotdlStatus, setSpotdlStatus] = useState({ ready: false, loading: true });
+
   const [sectionsOpen, setSectionsOpen] = useState({
     profile: false,
+    downloads: false,
     email: false,
     password: false,
   });
@@ -69,6 +95,106 @@ const AccountSettingsPage = () => {
   useEffect(() => {
     setEmailForm((prev) => ({ ...prev, newEmail: user?.email ?? "" }));
   }, [user?.email]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DOWNLOAD_SETTINGS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          const next = { ...parsed };
+          if (typeof next.threads !== "undefined") {
+            next.threads = clampThreads(next.threads);
+          }
+          if (typeof next.preload !== "undefined") {
+            next.preload = Boolean(next.preload);
+          }
+          setDownloadSettings((prev) => ({
+            ...prev,
+            ...next,
+          }));
+        }
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to load download settings from storage", error);
+    } finally {
+      downloadHydratedRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!downloadHydratedRef.current) return;
+    try {
+      window.localStorage.setItem(DOWNLOAD_SETTINGS_STORAGE_KEY, JSON.stringify(downloadSettings));
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to persist download settings", error);
+    }
+  }, [downloadSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!user) {
+      setDownloadLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const loadSettings = async () => {
+      setDownloadLoading(true);
+      try {
+        const [settingsResponse, statusResponse] = await Promise.all([
+          fetchDownloadSettings(),
+          fetchSettingsStatus().catch(() => ({ spotdl_ready: false })),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        const defaults = { ...DEFAULT_DOWNLOAD_SETTINGS, ...(settingsResponse?.defaults || {}) };
+        const settings = { ...defaults, ...(settingsResponse?.settings || {}) };
+        const normalizedDefaults = {
+          ...defaults,
+          threads: clampThreads(defaults.threads),
+          preload: Boolean(defaults.preload),
+        };
+        const normalizedSettings = {
+          ...settings,
+          threads: clampThreads(settings.threads),
+          preload: Boolean(settings.preload),
+        };
+        setDownloadDefaults(normalizedDefaults);
+        setDownloadSettings(normalizedSettings);
+        setSpotdlStatus({ ready: Boolean(statusResponse?.spotdl_ready), loading: false });
+        setDownloadStatus(null);
+        if (downloadHydratedRef.current) {
+          try {
+            window.localStorage.setItem(DOWNLOAD_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings));
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn("Failed to persist download settings", error);
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDownloadStatus({ type: "error", message: "Unable to load download settings." });
+          setSpotdlStatus({ ready: false, loading: false });
+        }
+      } finally {
+        if (!cancelled) {
+          setDownloadLoading(false);
+        }
+      }
+    };
+
+    loadSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const toggleSection = useCallback((key) => {
     setSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -145,9 +271,75 @@ const AccountSettingsPage = () => {
     [changePassword, passwordForm]
   );
 
+  const handleDownloadChange = useCallback((event) => {
+    const { name, value, type, checked } = event.target;
+    setDownloadSettings((prev) => {
+      if (name === "threads") {
+        const numeric = Number(value);
+        if (Number.isNaN(numeric)) {
+          return prev;
+        }
+        const bounded = clampThreads(numeric);
+        return { ...prev, threads: bounded };
+      }
+      if (name === "preload") {
+        return { ...prev, preload: type === "checkbox" ? checked : Boolean(value) };
+      }
+      return { ...prev, [name]: value };
+    });
+    setDownloadStatus(null);
+  }, []);
+
+  const handleDownloadSubmit = useCallback(
+    async (event) => {
+      event.preventDefault();
+      setDownloadStatus({ type: "pending" });
+
+      const trimmedDir = (downloadSettings.base_output_dir || "").trim();
+      const baseOutputDir = trimmedDir || downloadDefaults.base_output_dir;
+      const numericThreads = Number(downloadSettings.threads);
+      const threads = Number.isNaN(numericThreads)
+        ? clampThreads(THREADS_DEFAULT)
+        : clampThreads(numericThreads);
+      const payload = {
+        base_output_dir: baseOutputDir,
+        threads,
+        preload: Boolean(downloadSettings.preload),
+      };
+
+      try {
+        const response = await updateDownloadSettings(payload);
+        const defaults = { ...DEFAULT_DOWNLOAD_SETTINGS, ...(response?.defaults || {}) };
+        const settings = { ...defaults, ...(response?.settings || payload) };
+        setDownloadDefaults(defaults);
+        setDownloadSettings(settings);
+        setSpotdlStatus({ ready: true, loading: false });
+        setDownloadStatus({ type: "success", message: "Download settings updated." });
+      } catch (error) {
+        const message =
+          formatErrors(error?.details || error?.response?.data?.errors) || "Unable to update download settings.";
+        setDownloadStatus({ type: "error", message });
+        setSpotdlStatus({ ready: false, loading: false });
+      }
+    },
+    [downloadDefaults, downloadSettings]
+  );
+
   useAutoDismiss(profileStatus, setProfileStatus);
   useAutoDismiss(emailStatus, setEmailStatus);
   useAutoDismiss(passwordStatus, setPasswordStatus);
+  useAutoDismiss(downloadStatus, setDownloadStatus);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const status = await fetchSettingsStatus();
+        setSpotdlStatus({ ready: Boolean(status?.spotdl_ready), loading: false });
+      } catch (error) {
+        setSpotdlStatus((prev) => ({ ...prev, loading: false }));
+      }
+    })();
+  }, []);
 
   if (!user) {
     return (
@@ -285,6 +477,98 @@ const AccountSettingsPage = () => {
 
         <section className="space-y-6">
           <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
+            <SectionHeader id="downloads" title="Download Settings" subtitle="SpotDL preferences" isOpen={sectionsOpen.downloads} />
+            {sectionsOpen.downloads && (
+              <form className="mt-5 space-y-5" onSubmit={handleDownloadSubmit}>
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Base output directory
+                  <input
+                    type="text"
+                    name="base_output_dir"
+                    value={downloadSettings.base_output_dir}
+                    onChange={handleDownloadChange}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    placeholder={downloadDefaults.base_output_dir}
+                    disabled={downloadLoading || downloadStatus?.type === "pending"}
+                  />
+                  <span className="text-xs text-slate-400 dark:text-slate-500">Default: {downloadDefaults.base_output_dir}</span>
+                </label>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-600 shadow-sm transition focus-within:border-brand-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>SpotDL threads</span>
+                      <span className="w-10 text-right text-xs font-semibold text-slate-600 dark:text-slate-200">{downloadSettings.threads}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={12}
+                      step={1}
+                      name="threads"
+                      value={downloadSettings.threads}
+                      onChange={handleDownloadChange}
+                      className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-brand-600 transition disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-700 dark:accent-brandDark-400"
+                      disabled={downloadLoading || downloadStatus?.type === "pending"}
+                      aria-valuemin={1}
+                      aria-valuemax={12}
+                      aria-valuenow={downloadSettings.threads}
+                    />
+                    <span className="text-xs text-slate-400 dark:text-slate-500">Default: {THREADS_DEFAULT}</span>
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm transition focus-within:border-brand-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <span className="flex flex-col">
+                      <span>Preload songs</span>
+                      <span className="text-xs text-slate-400 dark:text-slate-500">Prepare URLs ahead of downloads for faster batches.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      name="preload"
+                      checked={Boolean(downloadSettings.preload)}
+                      onChange={handleDownloadChange}
+                      className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700"
+                      disabled={downloadLoading || downloadStatus?.type === "pending"}
+                    />
+                  </label>
+                </div>
+
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Changes apply to new downloads. Jobs already in progress continue with their current configuration.
+                </p>
+
+                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="submit"
+                      className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
+                      disabled={downloadLoading || downloadStatus?.type === "pending"}
+                    >
+                      Save download settings
+                    </button>
+                    {spotdlStatus.ready ? (
+                      <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-600 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-300">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        SpotDL working!
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="min-h-[1rem] text-sm text-slate-500 dark:text-slate-400">
+                    {renderStatus(downloadStatus)}
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
             <SectionHeader id="email" title="Email" subtitle={`Current: ${user.email}`} isOpen={sectionsOpen.email} />
             {sectionsOpen.email && (
               <form className="mt-5 space-y-4" onSubmit={handleEmailSubmit}>
@@ -393,3 +677,7 @@ const AccountSettingsPage = () => {
 };
 
 export default AccountSettingsPage;
+
+
+
+

@@ -53,7 +53,9 @@ class Config:
     SPOTDL_AUDIO_SOURCE = os.getenv('SPOTDL_AUDIO_SOURCE', 'youtube-music')
     SPOTDL_FORMAT = os.getenv('SPOTDL_FORMAT', 'mp3')
     # Limit spotDL concurrency to reduce provider rate limits
-    SPOTDL_THREADS = _get_int('SPOTDL_THREADS', 1)
+    SPOTDL_THREADS = _get_int('SPOTDL_THREADS', 6)
+    SPOTDL_PRELOAD = _get_bool('SPOTDL_PRELOAD', False)
+    SPOTDL_SIMPLE_TUI = _get_bool('SPOTDL_SIMPLE_TUI', True)
 
     # Download orchestration
     DOWNLOAD_QUEUE_WORKERS = _get_int('DOWNLOAD_QUEUE_WORKERS', 2)
@@ -101,5 +103,6 @@ class Config:
         'CORS_ALLOWED_ORIGINS',
         'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5000,http://127.0.0.1:5000',
     )
+
 
 

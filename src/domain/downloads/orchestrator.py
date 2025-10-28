@@ -23,6 +23,7 @@ from src.models.spotdl_mapping import song_to_track_dto, songs_to_item_dto
 
 # DB
 from src.database.db_manager import db, DownloadedTrack
+from src.utils.cancellation import CancellationRequested
 
 from src.core import ProgressPublisher
 
@@ -643,7 +644,6 @@ class DownloadOrchestrator:
                 AudioProviderError = Exception  # type: ignore
             # Cooperative cancellation
             try:
-                from .utils.cancellation import CancellationRequested
                 if isinstance(e, CancellationRequested):
                     # Cleanup partials and remove the album folder
                     try:
@@ -1218,7 +1218,6 @@ class DownloadOrchestrator:
                     AudioProviderError = Exception  # type: ignore
                 # Cooperative cancellation
                 try:
-                    from .utils.cancellation import CancellationRequested
                     if isinstance(e, CancellationRequested):
                         try:
                             self.file_manager.cleanup_partial_output(item_specific_output_dir)

@@ -49,6 +49,10 @@ export const endpoints = {
   config: {
     frontend: () => `${API_BASE_URL}/api/config/frontend`,
   },
+  settings: {
+    download: () => `${API_BASE_URL}/api/settings/download`,
+    status: () => `${API_BASE_URL}/api/settings/status`,
+  },
   playlists: {
     list: () => `${API_BASE_URL}/api/playlists`,
     detail: (id) => `${API_BASE_URL}/api/playlists/${id}`,
@@ -64,3 +68,4 @@ export const endpoints = {
   },
   progressStream: () => `${API_BASE_URL}/api/progress/stream`,
 };
+
