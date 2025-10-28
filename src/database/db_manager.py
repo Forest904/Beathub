@@ -26,11 +26,16 @@ class User(UserMixin, db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    username = db.Column(db.String(120), nullable=True, index=True)
+    display_name = db.Column(db.String(120), nullable=True)
+    avatar_url = db.Column(db.String(512), nullable=True)
+    preferences = db.Column(db.JSON, nullable=False, default=dict)
     password_hash = db.Column(db.String(255), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_system = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_login_at = db.Column(db.DateTime, nullable=True)
 
     downloads = relationship("DownloadedItem", back_populates="owner", lazy=True)
     download_jobs = relationship("DownloadJob", back_populates="owner", lazy=True)
@@ -60,7 +65,13 @@ class User(UserMixin, db.Model):
         return {
             "id": self.id,
             "email": self.email,
+            "username": self.username,
+            "display_name": self.display_name,
+            "avatar_url": self.avatar_url,
+            "preferences": self.preferences or {},
             "is_system": self.is_system,
+            "is_active": self.is_active,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -351,8 +362,27 @@ def ensure_system_user():
     try:
         system = User.query.filter_by(email=SYSTEM_USER_EMAIL).first()
         if system:
+            updated = False
+            if system.username is None:
+                system.username = "system"
+                updated = True
+            if system.display_name is None:
+                system.display_name = "System"
+                updated = True
+            if system.preferences is None:
+                system.preferences = {}
+                updated = True
+            if updated:
+                db.session.commit()
             return system
-        system = User(email=SYSTEM_USER_EMAIL, is_active=False, is_system=True)
+        system = User(
+            email=SYSTEM_USER_EMAIL,
+            is_active=False,
+            is_system=True,
+            username="system",
+            display_name="System",
+            preferences={},
+        )
         # Generate an irreversible password to avoid interactive login
         system_password = os.urandom(32).hex()
         system.set_password(system_password)
@@ -403,3 +433,5 @@ def initialize_database(app):
         db.create_all()
         logger.info("Database tables created or already exist.")
         ensure_system_user()
+
+

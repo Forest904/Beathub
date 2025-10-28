@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { get, post } from '../../api/http';
+﻿import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { get, post, patch } from '../../api/http';
 import { endpoints } from '../../api/client';
 
 const AuthContext = createContext(undefined);
@@ -68,6 +68,45 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const updateProfile = useCallback(async (payload) => {
+    try {
+      const resp = await patch(endpoints.auth.profile(), payload);
+      setUser(resp.user);
+      return { ok: true, user: resp.user };
+    } catch (error) {
+      const parsed = parseError(error);
+      return { ok: false, errors: parsed };
+    }
+  }, []);
+
+  const changeEmail = useCallback(async ({ newEmail, currentPassword }) => {
+    try {
+      const resp = await post(endpoints.auth.changeEmail(), {
+        new_email: newEmail,
+        current_password: currentPassword,
+      });
+      setUser(resp.user);
+      return { ok: true, user: resp.user };
+    } catch (error) {
+      const parsed = parseError(error);
+      return { ok: false, errors: parsed };
+    }
+  }, []);
+
+  const changePassword = useCallback(async ({ currentPassword, newPassword, confirmPassword }) => {
+    try {
+      await post(endpoints.auth.changePassword(), {
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword ?? newPassword,
+      });
+      return { ok: true };
+    } catch (error) {
+      const parsed = parseError(error);
+      return { ok: false, errors: parsed };
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -76,10 +115,13 @@ export const AuthProvider = ({ children }) => {
       register,
       login,
       logout,
+      updateProfile,
+      changeEmail,
+      changePassword,
       refresh: loadSession,
       clearErrors: () => setErrors(null),
     }),
-    [user, loading, errors, register, login, logout, loadSession]
+    [user, loading, errors, register, login, logout, updateProfile, changeEmail, changePassword, loadSession]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

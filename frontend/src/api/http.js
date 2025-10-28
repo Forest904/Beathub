@@ -24,3 +24,4 @@ export const get = (url, config) => http.get(url, config).then((resp) => resp.da
 export const post = (url, body, config) => http.post(url, body, config).then((resp) => resp.data);
 export const del = (url, config) => http.delete(url, config).then((resp) => resp.data);
 export const put = (url, body, config) => http.put(url, body, config).then((resp) => resp.data);
+export const patch = (url, body, config) => http.patch(url, body, config).then((resp) => resp.data);

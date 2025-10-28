@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Header from './shared/components/Header';
@@ -17,6 +17,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import MyPlaylistsPage from './features/playlists/pages/MyPlaylistsPage.jsx';
 import FavoritesPage from './features/favorites/pages/FavoritesPage.jsx';
+import AccountSettingsPage from './pages/AccountSettingsPage.jsx';
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
                   <Route path="/artist/:artistId" element={<ArtistDetailsPage />} />
                   <Route path="/album/:albumId" element={<AlbumDetailsPage />} />
                   <Route path="/burn-cd" element={<CDBurnerPage />} />
+                  <Route path="/account" element={<AccountSettingsPage />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterPage />} />
                 </Routes>

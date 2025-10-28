@@ -7,6 +7,9 @@ export const endpoints = {
     login: () => `${API_BASE_URL}/api/auth/login`,
     logout: () => `${API_BASE_URL}/api/auth/logout`,
     register: () => `${API_BASE_URL}/api/auth/register`,
+    profile: () => `${API_BASE_URL}/api/auth/profile`,
+    changeEmail: () => `${API_BASE_URL}/api/auth/change-email`,
+    changePassword: () => `${API_BASE_URL}/api/auth/change-password`,
   },
   downloads: {
     list: () => `${API_BASE_URL}/api/albums`,
