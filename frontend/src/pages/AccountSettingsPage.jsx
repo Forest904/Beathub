@@ -203,6 +203,7 @@ const AccountSettingsPage = () => {
     }
   }, []);
 
+
   useEffect(() => {
     if (!downloadHydratedRef.current) return;
     try {
@@ -213,7 +214,31 @@ const AccountSettingsPage = () => {
     }
   }, [downloadSettings]);
 
-  useEffect(() => {
+  const applySettingsResponse = useCallback((response, fallbackDownloadPayload = {}) => {
+    const defaults = { ...DEFAULT_DOWNLOAD_SETTINGS, ...(response?.defaults || {}) };
+    const settings = { ...defaults, ...(response?.settings || fallbackDownloadPayload || {}) };
+    const normalizedDefaults = {
+      ...defaults,
+      threads: clampThreads(defaults.threads),
+      preload: Boolean(defaults.preload),
+    };
+    const normalizedSettings = {
+      ...settings,
+      threads: clampThreads(settings.threads),
+      preload: Boolean(settings.preload),
+    };
+    setDownloadDefaults(normalizedDefaults);
+    setDownloadSettings(normalizedSettings);
+    setApiKeysMeta(normalizeApiKeysMeta(response?.api_keys));
+    setApiKeysForm({ ...EMPTY_API_KEYS_FORM });
+    setApiKeysClearState({ ...DEFAULT_API_KEYS_CLEAR_STATE });
+    setApiKeysStatus(null);
+    const spotdlReady = typeof response?.spotdl_ready === "boolean" ? Boolean(response.spotdl_ready) : undefined;
+    const credentialsReady = typeof response?.credentials_ready === "boolean" ? Boolean(response.credentials_ready) : undefined;
+    return { normalizedDefaults, normalizedSettings, spotdlReady, credentialsReady };
+  }, []);
+
+useEffect(() => {
     let cancelled = false;
 
     if (!user) {
@@ -264,7 +289,7 @@ const AccountSettingsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [refreshSettingsStatus, user]);
+  }, [applySettingsResponse, refreshSettingsStatus, user]);
 
   const buildDownloadPayload = useCallback(() => {
     const trimmedDir = (downloadSettings.base_output_dir || "").trim();
@@ -278,37 +303,17 @@ const AccountSettingsPage = () => {
       preload: Boolean(downloadSettings.preload),
     };
   }, [downloadDefaults, downloadSettings]);
-  const applySettingsResponse = useCallback((response, fallbackDownloadPayload = {}) => {
-    const defaults = { ...DEFAULT_DOWNLOAD_SETTINGS, ...(response?.defaults || {}) };
-    const settings = { ...defaults, ...(response?.settings || fallbackDownloadPayload || {}) };
-    const normalizedDefaults = {
-      ...defaults,
-      threads: clampThreads(defaults.threads),
-      preload: Boolean(defaults.preload),
-    };
-    const normalizedSettings = {
-      ...settings,
-      threads: clampThreads(settings.threads),
-      preload: Boolean(settings.preload),
-    };
-    setDownloadDefaults(normalizedDefaults);
-    setDownloadSettings(normalizedSettings);
-    setApiKeysMeta(normalizeApiKeysMeta(response?.api_keys));
-    setApiKeysForm({ ...EMPTY_API_KEYS_FORM });
-    setApiKeysClearState({ ...DEFAULT_API_KEYS_CLEAR_STATE });
-    setApiKeysStatus(null);
-    const spotdlReady = typeof response?.spotdl_ready === "boolean" ? Boolean(response.spotdl_ready) : undefined;
-    const credentialsReady = typeof response?.credentials_ready === "boolean" ? Boolean(response.credentials_ready) : undefined;
-    return { normalizedDefaults, normalizedSettings, spotdlReady, credentialsReady };
-  }, []);
+  
   const toggleSection = useCallback((key) => {
     setSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
+
 
   const handleProfileChange = useCallback((event) => {
     const { name, value } = event.target;
     setProfileForm((prev) => ({ ...prev, [name]: value }));
   }, []);
+
 
   const handleProfileSubmit = useCallback(
     async (event) => {
@@ -334,6 +339,7 @@ const AccountSettingsPage = () => {
     setEmailForm((prev) => ({ ...prev, [name]: value }));
   }, []);
 
+
   const handleEmailSubmit = useCallback(
     async (event) => {
       event.preventDefault();
@@ -356,6 +362,7 @@ const AccountSettingsPage = () => {
     const { name, value } = event.target;
     setPasswordForm((prev) => ({ ...prev, [name]: value }));
   }, []);
+
 
   const handlePasswordSubmit = useCallback(
     async (event) => {
@@ -383,11 +390,13 @@ const AccountSettingsPage = () => {
     setApiKeysStatus(null);
   }, []);
 
+
   const handleApiKeyClear = useCallback((name) => {
     setApiKeysForm((prev) => ({ ...prev, [name]: "" }));
     setApiKeysClearState((prev) => ({ ...prev, [name]: true }));
     setApiKeysStatus(null);
   }, []);
+
   const handleDownloadChange = useCallback((event) => {
     const { name, value, type, checked } = event.target;
     setDownloadSettings((prev) => {
@@ -406,6 +415,7 @@ const AccountSettingsPage = () => {
     });
     setDownloadStatus(null);
   }, []);
+
 
   const handleDownloadSubmit = useCallback(
     async (event) => {
@@ -430,7 +440,7 @@ const AccountSettingsPage = () => {
         setSpotdlStatus({ ready: false, loading: false });
       }
     },
-    [applySettingsResponse, buildDownloadPayload]
+    [applySettingsResponse, buildDownloadPayload, globalCredentialsReady, globalSpotdlReady, refreshSettingsStatus]
   );
 
   const handleApiKeysSubmit = useCallback(
@@ -471,7 +481,7 @@ const AccountSettingsPage = () => {
         setApiKeysStatus({ type: "error", message });
       }
     },
-    [apiKeysClearState, apiKeysForm, applySettingsResponse, buildDownloadPayload]
+    [apiKeysClearState, apiKeysForm, applySettingsResponse, buildDownloadPayload, globalCredentialsReady, globalSpotdlReady, refreshSettingsStatus]
   );
 
   useAutoDismiss(profileStatus, setProfileStatus);
@@ -490,6 +500,7 @@ const AccountSettingsPage = () => {
       }
     })();
   }, []);
+
 
   if (!user) {
     return (
@@ -561,6 +572,13 @@ const AccountSettingsPage = () => {
     </button>
   );
 
+  const SettingsSection = ({ id, title, subtitle, isOpen, children }) => (
+    <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
+      <SectionHeader id={id} title={title} subtitle={subtitle} isOpen={isOpen} />
+      {isOpen ? <div className="mt-5">{typeof children === "function" ? children() : children}</div> : null}
+    </section>
+  );
+
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-4 py-12 md:px-6">
       <header className="flex flex-col gap-2">
@@ -577,332 +595,324 @@ const AccountSettingsPage = () => {
       )}
 
       <div className="grid gap-6 md:grid-cols-1">
-        <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
-          <SectionHeader id="profile" title="Profile" subtitle="Basic details" isOpen={sectionsOpen.profile} />
+        <SettingsSection id="profile" title="Profile" subtitle="Basic details" isOpen={sectionsOpen.profile}>
           {sectionsOpen.profile && (
-            <form className="mt-5 space-y-5" onSubmit={handleProfileSubmit}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Username
-                  <input
-                    type="text"
-                    name="username"
-                    value={profileForm.username}
-                    onChange={handleProfileChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="Your username"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Display name
-                  <input
-                    type="text"
-                    name="displayName"
-                    value={profileForm.displayName}
-                    onChange={handleProfileChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="How others see you"
-                  />
-                </label>
-              </div>
-
-              <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                Avatar URL
-                <input
-                  type="url"
-                  name="avatarUrl"
-                  value={profileForm.avatarUrl}
-                  onChange={handleProfileChange}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                  placeholder="https://example.com/avatar.png"
-                />
-              </label>
-
-              <div className="flex items-center justify-between">
-                {renderStatus(profileStatus)}
-                <button
-                  type="submit"
-                  className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
-                >
-                  Save changes
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
-
-        <section className="space-y-6">
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
-            <SectionHeader id="downloads" title="Download Settings" subtitle="SpotDL preferences" isOpen={sectionsOpen.downloads} />
-            {sectionsOpen.downloads && (
-              <form className="mt-5 space-y-5" onSubmit={handleDownloadSubmit}>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Base output directory
-                  <input
-                    type="text"
-                    name="base_output_dir"
-                    value={downloadSettings.base_output_dir}
-                    onChange={handleDownloadChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder={downloadDefaults.base_output_dir}
-                    disabled={downloadLoading || downloadStatus?.type === "pending"}
-                  />
-                  <span className="text-xs text-slate-400 dark:text-slate-500">Default: {downloadDefaults.base_output_dir}</span>
-                </label>
-
+            <>
+              <form className="space-y-5" onSubmit={handleProfileSubmit}>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <label className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-600 shadow-sm transition focus-within:border-brand-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    <div className="flex items-center justify-between gap-3">
-                      <span>SpotDL threads</span>
-                      <span className="w-10 text-right text-xs font-semibold text-slate-600 dark:text-slate-200">{downloadSettings.threads}</span>
-                    </div>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                    Username
                     <input
-                      type="range"
-                      min={1}
-                      max={12}
-                      step={1}
-                      name="threads"
-                      value={downloadSettings.threads}
-                      onChange={handleDownloadChange}
-                      className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-brand-600 transition disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-700 dark:accent-brandDark-400"
-                      disabled={downloadLoading || downloadStatus?.type === "pending"}
-                      aria-valuemin={1}
-                      aria-valuemax={12}
-                      aria-valuenow={downloadSettings.threads}
+                      type="text"
+                      name="username"
+                      value={profileForm.username}
+                      onChange={handleProfileChange}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      placeholder="Your username"
                     />
-                    <span className="text-xs text-slate-400 dark:text-slate-500">Default: {THREADS_DEFAULT}</span>
                   </label>
-
-                  <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm transition focus-within:border-brand-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    <span className="flex flex-col">
-                      <span>Preload songs</span>
-                      <span className="text-xs text-slate-400 dark:text-slate-500">Prepare URLs ahead of downloads for faster batches.</span>
-                    </span>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                    Display name
                     <input
-                      type="checkbox"
-                      name="preload"
-                      checked={Boolean(downloadSettings.preload)}
-                      onChange={handleDownloadChange}
-                      className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700"
-                      disabled={downloadLoading || downloadStatus?.type === "pending"}
+                      type="text"
+                      name="displayName"
+                      value={profileForm.displayName}
+                      onChange={handleProfileChange}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      placeholder="How others see you"
                     />
                   </label>
                 </div>
 
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  Changes apply to new downloads. Jobs already in progress continue with their current configuration.
-                </p>
-
-                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="submit"
-                      className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
-                      disabled={downloadLoading || downloadStatus?.type === "pending"}
-                    >
-                      Save download settings
-                    </button>
-                    {spotdlStatus.ready && !spotdlStatus.loading ? (
-                      <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-600 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                        </svg>
-                        SpotDL working!
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="min-h-[1rem] space-y-1 text-sm text-slate-500 dark:text-slate-400">
-                    {renderStatus(downloadStatus)}
-                    {spotdlStatus.loading ? (
-                      <p className="text-xs text-amber-600 dark:text-amber-300">Checking SpotDL status...</p>
-                    ) : !spotdlStatus.ready ? (
-                      <p className="text-xs text-amber-600 dark:text-amber-300">SpotDL will start once valid Spotify API keys are saved.</p>
-                    ) : null}
-                  </div>
-                </div>
-              </form>
-            )}
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
-            <SectionHeader id="apiKeys" title="API Keys" subtitle="Integrations" isOpen={sectionsOpen.apiKeys} />
-            {sectionsOpen.apiKeys && (
-              <form className="mt-5 space-y-5" onSubmit={handleApiKeysSubmit}>
-                {API_KEY_FIELDS.map(({ key, label, helper, link, linkLabel }) => {
-                  const stored = apiKeysMeta[key]?.stored;
-                  const preview = apiKeysMeta[key]?.preview;
-                  const pendingClear = apiKeysClearState[key];
-                  return (
-                    <div key={key} className="space-y-2">
-                      <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                        {label}
-                        <input
-                          type="password"
-                          name={key}
-                          value={apiKeysForm[key]}
-                          onChange={handleApiKeyChange}
-                          className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                          placeholder={stored ? "Saved value hidden" : "Enter key"}
-                          autoComplete="off"
-                          disabled={apiKeysStatus?.type === "pending"}
-                        />
-                      </label>
-                      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
-                        <span>
-                          {helper}{" "}
-                          <a
-                            href={link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-semibold text-brand-600 hover:underline dark:text-brandDark-300"
-                          >
-                            {linkLabel}
-                          </a>
-                        </span>
-                        <div className="flex items-center gap-3">
-                          {stored ? (
-                            <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">
-                              Stored ({preview || "****"})
-                              {pendingClear ? " - will be removed" : ""}
-                            </span>
-                          ) : (
-                            <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Not set</span>
-                          )}
-                          {stored ? (
-                            <button
-                              type="button"
-                              onClick={() => handleApiKeyClear(key)}
-                              className="text-xs font-semibold text-slate-500 transition hover:text-rose-500 disabled:cursor-not-allowed dark:text-slate-400 dark:hover:text-rose-400"
-                              disabled={apiKeysStatus?.type === "pending"}
-                            >
-                              Clear
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="flex items-center justify-between">
-                  <div className="min-h-[1rem] text-sm text-slate-500 dark:text-slate-400">{renderStatus(apiKeysStatus)}</div>
-                  <button
-                    type="submit"
-                    className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
-                    disabled={apiKeysStatus?.type === "pending"}
-                  >
-                    Save API keys
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
-            <SectionHeader id="email" title="Email" subtitle={`Current: ${user.email}`} isOpen={sectionsOpen.email} />
-            {sectionsOpen.email && (
-              <form className="mt-5 space-y-4" onSubmit={handleEmailSubmit}>
                 <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  New email
+                  Avatar URL
                   <input
-                    type="email"
-                    name="newEmail"
-                    value={emailForm.newEmail}
-                    onChange={handleEmailChange}
+                    type="url"
+                    name="avatarUrl"
+                    value={profileForm.avatarUrl}
+                    onChange={handleProfileChange}
                     className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="new@email.com"
-                    required
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Current password
-                  <input
-                    type="password"
-                    name="currentPassword"
-                    value={emailForm.currentPassword}
-                    onChange={handleEmailChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="Enter password"
-                    required
+                    placeholder="https://example.com/avatar.png"
                   />
                 </label>
 
                 <div className="flex items-center justify-between">
-                  {renderStatus(emailStatus)}
-                  <button
-                    type="submit"
-                    className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
-                  >
-                    Update email
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
-            <SectionHeader id="password" title="Password" subtitle="Security" isOpen={sectionsOpen.password} />
-            {sectionsOpen.password && (
-              <form className="mt-5 space-y-4" onSubmit={handlePasswordSubmit}>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Current password
-                  <input
-                    type="password"
-                    name="currentPassword"
-                    value={passwordForm.currentPassword}
-                    onChange={handlePasswordChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="Enter current password"
-                    required
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  New password
-                  <input
-                    type="password"
-                    name="newPassword"
-                    value={passwordForm.newPassword}
-                    onChange={handlePasswordChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus-border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="At least 8 characters"
-                    required
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Confirm new password
-                  <input
-                    type="password"
-                    name="confirmPassword"
-                    value={passwordForm.confirmPassword}
-                    onChange={handlePasswordChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="Repeat new password"
-                    required
-                  />
-                </label>
-
-                <div className="flex items-center justify-between">
-                  {renderStatus(passwordStatus)}
+                  {renderStatus(profileStatus)}
                   <button
                     type="submit"
                     className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
                   >
-                    Update password
+                    Save changes
                   </button>
                 </div>
               </form>
-            )}
-          </div>
 
-          <section className="rounded-3xl border border-dashed border-slate-200 bg-white/60 p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-500">
-            User avatars, theme presets, and profile customization will live here soon. Stay tuned!
-          </section>
+              <div className="mt-10 space-y-6">
+                <SettingsSection id="email" title="Email" subtitle={`Current: ${user.email}`} isOpen={sectionsOpen.email}>
+                  <form className="space-y-4" onSubmit={handleEmailSubmit}>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      New email
+                      <input
+                        type="email"
+                        name="newEmail"
+                        value={emailForm.newEmail}
+                        onChange={handleEmailChange}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        placeholder="new@email.com"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Current password
+                      <input
+                        type="password"
+                        name="currentPassword"
+                        value={emailForm.currentPassword}
+                        onChange={handleEmailChange}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        placeholder="Enter password"
+                        required
+                      />
+                    </label>
+
+                    <div className="flex items-center justify-between">
+                      {renderStatus(emailStatus)}
+                      <button
+                        type="submit"
+                        className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
+                      >
+                        Update email
+                      </button>
+                    </div>
+                  </form>
+                </SettingsSection>
+
+                <SettingsSection id="password" title="Password" subtitle="Security" isOpen={sectionsOpen.password}>
+                  <form className="space-y-4" onSubmit={handlePasswordSubmit}>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Current password
+                      <input
+                        type="password"
+                        name="currentPassword"
+                        value={passwordForm.currentPassword}
+                        onChange={handlePasswordChange}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        placeholder="Enter current password"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      New password
+                      <input
+                        type="password"
+                        name="newPassword"
+                        value={passwordForm.newPassword}
+                        onChange={handlePasswordChange}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        placeholder="At least 8 characters"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Confirm new password
+                      <input
+                        type="password"
+                        name="confirmPassword"
+                        value={passwordForm.confirmPassword}
+                        onChange={handlePasswordChange}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        placeholder="Repeat new password"
+                        required
+                      />
+                    </label>
+
+                    <div className="flex items-center justify-between">
+                      {renderStatus(passwordStatus)}
+                      <button
+                        type="submit"
+                        className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                      >
+                        Update password
+                      </button>
+                    </div>
+                  </form>
+                </SettingsSection>
+              </div>
+            </>
+          )}
+        </SettingsSection>
+
+        <div className="space-y-6">
+          <SettingsSection id="downloads" title="Download Settings" subtitle="SpotDL preferences" isOpen={sectionsOpen.downloads}>
+            <form className="space-y-5" onSubmit={handleDownloadSubmit}>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                Base output directory
+                <input
+                  type="text"
+                  name="base_output_dir"
+                  value={downloadSettings.base_output_dir}
+                  onChange={handleDownloadChange}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  placeholder={downloadDefaults.base_output_dir}
+                  disabled={downloadLoading || downloadStatus?.type === "pending"}
+                />
+                <span className="text-xs text-slate-400 dark:text-slate-500">Default: {downloadDefaults.base_output_dir}</span>
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-600 shadow-sm transition focus-within:border-brand-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>SpotDL threads</span>
+                    <span className="w-10 text-right text-xs font-semibold text-slate-600 dark:text-slate-200">{downloadSettings.threads}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={12}
+                    step={1}
+                    name="threads"
+                    value={downloadSettings.threads}
+                    onChange={handleDownloadChange}
+                    className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-brand-600 transition disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-700 dark:accent-brandDark-400"
+                    disabled={downloadLoading || downloadStatus?.type === "pending"}
+                    aria-valuemin={1}
+                    aria-valuemax={12}
+                    aria-valuenow={downloadSettings.threads}
+                  />
+                  <span className="text-xs text-slate-400 dark:text-slate-500">Default: {THREADS_DEFAULT}</span>
+                </label>
+
+                <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm transition focus-within:border-brand-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <span className="flex flex-col">
+                    <span>Preload songs</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">Prepare URLs ahead of downloads for faster batches.</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    name="preload"
+                    checked={Boolean(downloadSettings.preload)}
+                    onChange={handleDownloadChange}
+                    className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700"
+                    disabled={downloadLoading || downloadStatus?.type === "pending"}
+                  />
+                </label>
+              </div>
+
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Changes apply to new downloads. Jobs already in progress continue with their current configuration.
+              </p>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-h-[1rem] space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                  {renderStatus(downloadStatus)}
+                  {spotdlStatus.loading ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-300">Checking SpotDL status...</p>
+                  ) : !spotdlStatus.ready ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-300">SpotDL will start once valid Spotify API keys are saved.</p>
+                  ) : null}
+                </div>
+                <div className="flex items-center justify-end gap-3">
+                  {spotdlStatus.ready && !spotdlStatus.loading ? (
+                    <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-600 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-300">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      SpotDL working!
+                    </span>
+                  ) : null}
+                  <button
+                    type="submit"
+                    className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
+                    disabled={downloadLoading || downloadStatus?.type === "pending"}
+                  >
+                    Save download settings
+                  </button>
+                </div>
+              </div>
+            </form>
+          </SettingsSection>
+
+          <SettingsSection id="apiKeys" title="API Keys" subtitle="Integrations" isOpen={sectionsOpen.apiKeys}>
+            <form className="space-y-5" onSubmit={handleApiKeysSubmit}>
+              {API_KEY_FIELDS.map(({ key, label, helper, link, linkLabel }) => {
+                const stored = apiKeysMeta[key]?.stored;
+                const preview = apiKeysMeta[key]?.preview;
+                const pendingClear = apiKeysClearState[key];
+                return (
+                  <div key={key} className="space-y-2">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      {label}
+                      <input
+                        type="password"
+                        name={key}
+                        value={apiKeysForm[key]}
+                        onChange={handleApiKeyChange}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        placeholder={stored ? "Saved value hidden" : "Enter key"}
+                        autoComplete="off"
+                        disabled={apiKeysStatus?.type === "pending"}
+                      />
+                    </label>
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+                      <span>
+                        {helper}{" "}
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-semibold text-brand-600 hover:underline dark:text-brandDark-300"
+                        >
+                          {linkLabel}
+                        </a>
+                      </span>
+                      <div className="flex items-center gap-3">
+                        {stored ? (
+                          <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">
+                            Stored ({preview || "****"})
+                            {pendingClear ? " - will be removed" : ""}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Not set</span>
+                        )}
+                        {stored ? (
+                          <button
+                            type="button"
+                            onClick={() => handleApiKeyClear(key)}
+                            className="text-xs font-semibold text-slate-500 transition hover:text-rose-500 disabled:cursor-not-allowed dark:text-slate-400 dark:hover:text-rose-400"
+                            disabled={apiKeysStatus?.type === "pending"}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between">
+                <div className="min-h-[1rem] text-sm text-slate-500 dark:text-slate-400">{renderStatus(apiKeysStatus)}</div>
+                <button
+                  type="submit"
+                  className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
+                  disabled={apiKeysStatus?.type === "pending"}
+                >
+                  Save API keys
+                </button>
+              </div>
+            </form>
+          </SettingsSection>
+        </div>
+        <section className="rounded-3xl border border-dashed border-slate-200 bg-white/60 p-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-500">
+          User avatars, theme presets, and profile customization will live here soon. Stay tuned!
         </section>
       </div>
     </section>
@@ -910,3 +920,12 @@ const AccountSettingsPage = () => {
 };
 
 export default AccountSettingsPage;
+
+
+
+
+
+
+
+
+
