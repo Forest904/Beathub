@@ -1,5 +1,8 @@
 import logging
 from flask import Blueprint, jsonify, current_app
+from flask_login import current_user, login_required
+
+from src.support.user_settings import ensure_user_api_keys_applied, user_has_spotify_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -7,8 +10,11 @@ album_details_bp = Blueprint('album_details_bp', __name__, url_prefix='/api')
 
 
 def _ensure_spotify_ready():
-    if not current_app.extensions.get("spotify_credentials_ready", False):
+    keys = ensure_user_api_keys_applied(current_user)
+    if not user_has_spotify_credentials(keys):
         return jsonify({"error": "Spotify credentials are not configured.", "code": "credentials_missing"}), 412
+    if not current_app.extensions.get("spotdl_ready", False):
+        return jsonify({"error": "The download engine is not ready yet.", "code": "spotdl_unavailable"}), 503
     return None
 
 
@@ -17,6 +23,7 @@ def get_download_orchestrator():
     return current_app.extensions['download_orchestrator']
 
 @album_details_bp.route('/album_details/<string:album_id>', methods=['GET'])
+@login_required
 def get_album_details(album_id):
     """
     Fetches detailed information for a specific Spotify album, including its tracks,
@@ -66,3 +73,4 @@ def get_album_details(album_id):
     except Exception as e:
         logger.exception(f"Error fetching album details for ID {album_id}: {e}")
         return jsonify({"error": "Internal server error"}), 500
+

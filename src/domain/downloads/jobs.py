@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 from config import Config
 from src.database.db_manager import db, DownloadJob
 from src.support.identity import resolve_user_id
+from src.support.user_settings import ensure_user_api_keys_applied_for_user_id, user_has_spotify_credentials
 from .history_service import persist_download_item
 
 
@@ -173,6 +174,21 @@ class JobQueue:
             job.status = "in_progress"
             self._update_job_status(job, status=job.status)
 
+        keys = ensure_user_api_keys_applied_for_user_id(job.user_id, refresh_client=False)
+        if not user_has_spotify_credentials(keys):
+            message = "Spotify credentials are not configured."
+            job.status = "failed"
+            job.result = {
+                "status": "error",
+                "error_code": "credentials_missing",
+                "message": message,
+                "user_id": job.user_id,
+            }
+            self._update_job_status(job, status=job.status, result=job.result, error=message)
+            job.event.set()
+            self.logger.warning("Job %s aborted: %s", job.id, message)
+            return
+
         max_attempts = max(1, Config.DOWNLOAD_MAX_RETRIES)
         last_error: Optional[str] = None
         for attempt in range(1, max_attempts + 1):
@@ -204,6 +220,7 @@ class JobQueue:
                         _publish_cancelled('downloader')
                         return
                     non_retriable = {
+                        "credentials_missing",
                         "spotdl_unavailable",
                         "search_unavailable",
                         "no_results",

@@ -7,18 +7,22 @@ import logging
 from typing import Any, Dict
 
 from flask import Blueprint, jsonify, request, current_app
-from flask_login import login_required
+from flask_login import current_user, login_required
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from src.support.app_settings import (
-    apply_api_keys,
     apply_download_settings,
-    describe_api_keys,
-    get_api_keys,
     get_default_download_settings,
     get_download_settings,
-    persist_api_keys,
     persist_download_settings,
+)
+from src.support.user_settings import (
+    describe_user_api_keys,
+    ensure_user_api_keys_applied,
+    get_user_api_keys,
+    persist_user_api_keys,
+    user_has_genius_credentials,
+    user_has_spotify_credentials,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,16 +99,15 @@ def _format_validation_errors(error: ValidationError) -> Dict[str, str]:
 def read_download_settings():
     settings = get_download_settings(current_app)
     defaults = get_default_download_settings()
-    api_keys_raw = get_api_keys(current_app)
-    api_keys = describe_api_keys(api_keys_raw)
-    spotdl_ready = bool(current_app.extensions.get("spotdl_ready", False))
-    spotify_ready = bool(current_app.extensions.get("spotify_credentials_ready", False))
-    genius_ready = bool(current_app.extensions.get("genius_credentials_ready", False))
+    keys = ensure_user_api_keys_applied(current_user, refresh_client=False)
+    spotify_ready = user_has_spotify_credentials(keys)
+    genius_ready = user_has_genius_credentials(keys)
+    spotdl_ready = bool(current_app.extensions.get("spotdl_ready", False) and spotify_ready)
     return (
         jsonify({
             "settings": settings,
             "defaults": defaults,
-            "api_keys": api_keys,
+            "api_keys": describe_user_api_keys(current_user),
             "spotdl_ready": spotdl_ready,
             "spotify_ready": spotify_ready,
             "genius_ready": genius_ready,
@@ -127,21 +130,22 @@ def update_download_settings():
         normalized_download = persist_download_settings(model.download.model_dump(), app=current_app)
         if model.api_keys is not None:
             api_key_updates = model.api_keys.model_dump(exclude_unset=True)
-            stored_api_keys = persist_api_keys(api_key_updates, app=current_app)
+            stored_api_keys = persist_user_api_keys(api_key_updates, user=current_user)
+            keys = ensure_user_api_keys_applied(current_user, refresh_client=True)
         else:
-            stored_api_keys = get_api_keys(current_app)
-        apply_api_keys(current_app, stored_api_keys, refresh_client=model.api_keys is not None)
-        spotify_ready = bool(current_app.extensions.get("spotify_credentials_ready", False))
+            stored_api_keys = get_user_api_keys(current_user)
+            keys = ensure_user_api_keys_applied(current_user, refresh_client=False)
+        spotify_ready = user_has_spotify_credentials(keys)
         apply_download_settings(current_app, normalized_download, refresh_client=spotify_ready)
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Failed to persist settings: %s", exc)
         return jsonify({"errors": {"settings": "Failed to update application settings."}}), 500
 
     defaults = get_default_download_settings()
-    api_keys = describe_api_keys(stored_api_keys)
-    spotdl_ready = bool(current_app.extensions.get("spotdl_ready", False))
-    spotify_ready = bool(current_app.extensions.get("spotify_credentials_ready", False))
-    genius_ready = bool(current_app.extensions.get("genius_credentials_ready", False))
+    api_keys = describe_user_api_keys(current_user)
+    spotify_ready = user_has_spotify_credentials(keys)
+    genius_ready = user_has_genius_credentials(keys)
+    spotdl_ready = bool(current_app.extensions.get("spotdl_ready", False) and spotify_ready)
     return (
         jsonify({
             "settings": normalized_download,

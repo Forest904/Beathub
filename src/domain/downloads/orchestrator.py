@@ -25,6 +25,7 @@ from src.models.spotdl_mapping import song_to_track_dto, songs_to_item_dto
 from src.database.db_manager import db, DownloadedTrack
 from src.utils.cancellation import CancellationRequested
 
+from src.support.user_settings import ensure_user_api_keys_applied_for_user_id, user_has_spotify_credentials
 from src.core import ProgressPublisher
 
 logger = logging.getLogger(__name__)
@@ -1000,6 +1001,15 @@ class DownloadOrchestrator:
 
     def download_spotify_content(self, spotify_link, *, cancel_event: Optional[threading.Event] = None, user_id: Optional[int] = None):
         """Orchestrates the download using SpotDL Song as canonical metadata source."""
+        if user_id is not None:
+            keys = ensure_user_api_keys_applied_for_user_id(user_id, refresh_client=False)
+            if not user_has_spotify_credentials(keys):
+                return {
+                    "status": "error",
+                    "error_code": "credentials_missing",
+                    "message": "Spotify credentials are not configured. Please add them in Account Settings.",
+                    "user_id": user_id,
+                }
         # Synthetic Best-Of album support: treat 'bestof:<artist_id>' like a container
         if isinstance(spotify_link, str) and spotify_link.startswith('bestof:'):
             artist_id = spotify_link.split(':', 1)[1]

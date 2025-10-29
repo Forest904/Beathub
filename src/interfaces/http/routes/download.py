@@ -3,13 +3,15 @@ import shutil
 import logging
 from flask import Blueprint, request, jsonify, send_file
 import json
-from flask_login import login_required
+from flask_login import current_user, login_required
 from src.database.db_manager import db, DownloadedItem
 from src.domain.catalog import LyricsService
 import re
 
 from src.domain.downloads.history_service import persist_download_item
 from src.support.identity import resolve_user_id
+from src.support.user_settings import ensure_user_api_keys_applied_for_user_id, user_has_spotify_credentials
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,8 @@ def download_spotify_item_api():
     spotify_downloader = get_download_orchestrator()
     jobs = get_job_queue()
 
-    if not current_app.extensions.get('spotify_credentials_ready', False):
+    keys = ensure_user_api_keys_applied_for_user_id(current_user.id, refresh_client=False)
+    if not user_has_spotify_credentials(keys):
         return jsonify({
             "status": "error",
             "error_code": "credentials_missing",

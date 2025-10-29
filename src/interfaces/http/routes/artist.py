@@ -1,5 +1,8 @@
 import logging
 from flask import Blueprint, request, jsonify, current_app
+from flask_login import current_user, login_required
+
+from src.support.user_settings import ensure_user_api_keys_applied, user_has_spotify_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -7,8 +10,11 @@ artist_bp = Blueprint('artist_bp', __name__, url_prefix='/api')
 
 
 def _ensure_spotify_ready():
-    if not current_app.extensions.get("spotify_credentials_ready", False):
+    keys = ensure_user_api_keys_applied(current_user)
+    if not user_has_spotify_credentials(keys):
         return jsonify({"error": "Spotify credentials are not configured.", "code": "credentials_missing"}), 412
+    if not current_app.extensions.get("spotdl_ready", False):
+        return jsonify({"error": "The download engine is not ready yet.", "code": "spotdl_unavailable"}), 503
     return None
 
 
@@ -17,6 +23,7 @@ def get_download_orchestrator():
     return current_app.extensions['download_orchestrator']
 
 @artist_bp.route('/search_artists', methods=['GET'])
+@login_required
 def search_artists_api():
 
     gate = _ensure_spotify_ready()
@@ -91,6 +98,7 @@ def search_artists_api():
         return jsonify({"error": "Failed to search artists"}), 500
 
 @artist_bp.route('/famous_artists', methods=['GET'])
+@login_required
 def get_popular_artists_api():
 
     gate = _ensure_spotify_ready()
@@ -166,6 +174,7 @@ def get_popular_artists_api():
         return jsonify({"error": "Failed to retrieve famous artists"}), 500
 
 @artist_bp.route('/artist_details/<string:artist_id>', methods=['GET'])
+@login_required
 def get_artist_details(artist_id):
 
     gate = _ensure_spotify_ready()
@@ -186,6 +195,7 @@ def get_artist_details(artist_id):
         return jsonify({"error": "Failed to retrieve artist details"}), 500
 
 @artist_bp.route('/artist_discography/<string:artist_id>', methods=['GET'])
+@login_required
 def get_artist_discography(artist_id):
 
     gate = _ensure_spotify_ready()
@@ -202,3 +212,4 @@ def get_artist_discography(artist_id):
     except Exception as e:
         logger.error(f"Error fetching artist discography for ID {artist_id}: {e}", exc_info=True)
         return jsonify({"error": "Failed to retrieve artist discography"}), 500
+

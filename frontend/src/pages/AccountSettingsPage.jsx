@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../shared/hooks/useAuth";
 import { useSettingsStatus } from "../shared/context/SettingsStatusContext.jsx";
 import { fetchDownloadSettings, fetchSettingsStatus, updateDownloadSettings } from "../api";
@@ -95,6 +95,7 @@ const useAutoDismiss = (status, setter, delay = 3000) => {
 
 const AccountSettingsPage = () => {
   const { user, updateProfile, changeEmail, changePassword } = useAuth();
+  const location = useLocation();
   const {
     refresh: refreshSettingsStatus,
     credentialsReady: globalCredentialsReady,
@@ -129,6 +130,7 @@ const AccountSettingsPage = () => {
   const [downloadStatus, setDownloadStatus] = useState(null);
   const [downloadLoading, setDownloadLoading] = useState(true);
   const downloadHydratedRef = useRef(false);
+  const focusHandledRef = useRef(false);
   const [spotdlStatus, setSpotdlStatus] = useState({ ready: false, loading: true });
   useEffect(() => {
     setSpotdlStatus((prev) => ({
@@ -136,6 +138,23 @@ const AccountSettingsPage = () => {
       loading: settingsLoading,
     }));
   }, [settingsLoading, globalSpotdlReady]);
+  useEffect(() => {
+    focusHandledRef.current = false;
+  }, [user?.id]);
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    if (focusHandledRef.current) {
+      return;
+    }
+    const focusTarget = location?.state?.focus;
+    if (focusTarget === "apiKeys" || (!globalCredentialsReady && !settingsLoading)) {
+      setSectionsOpen((prev) => ({ ...prev, apiKeys: true }));
+      focusHandledRef.current = true;
+    }
+  }, [globalCredentialsReady, location?.state, settingsLoading, user]);
+
   const [apiKeysForm, setApiKeysForm] = useState(() => ({ ...EMPTY_API_KEYS_FORM }));
   const [apiKeysMeta, setApiKeysMeta] = useState(() => ({ ...DEFAULT_API_KEYS_META }));
   const [apiKeysClearState, setApiKeysClearState] = useState(() => ({ ...DEFAULT_API_KEYS_CLEAR_STATE }));

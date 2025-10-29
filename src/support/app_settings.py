@@ -31,6 +31,8 @@ _API_KEY_FIELDS = {
     },
 }
 
+API_KEY_NAMES = tuple(_API_KEY_FIELDS.keys())
+
 _CONFIG_BASELINE = {
     meta["config_attr"]: getattr(Config, meta["config_attr"], None)
     for meta in _API_KEY_FIELDS.values()
@@ -250,6 +252,38 @@ def apply_api_keys(
                         exc_info=True,
                     )
             try:
+                if spotify_client_id and spotify_client_secret:
+                    try:
+                        import spotipy  # type: ignore
+                        from spotipy.oauth2 import SpotifyClientCredentials  # type: ignore
+                    except Exception as exc:  # pragma: no cover - defensive import
+                        orchestrator.sp = None
+                        if target_app.logger:
+                            target_app.logger.debug(
+                                "Spotipy unavailable while refreshing credentials: %s",
+                                exc,
+                                exc_info=True,
+                            )
+                    else:
+                        try:
+                            orchestrator.sp = spotipy.Spotify(
+                                auth_manager=SpotifyClientCredentials(
+                                    client_id=spotify_client_id,
+                                    client_secret=spotify_client_secret,
+                                )
+                            )
+                        except Exception as exc:
+                            orchestrator.sp = None
+                            if target_app.logger:
+                                target_app.logger.debug(
+                                    "Failed to rebuild Spotipy client with new credentials",
+                                    exc_info=True,
+                                )
+                else:
+                    orchestrator.sp = None
+            except Exception:
+                orchestrator.sp = None
+            try:
                 from src.domain.catalog.lyrics_service import LyricsService
 
                 orchestrator._genius_access_token = genius_access_token
@@ -447,6 +481,7 @@ __all__ = [
     "apply_download_settings",
     "apply_api_keys",
     "describe_api_keys",
+    "API_KEY_NAMES",
     "get_default_download_settings",
     "get_download_settings",
     "get_api_keys",
