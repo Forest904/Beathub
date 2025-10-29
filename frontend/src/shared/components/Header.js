@@ -1,6 +1,5 @@
 import React from "react";
 import { Link, NavLink } from "react-router-dom";
-import ThemeToggle from "./ThemeToggle.jsx";
 import UserHoverPanel from "./UserHoverPanel.jsx";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme } from "../../theme/ThemeContext";
@@ -22,7 +21,7 @@ const Header = () => {
     await logout();
   };
 
-  const links = user ? NAV_LINKS : NAV_LINKS.filter((link) => link.to !== "/download");
+  const links = user ? NAV_LINKS : [];
   const BrandLogo = theme === "dark" ? LogoDark : LogoLight;
 
   return (
@@ -61,12 +60,11 @@ const Header = () => {
           {user ? (
             <>
               <div className="flex items-center gap-2 text-sm font-medium md:hidden">
-                <ThemeToggle />
                 <Link
-                  to="/account"
+                  to="/settings"
                   className="rounded-full border border-slate-200 px-3 py-1 text-slate-600 transition hover:border-brand-500 hover:text-brand-700 dark:border-slate-700 dark:text-slate-200 dark:hover:border-brandDark-400 dark:hover:text-brandDark-200"
                 >
-                  Account
+                  Settings
                 </Link>
                 <button
                   type="button"
@@ -78,12 +76,10 @@ const Header = () => {
               </div>
               <div className="hidden items-center gap-3 md:flex">
                 <UserHoverPanel email={email} onLogout={handleLogout} />
-                <ThemeToggle />
               </div>
             </>
           ) : (
             <div className="flex items-center gap-3 text-sm font-medium">
-              <ThemeToggle />
               <Link
                 to="/login"
                 className="rounded-full border border-transparent px-3 py-1 text-slate-600 transition hover:text-brand-700 dark:text-slate-200 dark:hover:text-brandDark-200"

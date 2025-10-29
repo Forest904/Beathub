@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../shared/hooks/useAuth";
 import { useSettingsStatus } from "../shared/context/SettingsStatusContext.jsx";
 import { fetchDownloadSettings, fetchSettingsStatus, updateDownloadSettings } from "../api";
+import ThemeToggle from "../shared/components/ThemeToggle.jsx";
 
 const deriveUsername = (user) => {
   if (!user) return "";
@@ -26,6 +27,7 @@ const formatErrors = (errors) => {
 };
 
 const DOWNLOAD_SETTINGS_STORAGE_KEY = "download-settings:v1";
+const DATE_OF_BIRTH_STORAGE_KEY = "settings:dateOfBirth";
 const THREADS_DEFAULT = 6;
 
 const DEFAULT_DOWNLOAD_SETTINGS = {
@@ -93,7 +95,7 @@ const useAutoDismiss = (status, setter, delay = 3000) => {
   }, [status, setter, delay]);
 };
 
-const AccountSettingsPage = () => {
+const SettingsPage = () => {
   const { user, updateProfile, changeEmail, changePassword } = useAuth();
   const location = useLocation();
   const {
@@ -106,11 +108,22 @@ const AccountSettingsPage = () => {
   const initialProfile = useMemo(
     () => ({
       username: deriveUsername(user),
-      displayName: user?.display_name ?? "",
-      avatarUrl: user?.avatar_url ?? "",
     }),
     [user]
   );
+
+  const [dateOfBirth, setDateOfBirth] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    try {
+      return window.localStorage.getItem(DATE_OF_BIRTH_STORAGE_KEY) || "";
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to read date of birth from storage", error);
+      return "";
+    }
+  });
 
   const [profileForm, setProfileForm] = useState(initialProfile);
   const [profileStatus, setProfileStatus] = useState(null);
@@ -171,6 +184,22 @@ const AccountSettingsPage = () => {
   useEffect(() => {
     setProfileForm(initialProfile);
   }, [initialProfile]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      if (dateOfBirth && dateOfBirth.length > 0) {
+        window.localStorage.setItem(DATE_OF_BIRTH_STORAGE_KEY, dateOfBirth);
+      } else {
+        window.localStorage.removeItem(DATE_OF_BIRTH_STORAGE_KEY);
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to persist date of birth to storage", error);
+    }
+  }, [dateOfBirth]);
 
   useEffect(() => {
     setEmailForm((prev) => ({ ...prev, newEmail: user?.email ?? "" }));
@@ -309,6 +338,10 @@ useEffect(() => {
   }, []);
 
 
+  const handleDateOfBirthChange = useCallback((event) => {
+    setDateOfBirth(event.target.value);
+  }, []);
+
   const handleProfileChange = useCallback((event) => {
     const { name, value } = event.target;
     setProfileForm((prev) => ({ ...prev, [name]: value }));
@@ -321,8 +354,6 @@ useEffect(() => {
       setProfileStatus({ type: "pending" });
       const payload = {
         username: profileForm.username.trim(),
-        display_name: profileForm.displayName.trim(),
-        avatar_url: profileForm.avatarUrl.trim(),
       };
       const result = await updateProfile(payload);
       if (result.ok) {
@@ -506,7 +537,7 @@ useEffect(() => {
     return (
       <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-16 text-center">
         <div className="rounded-3xl border border-slate-200 bg-white/80 p-10 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Account Settings</h1>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Settings</h1>
           <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
             You need to be signed in to view account details.
           </p>
@@ -581,11 +612,16 @@ useEffect(() => {
 
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-4 py-12 md:px-6">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Account Settings</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Manage your personal details. More customization options are coming soon.
-        </p>
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Settings</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Manage your personal details. More customization options are coming soon.
+          </p>
+        </div>
+        <div className="mt-2 flex self-end md:mt-0 md:self-start">
+          <ThemeToggle />
+        </div>
       </header>
 
       {!globalCredentialsReady && (
@@ -595,7 +631,7 @@ useEffect(() => {
       )}
 
       <div className="grid gap-6 md:grid-cols-1">
-        <SettingsSection id="profile" title="Profile" subtitle="Basic details" isOpen={sectionsOpen.profile}>
+        <SettingsSection id="profile" title="Profile Settings" subtitle="Basic details" isOpen={sectionsOpen.profile}>
           {sectionsOpen.profile && (
             <>
               <form className="space-y-5" onSubmit={handleProfileSubmit}>
@@ -612,35 +648,22 @@ useEffect(() => {
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                    Display name
+                    Date of birth
                     <input
-                      type="text"
-                      name="displayName"
-                      value={profileForm.displayName}
-                      onChange={handleProfileChange}
+                      type="date"
+                      name="dateOfBirth"
+                      value={dateOfBirth}
+                      onChange={handleDateOfBirthChange}
                       className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                      placeholder="How others see you"
                     />
                   </label>
                 </div>
-
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Avatar URL
-                  <input
-                    type="url"
-                    name="avatarUrl"
-                    value={profileForm.avatarUrl}
-                    onChange={handleProfileChange}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    placeholder="https://example.com/avatar.png"
-                  />
-                </label>
 
                 <div className="flex items-center justify-between">
                   {renderStatus(profileStatus)}
                   <button
                     type="submit"
-                    className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                    className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
                   >
                     Save changes
                   </button>
@@ -733,7 +756,7 @@ useEffect(() => {
                       {renderStatus(passwordStatus)}
                       <button
                         type="submit"
-                        className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                        className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
                       >
                         Update password
                       </button>
@@ -919,7 +942,7 @@ useEffect(() => {
   );
 };
 
-export default AccountSettingsPage;
+export default SettingsPage;
 
 
 

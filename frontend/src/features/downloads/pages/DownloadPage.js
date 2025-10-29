@@ -94,7 +94,7 @@ const SpotifyDownloadPage = () => {
       return 'Checking the download engine status...';
     }
     if (!spotdlReady) {
-      return 'Add your Spotify API keys in Account Settings to enable downloads.';
+      return 'Add your Spotify API keys in Settings to enable downloads.';
     }
     return null;
   }, [settingsLoading, spotdlReady]);

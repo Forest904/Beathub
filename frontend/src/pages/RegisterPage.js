@@ -41,7 +41,7 @@ const RegisterPage = () => {
     const result = await register({ email: form.email, password: form.password });
     setSubmitting(false);
     if (result.ok) {
-      navigate('/account', { state: { focus: 'apiKeys' } });
+      navigate('/settings', { state: { focus: 'apiKeys' } });
     }
   };
 

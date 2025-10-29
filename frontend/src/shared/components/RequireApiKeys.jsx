@@ -34,7 +34,7 @@ const RequireApiKeys = ({ children, requireCredentials }) => {
     if (!credentialsReady) {
       return (
         <Navigate
-          to="/account"
+          to="/settings"
           replace
           state={{ from: location.pathname + location.search, focus: "apiKeys" }}
         />

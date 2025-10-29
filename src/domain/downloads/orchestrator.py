@@ -1043,7 +1043,7 @@ class DownloadOrchestrator:
                 return {
                     "status": "error",
                     "error_code": "credentials_missing",
-                    "message": "Spotify credentials are not configured. Please add them in Account Settings.",
+                    "message": "Spotify credentials are not configured. Please add them in Settings.",
                     "user_id": user_id,
                 }
         # Synthetic Best-Of album support: treat 'bestof:<artist_id>' like a container

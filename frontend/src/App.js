@@ -19,7 +19,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import MyPlaylistsPage from './features/playlists/pages/MyPlaylistsPage.jsx';
 import FavoritesPage from './features/favorites/pages/FavoritesPage.jsx';
-import AccountSettingsPage from './pages/AccountSettingsPage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 
 const queryClient = new QueryClient();
 
@@ -43,7 +43,7 @@ const App = () => (
                     <Route path="/artist/:artistId" element={<RequireApiKeys><ArtistDetailsPage /></RequireApiKeys>} />
                     <Route path="/album/:albumId" element={<RequireApiKeys><AlbumDetailsPage /></RequireApiKeys>} />
                     <Route path="/burn-cd" element={<RequireApiKeys requireCredentials><CDBurnerPage /></RequireApiKeys>} />
-                    <Route path="/account" element={<AccountSettingsPage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
                   </Routes>

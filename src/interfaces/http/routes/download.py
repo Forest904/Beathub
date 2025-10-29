@@ -50,7 +50,7 @@ def download_spotify_item_api():
         return jsonify({
             "status": "error",
             "error_code": "credentials_missing",
-            "message": "Spotify credentials are not configured. Please add them in Account Settings.",
+            "message": "Spotify credentials are not configured. Please add them in Settings.",
         }), 412
     if not current_app.extensions.get('spotdl_ready', False):
         return jsonify({
