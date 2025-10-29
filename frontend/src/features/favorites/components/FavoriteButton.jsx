@@ -35,6 +35,7 @@ const FavoriteButton = ({ itemType, itemId, metadata, className, size }) => {
     .join(' ');
 
   const handleToggle = (event) => {
+    event.preventDefault();
     event.stopPropagation();
     toggleFavorite.mutate({
       item_type: itemType,
@@ -80,3 +81,5 @@ FavoriteButton.defaultProps = {
 };
 
 export default FavoriteButton;
+
+

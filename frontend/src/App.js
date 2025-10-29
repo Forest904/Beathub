@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Header from './shared/components/Header';
@@ -37,12 +37,12 @@ const App = () => (
                   <Routes>
                     <Route path="/" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
                     <Route path="/browse" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
-                    <Route path="/download" element={<RequireApiKeys><DownloadPage /></RequireApiKeys>} />
+                    <Route path="/download" element={<RequireApiKeys requireCredentials><DownloadPage /></RequireApiKeys>} />
                     <Route path="/playlists" element={<RequireApiKeys><MyPlaylistsPage /></RequireApiKeys>} />
                     <Route path="/favorites" element={<RequireApiKeys><FavoritesPage /></RequireApiKeys>} />
                     <Route path="/artist/:artistId" element={<RequireApiKeys><ArtistDetailsPage /></RequireApiKeys>} />
                     <Route path="/album/:albumId" element={<RequireApiKeys><AlbumDetailsPage /></RequireApiKeys>} />
-                    <Route path="/burn-cd" element={<RequireApiKeys><CDBurnerPage /></RequireApiKeys>} />
+                    <Route path="/burn-cd" element={<RequireApiKeys requireCredentials><CDBurnerPage /></RequireApiKeys>} />
                     <Route path="/account" element={<AccountSettingsPage />} />
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
@@ -60,3 +60,4 @@ const App = () => (
 );
 
 export default App;
+

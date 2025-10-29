@@ -597,6 +597,7 @@ class DownloadOrchestrator:
 
         # Configure output template and download
         results_map: Dict[str, Optional[str]] = {}
+        failed_tracks: List[dict] = []
         try:
             sanitized_title = self.file_manager.sanitize_filename(title_name)
             output_template = os.path.join(item_specific_output_dir, f"{sanitized_title}")
@@ -629,12 +630,47 @@ class DownloadOrchestrator:
             results = spotdl_client.download_songs(songs, cancel_event=cancel_event)
             audio_failed = False
             error_result = None
-            for song, p in results:
-                results_map[getattr(song, 'url', None)] = str(p) if p else None
+            for index, (song, p) in enumerate(results, start=1):
+                song_url = getattr(song, 'url', None)
+                display_name = getattr(song, 'display_name', None) or getattr(song, 'song_name', None)
+                results_map[song_url] = str(p) if p else None
                 if p is None:
                     audio_failed = True
+                    provider = getattr(song, 'audio_provider', None)
+                    if hasattr(provider, 'name'):
+                        provider = provider.name
+                    detail = getattr(song, 'error_message', None)
+                    if isinstance(detail, Exception):
+                        detail = str(detail)
+                    if not detail:
+                        detail = getattr(song, 'log', None)
+                    if isinstance(detail, dict):
+                        detail = detail.get('message') or detail.get('error')
+                    if not detail:
+                        detail = 'Audio provider did not return a media file.'
+                    failed_entry = {
+                        'index': index,
+                        'title': display_name or song_url or f'Track {index}',
+                        'spotify_url': song_url,
+                        'audio_provider': provider,
+                        'error_message': detail,
+                    }
+                    failed_tracks.append(failed_entry)
+                    logger.error(
+                        'Audio download failed for %s (provider=%s, url=%s): %s',
+                        failed_entry['title'],
+                        provider,
+                        song_url,
+                        detail,
+                    )
             if audio_failed:
-                error_result = {"status": "error", "error_code": "download_failed", "message": f"Audio download failed for {title_name}."}
+                error_result = {
+                    'status': 'error',
+                    'error_code': 'download_failed',
+                    'message': f'Audio download failed for {title_name}.',
+                }
+                if failed_tracks:
+                    error_result['failed_tracks'] = failed_tracks
                 return error_result
         except Exception as e:
             try:
