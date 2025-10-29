@@ -1,8 +1,11 @@
-﻿import React from "react";
+import React from "react";
 import { Link, NavLink } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle.jsx";
 import UserHoverPanel from "./UserHoverPanel.jsx";
 import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../../theme/ThemeContext";
+import { ReactComponent as LogoLight } from "../../assets/icons/beathub-logo-light.svg";
+import { ReactComponent as LogoDark } from "../../assets/icons/beathub-logo-dark.svg";
 
 const NAV_LINKS = [
   { label: "Discover", to: "/browse" },
@@ -12,6 +15,7 @@ const NAV_LINKS = [
 
 const Header = () => {
   const { user, logout } = useAuth();
+  const { theme } = useTheme();
   const email = user && typeof user.email === "string" ? user.email : "";
 
   const handleLogout = async () => {
@@ -19,29 +23,15 @@ const Header = () => {
   };
 
   const links = user ? NAV_LINKS : NAV_LINKS.filter((link) => link.to !== "/download");
+  const BrandLogo = theme === "dark" ? LogoDark : LogoLight;
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 text-slate-900 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-100">
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-4 md:gap-6 md:px-6">
         {/* Brand */}
         <Link to="/" className="flex items-center gap-3">
-          <span className="text-3xl text-slate-900 transition-colors dark:text-white">
-            <svg
-              aria-hidden="true"
-              className="h-7 w-7"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 3v11.5a3 3 0 1 1-2-2.83V5.5l10-2v9.96a3 3 0 1 1-2-2.83V4.25L9 5.5" />
-            </svg>
-          </span>
-          <div className="flex flex-col">
-            <span className="text-xl font-semibold tracking-tight md:text-2xl">BeatHub</span>
-          </div>
+          <BrandLogo className="h-10 w-auto" aria-hidden="true" focusable="false" />
+          <span className="sr-only">BeatHub home</span>
         </Link>
 
         {/* Navigation */}

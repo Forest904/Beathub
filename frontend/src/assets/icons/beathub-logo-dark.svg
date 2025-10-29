@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 510" role="img" aria-labelledby="title desc">
+  <title id="title">Beat hub style logo — light version</title>
+  <desc id="desc">White rounded background with the word Beat in black, alongside a centered orange rectangle containing centered hub text in black. All elements share the same vertical center.</desc>
+
+  <!-- Light rounded background -->
+  <rect width="1200" height="510" rx="68" fill="#FFFFFF"/>
+
+  <!-- Left wordmark (same alignment as dark version) -->
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+     font-weight="800" fill="#0B0B0B" text-rendering="geometricPrecision">
+    <text x="100" y="255" font-size="260" letter-spacing="0.5" dominant-baseline="middle">Beat</text>
+  </g>
+
+  <!-- Orange tag (centered vertically) -->
+  <rect x="700" y="125" width="420" height="260" rx="40" fill="#F59E0B"/>
+
+  <!-- "hub" text centered inside tag -->
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+     font-weight="800" fill="#0B0B0B" text-anchor="middle" dominant-baseline="middle" text-rendering="geometricPrecision">
+    <text x="910" y="255" font-size="190" letter-spacing="0.5">hub</text>
+  </g>
+</svg>
