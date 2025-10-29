@@ -1,9 +1,16 @@
 import logging
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 
 logger = logging.getLogger(__name__)
 
 artist_bp = Blueprint('artist_bp', __name__, url_prefix='/api')
+
+
+def _ensure_spotify_ready():
+    if not current_app.extensions.get("spotify_credentials_ready", False):
+        return jsonify({"error": "Spotify credentials are not configured.", "code": "credentials_missing"}), 412
+    return None
+
 
 def get_download_orchestrator():
     from flask import current_app
@@ -11,6 +18,10 @@ def get_download_orchestrator():
 
 @artist_bp.route('/search_artists', methods=['GET'])
 def search_artists_api():
+
+    gate = _ensure_spotify_ready()
+    if gate is not None:
+        return gate
     spotify_downloader = get_download_orchestrator()
     query = request.args.get('q', '')
     if not query:
@@ -81,6 +92,10 @@ def search_artists_api():
 
 @artist_bp.route('/famous_artists', methods=['GET'])
 def get_popular_artists_api():
+
+    gate = _ensure_spotify_ready()
+    if gate is not None:
+        return gate
     spotify_downloader = get_download_orchestrator()
     sp = spotify_downloader.get_spotipy_instance()
     if not sp:
@@ -152,6 +167,10 @@ def get_popular_artists_api():
 
 @artist_bp.route('/artist_details/<string:artist_id>', methods=['GET'])
 def get_artist_details(artist_id):
+
+    gate = _ensure_spotify_ready()
+    if gate is not None:
+        return gate
     spotify_downloader = get_download_orchestrator()
     sp = spotify_downloader.get_spotipy_instance()
     if not sp:
@@ -168,6 +187,10 @@ def get_artist_details(artist_id):
 
 @artist_bp.route('/artist_discography/<string:artist_id>', methods=['GET'])
 def get_artist_discography(artist_id):
+
+    gate = _ensure_spotify_ready()
+    if gate is not None:
+        return gate
     spotify_downloader = get_download_orchestrator()
     sp = spotify_downloader.get_spotipy_instance()
     if not sp:

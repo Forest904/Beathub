@@ -1,9 +1,16 @@
 import logging
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 
 logger = logging.getLogger(__name__)
 
 album_details_bp = Blueprint('album_details_bp', __name__, url_prefix='/api')
+
+
+def _ensure_spotify_ready():
+    if not current_app.extensions.get("spotify_credentials_ready", False):
+        return jsonify({"error": "Spotify credentials are not configured.", "code": "credentials_missing"}), 412
+    return None
+
 
 def get_download_orchestrator():
     from flask import current_app
@@ -15,6 +22,9 @@ def get_album_details(album_id):
     Fetches detailed information for a specific Spotify album, including its tracks,
     using the metadata service within DownloadOrchestrator.
     """
+    gate = _ensure_spotify_ready()
+    if gate is not None:
+        return gate
     spotify_downloader = get_download_orchestrator()
     try:
         # Synthetic "Best Of" album for an artist: album_id format 'bestof:<artist_id>'

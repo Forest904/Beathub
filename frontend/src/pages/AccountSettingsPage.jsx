@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../shared/hooks/useAuth";
+import { useSettingsStatus } from "../shared/context/SettingsStatusContext.jsx";
 import { fetchDownloadSettings, fetchSettingsStatus, updateDownloadSettings } from "../api";
 
 const deriveUsername = (user) => {
@@ -33,6 +34,49 @@ const DEFAULT_DOWNLOAD_SETTINGS = {
   preload: true,
 };
 
+const API_KEY_FIELDS = [
+  {
+    key: "spotify_client_id",
+    label: "Spotify Client ID",
+    helper: "Create an app in the Spotify Developer Dashboard.",
+    link: "https://developer.spotify.com/dashboard",
+    linkLabel: "Spotify Dashboard",
+  },
+  {
+    key: "spotify_client_secret",
+    label: "Spotify Client Secret",
+    helper: "Use the app you created in the Spotify Developer Dashboard to generate a new secret.",
+    link: "https://developer.spotify.com/dashboard",
+    linkLabel: "Spotify Dashboard",
+  },
+  {
+    key: "genius_access_token",
+    label: "Genius Access Token",
+    helper: "Generate a client access token from the Genius API clients page.",
+    link: "https://genius.com/api-clients",
+    linkLabel: "Genius API",
+  },
+];
+
+const EMPTY_API_KEYS_FORM = API_KEY_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: "" }), {});
+const DEFAULT_API_KEYS_META = API_KEY_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: { stored: false, preview: "" } }), {});
+const DEFAULT_API_KEYS_CLEAR_STATE = API_KEY_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: false }), {});
+
+const normalizeApiKeysMeta = (raw) => {
+  if (!raw || typeof raw !== "object") {
+    return { ...DEFAULT_API_KEYS_META };
+  }
+  return API_KEY_FIELDS.reduce((acc, field) => {
+    const value = raw[field.key];
+    const stored = Boolean(value?.stored);
+    acc[field.key] = {
+      stored,
+      preview: stored && typeof value?.preview === "string" ? value.preview : "",
+    };
+    return acc;
+  }, { ...DEFAULT_API_KEYS_META });
+};
+
 const clampThreads = (value) => {
   const numeric = Number(value);
   if (Number.isNaN(numeric)) {
@@ -51,6 +95,12 @@ const useAutoDismiss = (status, setter, delay = 3000) => {
 
 const AccountSettingsPage = () => {
   const { user, updateProfile, changeEmail, changePassword } = useAuth();
+  const {
+    refresh: refreshSettingsStatus,
+    credentialsReady: globalCredentialsReady,
+    spotdlReady: globalSpotdlReady,
+    loading: settingsLoading,
+  } = useSettingsStatus();
 
   const initialProfile = useMemo(
     () => ({
@@ -80,10 +130,21 @@ const AccountSettingsPage = () => {
   const [downloadLoading, setDownloadLoading] = useState(true);
   const downloadHydratedRef = useRef(false);
   const [spotdlStatus, setSpotdlStatus] = useState({ ready: false, loading: true });
+  useEffect(() => {
+    setSpotdlStatus((prev) => ({
+      ready: settingsLoading ? prev.ready : Boolean(globalSpotdlReady),
+      loading: settingsLoading,
+    }));
+  }, [settingsLoading, globalSpotdlReady]);
+  const [apiKeysForm, setApiKeysForm] = useState(() => ({ ...EMPTY_API_KEYS_FORM }));
+  const [apiKeysMeta, setApiKeysMeta] = useState(() => ({ ...DEFAULT_API_KEYS_META }));
+  const [apiKeysClearState, setApiKeysClearState] = useState(() => ({ ...DEFAULT_API_KEYS_CLEAR_STATE }));
+  const [apiKeysStatus, setApiKeysStatus] = useState(null);
 
   const [sectionsOpen, setSectionsOpen] = useState({
     profile: false,
     downloads: false,
+    apiKeys: false,
     email: false,
     password: false,
   });
@@ -153,30 +214,20 @@ const AccountSettingsPage = () => {
         if (cancelled) {
           return;
         }
-        const defaults = { ...DEFAULT_DOWNLOAD_SETTINGS, ...(settingsResponse?.defaults || {}) };
-        const settings = { ...defaults, ...(settingsResponse?.settings || {}) };
-        const normalizedDefaults = {
-          ...defaults,
-          threads: clampThreads(defaults.threads),
-          preload: Boolean(defaults.preload),
-        };
-        const normalizedSettings = {
-          ...settings,
-          threads: clampThreads(settings.threads),
-          preload: Boolean(settings.preload),
-        };
-        setDownloadDefaults(normalizedDefaults);
-        setDownloadSettings(normalizedSettings);
-        setSpotdlStatus({ ready: Boolean(statusResponse?.spotdl_ready), loading: false });
+        const applied = applySettingsResponse(settingsResponse);
+        const readyFromSettings = applied?.spotdlReady;
+        const readyFromStatus = statusResponse?.spotdl_ready;
+        const credentialsFromSettings = applied?.credentialsReady;
+        const credentialsFromStatus = typeof statusResponse?.credentials_ready === "boolean" ? Boolean(statusResponse.credentials_ready) : undefined;
+        const ready = typeof readyFromSettings === "boolean" ? readyFromSettings : Boolean(readyFromStatus);
+        const credentialsReady = typeof credentialsFromSettings === "boolean"
+          ? credentialsFromSettings
+          : typeof credentialsFromStatus === "boolean"
+            ? credentialsFromStatus
+            : Boolean(statusResponse?.spotify_ready);
+        setSpotdlStatus({ ready: ready && credentialsReady, loading: false });
         setDownloadStatus(null);
-        if (downloadHydratedRef.current) {
-          try {
-            window.localStorage.setItem(DOWNLOAD_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings));
-          } catch (error) {
-            // eslint-disable-next-line no-console
-            console.warn("Failed to persist download settings", error);
-          }
-        }
+        refreshSettingsStatus();
       } catch (error) {
         if (!cancelled) {
           setDownloadStatus({ type: "error", message: "Unable to load download settings." });
@@ -194,8 +245,43 @@ const AccountSettingsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [refreshSettingsStatus, user]);
 
+  const buildDownloadPayload = useCallback(() => {
+    const trimmedDir = (downloadSettings.base_output_dir || "").trim();
+    const fallbackDir = downloadDefaults.base_output_dir || DEFAULT_DOWNLOAD_SETTINGS.base_output_dir;
+    const baseOutputDir = trimmedDir || fallbackDir;
+    const numericThreads = Number(downloadSettings.threads);
+    const threads = Number.isNaN(numericThreads) ? clampThreads(THREADS_DEFAULT) : clampThreads(numericThreads);
+    return {
+      base_output_dir: baseOutputDir,
+      threads,
+      preload: Boolean(downloadSettings.preload),
+    };
+  }, [downloadDefaults, downloadSettings]);
+  const applySettingsResponse = useCallback((response, fallbackDownloadPayload = {}) => {
+    const defaults = { ...DEFAULT_DOWNLOAD_SETTINGS, ...(response?.defaults || {}) };
+    const settings = { ...defaults, ...(response?.settings || fallbackDownloadPayload || {}) };
+    const normalizedDefaults = {
+      ...defaults,
+      threads: clampThreads(defaults.threads),
+      preload: Boolean(defaults.preload),
+    };
+    const normalizedSettings = {
+      ...settings,
+      threads: clampThreads(settings.threads),
+      preload: Boolean(settings.preload),
+    };
+    setDownloadDefaults(normalizedDefaults);
+    setDownloadSettings(normalizedSettings);
+    setApiKeysMeta(normalizeApiKeysMeta(response?.api_keys));
+    setApiKeysForm({ ...EMPTY_API_KEYS_FORM });
+    setApiKeysClearState({ ...DEFAULT_API_KEYS_CLEAR_STATE });
+    setApiKeysStatus(null);
+    const spotdlReady = typeof response?.spotdl_ready === "boolean" ? Boolean(response.spotdl_ready) : undefined;
+    const credentialsReady = typeof response?.credentials_ready === "boolean" ? Boolean(response.credentials_ready) : undefined;
+    return { normalizedDefaults, normalizedSettings, spotdlReady, credentialsReady };
+  }, []);
   const toggleSection = useCallback((key) => {
     setSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
@@ -271,6 +357,18 @@ const AccountSettingsPage = () => {
     [changePassword, passwordForm]
   );
 
+  const handleApiKeyChange = useCallback((event) => {
+    const { name, value } = event.target;
+    setApiKeysForm((prev) => ({ ...prev, [name]: value }));
+    setApiKeysClearState((prev) => ({ ...prev, [name]: false }));
+    setApiKeysStatus(null);
+  }, []);
+
+  const handleApiKeyClear = useCallback((name) => {
+    setApiKeysForm((prev) => ({ ...prev, [name]: "" }));
+    setApiKeysClearState((prev) => ({ ...prev, [name]: true }));
+    setApiKeysStatus(null);
+  }, []);
   const handleDownloadChange = useCallback((event) => {
     const { name, value, type, checked } = event.target;
     setDownloadSettings((prev) => {
@@ -295,26 +393,17 @@ const AccountSettingsPage = () => {
       event.preventDefault();
       setDownloadStatus({ type: "pending" });
 
-      const trimmedDir = (downloadSettings.base_output_dir || "").trim();
-      const baseOutputDir = trimmedDir || downloadDefaults.base_output_dir;
-      const numericThreads = Number(downloadSettings.threads);
-      const threads = Number.isNaN(numericThreads)
-        ? clampThreads(THREADS_DEFAULT)
-        : clampThreads(numericThreads);
-      const payload = {
-        base_output_dir: baseOutputDir,
-        threads,
-        preload: Boolean(downloadSettings.preload),
-      };
+      const downloadPayload = buildDownloadPayload();
+      const payload = { download: downloadPayload };
 
       try {
         const response = await updateDownloadSettings(payload);
-        const defaults = { ...DEFAULT_DOWNLOAD_SETTINGS, ...(response?.defaults || {}) };
-        const settings = { ...defaults, ...(response?.settings || payload) };
-        setDownloadDefaults(defaults);
-        setDownloadSettings(settings);
-        setSpotdlStatus({ ready: true, loading: false });
+        const applied = applySettingsResponse(response, downloadPayload);
+        const readyFlag = typeof applied?.spotdlReady === "boolean" ? applied.spotdlReady : globalSpotdlReady;
+        const credentialsFlag = typeof applied?.credentialsReady === "boolean" ? applied.credentialsReady : globalCredentialsReady;
+        setSpotdlStatus({ ready: Boolean(readyFlag && credentialsFlag), loading: false });
         setDownloadStatus({ type: "success", message: "Download settings updated." });
+        refreshSettingsStatus();
       } catch (error) {
         const message =
           formatErrors(error?.details || error?.response?.data?.errors) || "Unable to update download settings.";
@@ -322,12 +411,54 @@ const AccountSettingsPage = () => {
         setSpotdlStatus({ ready: false, loading: false });
       }
     },
-    [downloadDefaults, downloadSettings]
+    [applySettingsResponse, buildDownloadPayload]
+  );
+
+  const handleApiKeysSubmit = useCallback(
+    async (event) => {
+      event.preventDefault();
+      setApiKeysStatus({ type: "pending" });
+
+      const downloadPayload = buildDownloadPayload();
+      const apiPayload = {};
+
+      API_KEY_FIELDS.forEach(({ key }) => {
+        const raw = apiKeysForm[key];
+        const trimmed = typeof raw === "string" ? raw.trim() : "";
+        if (trimmed) {
+          apiPayload[key] = trimmed;
+        } else if (apiKeysClearState[key]) {
+          apiPayload[key] = "";
+        }
+      });
+
+      const payload = { download: downloadPayload };
+      if (Object.keys(apiPayload).length > 0) {
+        payload.api_keys = apiPayload;
+      }
+
+      try {
+        const response = await updateDownloadSettings(payload);
+        const applied = applySettingsResponse(response, downloadPayload);
+        const readyFlag = typeof applied?.spotdlReady === "boolean" ? applied.spotdlReady : globalSpotdlReady;
+        const credentialsFlag = typeof applied?.credentialsReady === "boolean" ? applied.credentialsReady : globalCredentialsReady;
+        setApiKeysStatus({ type: "success", message: "API keys updated." });
+        setSpotdlStatus({ ready: Boolean(readyFlag && credentialsFlag), loading: false });
+        setDownloadStatus(null);
+        refreshSettingsStatus();
+      } catch (error) {
+        const message =
+          formatErrors(error?.details || error?.response?.data?.errors) || "Unable to update API keys.";
+        setApiKeysStatus({ type: "error", message });
+      }
+    },
+    [apiKeysClearState, apiKeysForm, applySettingsResponse, buildDownloadPayload]
   );
 
   useAutoDismiss(profileStatus, setProfileStatus);
   useAutoDismiss(emailStatus, setEmailStatus);
   useAutoDismiss(passwordStatus, setPasswordStatus);
+  useAutoDismiss(apiKeysStatus, setApiKeysStatus);
   useAutoDismiss(downloadStatus, setDownloadStatus);
 
   useEffect(() => {
@@ -419,6 +550,12 @@ const AccountSettingsPage = () => {
           Manage your personal details. More customization options are coming soon.
         </p>
       </header>
+
+      {!globalCredentialsReady && (
+        <div className="mb-6 rounded-3xl border border-amber-300 bg-amber-50 p-6 text-sm text-amber-700 dark:border-amber-600/60 dark:bg-amber-900/40 dark:text-amber-200">
+          <p>Spotify API keys are not configured. Add your credentials below to enable browsing and downloading features.</p>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-1">
         <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
@@ -546,7 +683,7 @@ const AccountSettingsPage = () => {
                     >
                       Save download settings
                     </button>
-                    {spotdlStatus.ready ? (
+                    {spotdlStatus.ready && !spotdlStatus.loading ? (
                       <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-600 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-300">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -561,9 +698,86 @@ const AccountSettingsPage = () => {
                       </span>
                     ) : null}
                   </div>
-                  <div className="min-h-[1rem] text-sm text-slate-500 dark:text-slate-400">
+                  <div className="min-h-[1rem] space-y-1 text-sm text-slate-500 dark:text-slate-400">
                     {renderStatus(downloadStatus)}
+                    {spotdlStatus.loading ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-300">Checking SpotDL status...</p>
+                    ) : !spotdlStatus.ready ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-300">SpotDL will start once valid Spotify API keys are saved.</p>
+                    ) : null}
                   </div>
+                </div>
+              </form>
+            )}
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition dark:border-slate-800 dark:bg-slate-900/80">
+            <SectionHeader id="apiKeys" title="API Keys" subtitle="Integrations" isOpen={sectionsOpen.apiKeys} />
+            {sectionsOpen.apiKeys && (
+              <form className="mt-5 space-y-5" onSubmit={handleApiKeysSubmit}>
+                {API_KEY_FIELDS.map(({ key, label, helper, link, linkLabel }) => {
+                  const stored = apiKeysMeta[key]?.stored;
+                  const preview = apiKeysMeta[key]?.preview;
+                  const pendingClear = apiKeysClearState[key];
+                  return (
+                    <div key={key} className="space-y-2">
+                      <label className="flex flex-col gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                        {label}
+                        <input
+                          type="password"
+                          name={key}
+                          value={apiKeysForm[key]}
+                          onChange={handleApiKeyChange}
+                          className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          placeholder={stored ? "Saved value hidden" : "Enter key"}
+                          autoComplete="off"
+                          disabled={apiKeysStatus?.type === "pending"}
+                        />
+                      </label>
+                      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+                        <span>
+                          {helper}{" "}
+                          <a
+                            href={link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold text-brand-600 hover:underline dark:text-brandDark-300"
+                          >
+                            {linkLabel}
+                          </a>
+                        </span>
+                        <div className="flex items-center gap-3">
+                          {stored ? (
+                            <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">
+                              Stored ({preview || "****"})
+                              {pendingClear ? " - will be removed" : ""}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Not set</span>
+                          )}
+                          {stored ? (
+                            <button
+                              type="button"
+                              onClick={() => handleApiKeyClear(key)}
+                              className="text-xs font-semibold text-slate-500 transition hover:text-rose-500 disabled:cursor-not-allowed dark:text-slate-400 dark:hover:text-rose-400"
+                              disabled={apiKeysStatus?.type === "pending"}
+                            >
+                              Clear
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="flex items-center justify-between">
+                  <div className="min-h-[1rem] text-sm text-slate-500 dark:text-slate-400">{renderStatus(apiKeysStatus)}</div>
+                  <button
+                    type="submit"
+                    className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brandDark-400 dark:hover:bg-brandDark-300"
+                    disabled={apiKeysStatus?.type === "pending"}
+                  >
+                    Save API keys
+                  </button>
                 </div>
               </form>
             )}
@@ -677,7 +891,3 @@ const AccountSettingsPage = () => {
 };
 
 export default AccountSettingsPage;
-
-
-
-

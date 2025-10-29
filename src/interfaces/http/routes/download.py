@@ -43,6 +43,19 @@ def download_spotify_item_api():
     spotify_downloader = get_download_orchestrator()
     jobs = get_job_queue()
 
+    if not current_app.extensions.get('spotify_credentials_ready', False):
+        return jsonify({
+            "status": "error",
+            "error_code": "credentials_missing",
+            "message": "Spotify credentials are not configured. Please add them in Account Settings.",
+        }), 412
+    if not current_app.extensions.get('spotdl_ready', False):
+        return jsonify({
+            "status": "error",
+            "error_code": "spotdl_unavailable",
+            "message": "The download engine is not ready yet. Please try again in a moment.",
+        }), 503
+
     data = request.get_json() or {}
     spotify_link = data.get('spotify_link')
     async_mode = bool(data.get('async', False))

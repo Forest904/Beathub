@@ -41,9 +41,6 @@ const Header = () => {
           </span>
           <div className="flex flex-col">
             <span className="text-xl font-semibold tracking-tight md:text-2xl">BeatHub</span>
-            <span className="text-xs font-medium uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">
-              Collect . Spin . Burn
-            </span>
           </div>
         </Link>
 

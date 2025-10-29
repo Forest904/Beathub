@@ -24,7 +24,7 @@ from src.domain.downloads import (
 )
 from src.domain.catalog import MetadataService, LyricsService
 from src.domain.burning import CDBurningService, BurnSessionManager
-from src.support.app_settings import apply_download_settings, get_download_settings
+from src.support.app_settings import apply_api_keys, apply_download_settings, get_api_keys, get_download_settings
 from src.infrastructure.spotdl import build_default_client
 from src.interfaces.http.routes import (
     download_bp,
@@ -103,6 +103,9 @@ def configure_logging(log_dir: str) -> str:
 def create_app():
     app = Flask(__name__, static_folder='frontend/build', static_url_path='') # Assuming frontend/build now for static files
     app.config.from_object(Config)
+    runtime_api_keys = get_api_keys(app)
+    apply_api_keys(app, runtime_api_keys)
+    spotify_ready_initial = bool(app.extensions.get('spotify_credentials_ready', False))
 
     runtime_download_settings = get_download_settings(app)
     apply_download_settings(app, runtime_download_settings, refresh_client=False)
@@ -129,36 +132,38 @@ def create_app():
     progress_publisher = BrokerPublisher(app.extensions['progress_broker'])
     app.extensions['spotdl_ready'] = False
     spotdl_client = None
-    try:
-        spotdl_client = build_default_client(app_logger=app.logger)
-        app.extensions['spotdl_ready'] = True
-        # Progress hook publishes to broker for SSE
-        def _spotdl_progress(ev: dict):
-            try:
-                app.logger.info(
-                    "SpotDL: %s - %s (%s%%)",
-                    ev.get('song_display_name'), ev.get('status'), ev.get('progress')
-                )
-                app.extensions['progress_broker'].publish(ev)
-            except Exception:
-                pass
-        spotdl_client.set_progress_callback(_spotdl_progress, web_ui=True)
-        app.extensions['spotdl_client'] = spotdl_client
-        app.logger.info(
-            "SpotDL client ready: threads=%s, format=%s, providers=%s",
-            spotdl_client.spotdl.downloader.settings.get('threads'),
-            spotdl_client.spotdl.downloader.settings.get('format'),
-            spotdl_client.spotdl.downloader.settings.get('audio_providers'),
-        )
-    except Exception as e:
-        # Log full traceback to aid diagnosing missing deps (ffmpeg/yt-dlp),
-        # credential issues, or Windows event loop quirks.
-        app.extensions['spotdl_ready'] = False
-        app.logger.warning(
-            "SpotDL client not initialized; download features unavailable: %s",
-            e,
-            exc_info=True,
-        )
+    if spotify_ready_initial:
+        try:
+            spotdl_client = build_default_client(app_logger=app.logger)
+            app.extensions['spotdl_ready'] = True
+
+            def _spotdl_progress(ev: dict):
+                try:
+                    app.logger.info(
+                        "SpotDL: %s - %s (%s%%)",
+                        ev.get('song_display_name'), ev.get('status'), ev.get('progress')
+                    )
+                    app.extensions['progress_broker'].publish(ev)
+                except Exception:
+                    pass
+
+            spotdl_client.set_progress_callback(_spotdl_progress, web_ui=True)
+            app.extensions['spotdl_client'] = spotdl_client
+            app.logger.info(
+                "SpotDL client ready: threads=%s, format=%s, providers=%s",
+                spotdl_client.spotdl.downloader.settings.get('threads'),
+                spotdl_client.spotdl.downloader.settings.get('format'),
+                spotdl_client.spotdl.downloader.settings.get('audio_providers'),
+            )
+        except Exception as e:
+            app.extensions['spotdl_ready'] = False
+            app.logger.warning(
+                "SpotDL client not initialized; download features unavailable: %s",
+                e,
+                exc_info=True,
+            )
+    else:
+        app.logger.info("SpotDL client initialization skipped: Spotify credentials not configured.")
 
     # Build domain services to keep orchestration wiring at the app boundary
     metadata_service = MetadataService(
@@ -269,6 +274,7 @@ if __name__ == '__main__':
     logger.info("Starting Flask application...")
     # Enable threaded mode so SSE can stream while downloads run in parallel requests
     app.run(debug=Config.DEBUG, host='0.0.0.0', port=5000, threaded=True)
+
 
 
 

@@ -13,6 +13,7 @@ import { usePlayer } from '../../../player/PlayerContext';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { API_BASE_URL, endpoints } from '../../../api/client';
 import { get, post } from '../../../api/http';
+import { useSettingsStatus } from '../../../shared/context/SettingsStatusContext.jsx';
 
 const extractSpotifyId = (link) => {
   if (!link) return null;
@@ -64,6 +65,7 @@ const SpotifyDownloadPage = () => {
   const location = useLocation();
   const player = usePlayer();
   const { user } = useAuth();
+  const { spotdlReady, loading: settingsLoading } = useSettingsStatus();
   const {
     items: albums,
     loading: historyLoading,
@@ -87,6 +89,17 @@ const SpotifyDownloadPage = () => {
   const historySectionRef = useRef(null);
 
   const apiBaseUrl = API_BASE_URL;
+  const downloadDisabledReason = useMemo(() => {
+    if (settingsLoading) {
+      return 'Checking the download engine status...';
+    }
+    if (!spotdlReady) {
+      return 'Add your Spotify API keys in Account Settings to enable downloads.';
+    }
+    return null;
+  }, [settingsLoading, spotdlReady]);
+  const downloadFormDisabled = Boolean(downloadDisabledReason);
+
 
   const fetchAlbums = useCallback(async (options = {}) => {
     const { silent = false } = options;
@@ -111,6 +124,9 @@ const SpotifyDownloadPage = () => {
 
   const handleDownload = useCallback(
     async (spotifyLink) => {
+      if (settingsLoading || !spotdlReady) {
+        return;
+      }
       setLoading(true);
       setProgressVisible(true);
       setHasActiveDownload(true);
@@ -132,7 +148,7 @@ const SpotifyDownloadPage = () => {
         setLoading(false);
       }
     },
-    [],
+    [settingsLoading, spotdlReady],
   );
 
   const handleDeleteAlbum = useCallback(
@@ -397,6 +413,9 @@ const SpotifyDownloadPage = () => {
 
   useEffect(() => {
     if (!user) return;
+    if (settingsLoading || !spotdlReady) {
+      return;
+    }
     if (!location.state?.spotifyLinkToDownload || autoDownloadAttempted.current) {
       return;
     }
@@ -404,7 +423,7 @@ const SpotifyDownloadPage = () => {
     handleDownload(location.state.spotifyLinkToDownload);
     autoDownloadAttempted.current = true;
     window.history.replaceState({}, document.title, window.location.pathname);
-  }, [handleDownload, location.state, user]);
+  }, [handleDownload, location.state, settingsLoading, spotdlReady, user]);
 
   useEffect(() => {
     const handleDocumentClick = (event) => {
@@ -506,7 +525,11 @@ const SpotifyDownloadPage = () => {
                 </button>
               ) : null
             }
+            disabled={downloadFormDisabled}
           />
+          {downloadDisabledReason ? (
+            <Message type={settingsLoading ? 'info' : 'warning'} text={downloadDisabledReason} />
+          ) : null}
           {errorMessage && <Message type="error" text={errorMessage} />}
           <DownloadProgress
             visible={progressVisible}

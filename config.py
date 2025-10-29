@@ -55,7 +55,7 @@ class Config:
     # Limit spotDL concurrency to reduce provider rate limits
     SPOTDL_THREADS = _get_int('SPOTDL_THREADS', 6)
     SPOTDL_PRELOAD = _get_bool('SPOTDL_PRELOAD', False)
-    SPOTDL_SIMPLE_TUI = _get_bool('SPOTDL_SIMPLE_TUI', True)
+    SPOTDL_SIMPLE_TUI = _get_bool('SPOTDL_SIMPLE_TUI', False)
 
     # Download orchestration
     DOWNLOAD_QUEUE_WORKERS = _get_int('DOWNLOAD_QUEUE_WORKERS', 2)

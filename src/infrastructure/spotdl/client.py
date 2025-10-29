@@ -62,6 +62,14 @@ class SpotdlClient:
         # Serialize OS-level fd redirection to avoid cross-thread interference
         self._fd_semaphore = threading.Semaphore(1)
 
+        if self._downloader_options is not None:
+            try:
+                setattr(self._downloader_options, "simple_tui", False)
+            except Exception:
+                pass
+
+        os.environ["SPOTDL_SIMPLE_TUI"] = "0"
+
         self._spotdl = None  # created in engine
         self._engine_error: Optional[Exception] = None
         self._engine_queue: "Queue[tuple]" = Queue()
@@ -73,13 +81,15 @@ class SpotdlClient:
             asyncio.set_event_loop(loop)
             try:
                 from spotdl import Spotdl  # type: ignore
+
                 self._spotdl = Spotdl(
                     client_id=self._client_id,
                     client_secret=self._client_secret,
                     downloader_settings=self._downloader_options,
                 )
+
                 try:
-                    self._spotdl.downloader.settings["simple_tui"] = True
+                    self._spotdl.downloader.settings["simple_tui"] = False
                 except Exception:
                     pass
                 self.logger.info(
@@ -392,6 +402,22 @@ class SpotdlClient:
         singleton so SpotDL can be reinitialized with new credentials.
         """
         with self._lock:
+            try:
+                downloader = getattr(self._spotdl, "downloader", None)
+                progress_handler = getattr(downloader, "progress_handler", None)
+                close_handler = getattr(progress_handler, "close", None)
+                if callable(close_handler):
+                    try:
+                        close_handler()
+                    except Exception:
+                        if self.logger:
+                            self.logger.debug(
+                                "Failed to close SpotDL progress handler cleanly",
+                                exc_info=True,
+                            )
+            except Exception:
+                if self.logger:
+                    self.logger.debug("Error while tearing down progress handler", exc_info=True)
             try:
                 if self._engine_queue is not None:
                     self._engine_queue.put(None)
