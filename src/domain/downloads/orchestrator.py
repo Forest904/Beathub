@@ -1,4 +1,6 @@
 import logging
+import time
+from requests import exceptions as requests_exceptions
 import os
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
@@ -204,43 +206,66 @@ class DownloadOrchestrator:
             return []
         discography: List[Dict[str, Any]] = []
         seen_titles: Set[str] = set()
+        attempts = 3
+        albums_results: Optional[Dict[str, Any]] = None
+        last_error: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            try:
+                albums_results = self.sp.artist_albums(artist_id, album_type='album,single', country=market, limit=50)
+                break
+            except requests_exceptions.ReadTimeout as exc:
+                last_error = exc
+                logger.warning('Timed out fetching discography for %s (attempt %s/%s); retrying...', artist_id, attempt, attempts)
+                time.sleep(min(0.5 * attempt, 2.0))
+            except Exception as exc:
+                logger.error('Error fetching artist discography for %s: %s', artist_id, exc, exc_info=True)
+                if cached is not MISSING:
+                    return cached
+                return []
+        if albums_results is None:
+            if last_error is not None:
+                logger.error('Failed to fetch artist discography for %s after %s attempts: %s', artist_id, attempts, last_error)
+            if cached is not MISSING:
+                return cached
+            return []
+        if not albums_results:
+            self._artist_discography_cache.set(cache_key, discography)
+            return discography
+
+        def _ingest(items: Sequence[Dict[str, Any]]) -> None:
+            for album_data in items:
+                name = album_data.get('name')
+                if not name:
+                    continue
+                album_name_lower = name.lower()
+                if album_name_lower in seen_titles:
+                    continue
+                artists = [a.get('name') for a in album_data.get('artists', []) if a.get('name')]
+                images = album_data.get('images') or []
+                image_url = images[0].get('url') if images else None
+                discography.append({
+                    'id': album_data.get('id'),
+                    'name': name,
+                    'album_type': album_data.get('album_type'),
+                    'release_date': album_data.get('release_date'),
+                    'total_tracks': album_data.get('total_tracks'),
+                    'image_url': image_url,
+                    'spotify_url': (album_data.get('external_urls') or {}).get('spotify'),
+                    'artist': artists[0] if artists else 'Various Artists',
+                    'artists': artists,
+                })
+                seen_titles.add(album_name_lower)
+
         try:
-            albums_results = self.sp.artist_albums(artist_id, album_type='album,single', country=market, limit=50)
-            if not albums_results:
-                self._artist_discography_cache.set(cache_key, discography)
-                return discography
-
-            def _ingest(items: Sequence[Dict[str, Any]]) -> None:
-                for album_data in items:
-                    name = album_data.get('name')
-                    if not name:
-                        continue
-                    album_name_lower = name.lower()
-                    if album_name_lower in seen_titles:
-                        continue
-                    artists = [a.get('name') for a in album_data.get('artists', []) if a.get('name')]
-                    images = album_data.get('images') or []
-                    image_url = images[0].get('url') if images else None
-                    discography.append({
-                        'id': album_data.get('id'),
-                        'name': name,
-                        'album_type': album_data.get('album_type'),
-                        'release_date': album_data.get('release_date'),
-                        'total_tracks': album_data.get('total_tracks'),
-                        'image_url': image_url,
-                        'spotify_url': (album_data.get('external_urls') or {}).get('spotify'),
-                        'artist': artists[0] if artists else 'Various Artists',
-                        'artists': artists,
-                    })
-                    seen_titles.add(album_name_lower)
-
             _ingest(albums_results.get('items', []))
             while albums_results.get('next'):
                 albums_results = self.sp.next(albums_results)
                 _ingest(albums_results.get('items', []))
+        except requests_exceptions.ReadTimeout as exc:
+            logger.warning('Timed out paging discography for %s: %s', artist_id, exc)
         except Exception as exc:
-            logger.error('Error fetching artist discography for %s: %s', artist_id, exc, exc_info=True)
-            return []
+            logger.error('Error paging artist discography for %s: %s', artist_id, exc, exc_info=True)
+
         self._artist_discography_cache.set(cache_key, discography)
         return discography
 
@@ -1534,6 +1559,5 @@ class DownloadOrchestrator:
             response_payload["partial_success"] = True
 
         return response_payload
-
 
 

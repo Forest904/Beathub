@@ -1,38 +1,54 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import DownloadProgress from './DownloadProgress';
 import { useDownloadPanel } from '../context/DownloadPanelContext.jsx';
 import { API_BASE_URL } from '../../../api/client';
 
 const GlobalDownloadProgress = () => {
-  const { visible, setHasActiveDownload, hide, handlers, hostElement } = useDownloadPanel();
+  const {
+    visible,
+    isPeeking,
+    hide,
+    setActiveDownload,
+    handlers,
+    primaryHost,
+    overlayHost,
+    jobToken,
+    collectionTitle,
+    setCollectionTitle,
+  } = useDownloadPanel();
+
+  const fallbackHostRef = useRef(null);
 
   const handleActiveChange = useCallback((active) => {
-    const isActive = Boolean(active);
-    setHasActiveDownload(isActive);
+    setActiveDownload(Boolean(active));
     if (handlers?.onActiveChange) {
-      handlers.onActiveChange(isActive);
+      handlers.onActiveChange(Boolean(active));
     }
-  }, [handlers, setHasActiveDownload]);
+  }, [handlers, setActiveDownload]);
 
-  const panel = (
-    <DownloadProgress
-      visible={visible}
-      onClose={hide}
-      baseUrl={API_BASE_URL}
-      onActiveChange={handleActiveChange}
-      onComplete={handlers?.onComplete}
-    />
-  );
-
-  if (hostElement) {
-    return createPortal(panel, hostElement);
-  }
+  const host = overlayHost || primaryHost || fallbackHostRef.current;
+  const shouldRender = Boolean(host);
 
   return (
-    <div className="px-4 pb-4">
-      {panel}
-    </div>
+    <>
+      <div ref={fallbackHostRef} className="hidden" aria-hidden="true" />
+      {shouldRender
+        ? createPortal(
+            <DownloadProgress
+              visible={visible || isPeeking}
+              onClose={hide}
+              baseUrl={API_BASE_URL}
+              onActiveChange={handleActiveChange}
+              onComplete={handlers?.onComplete}
+              jobToken={jobToken}
+              collectionTitle={collectionTitle}
+              onCollectionTitleChange={setCollectionTitle}
+            />,
+            host,
+          )
+        : null}
+    </>
   );
 };
 

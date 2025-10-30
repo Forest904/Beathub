@@ -3,6 +3,7 @@ import { useLocation, Link } from 'react-router-dom';
 import DownloadForm from '../components/DownloadForm';
 import CancelDownloadButton from '../components/CancelDownloadButton';
 import { useDownloadPanel } from '../context/DownloadPanelContext.jsx';
+import DownloadProgress from '../components/DownloadProgress';
 import LyricsPanel from '../components/LyricsPanel';
 import useDownloadHistory from '../hooks/useDownloadHistory';
 import AlbumGallery from '../../../shared/components/AlbumGallery';
@@ -87,7 +88,7 @@ const SpotifyDownloadPage = () => {
   const historySectionRef = useRef(null);
 
   const apiBaseUrl = API_BASE_URL;
-  const { visible: panelVisible, show: showPanel, hide: hidePanel, hasActiveDownload, setHasActiveDownload, registerHandlers, registerHost } = useDownloadPanel();
+  const { visible: panelVisible, show: showPanel, hide: hidePanel, hasActiveDownload, setActiveDownload, registerHandlers, notifyJobStart, jobToken, collectionTitle, setCollectionTitle } = useDownloadPanel();
   const downloadDisabledReason = useMemo(() => {
     if (settingsLoading) {
       return 'Checking the download engine status...';
@@ -98,16 +99,6 @@ const SpotifyDownloadPage = () => {
     return null;
   }, [settingsLoading, spotdlReady]);
   const downloadFormDisabled = Boolean(downloadDisabledReason);
-
-  const progressHostRef = useCallback((node) => {
-    registerHost(node);
-  }, [registerHost]);
-
-  useEffect(() => {
-    if (hasActiveDownload) {
-      showPanel();
-    }
-  }, [hasActiveDownload, showPanel]);
 
 
   const fetchAlbums = useCallback(async (options = {}) => {
@@ -137,9 +128,10 @@ const SpotifyDownloadPage = () => {
         return;
       }
       const existingActive = hasActiveDownload;
+      notifyJobStart();
       setLoading(true);
       showPanel();
-      setHasActiveDownload(true);
+      setActiveDownload(true);
       setActiveLink(spotifyLink);
       setCancelRequested(false);
       setRichMetadata(null);
@@ -158,7 +150,7 @@ const SpotifyDownloadPage = () => {
         setLoading(false);
       }
     },
-    [settingsLoading, spotdlReady, hasActiveDownload, showPanel, setHasActiveDownload]
+    [settingsLoading, spotdlReady, hasActiveDownload, showPanel, setActiveDownload, notifyJobStart]
   );
 
   const handleDeleteAlbum = useCallback(
@@ -237,32 +229,27 @@ const SpotifyDownloadPage = () => {
     }
 
     hidePanel();
-    setHasActiveDownload(false);
+    setActiveDownload(false);
     setActiveJobId(null);
     setActiveLink(null);
     setCancelRequested(false);
     fetchAlbums({ silent: true });
-  }, [activeLink, fetchAlbums, hidePanel, setHasActiveDownload]);
+  }, [activeLink, fetchAlbums, hidePanel, setActiveDownload]);
 
   const handleProgressCancelled = useCallback(() => {
     hidePanel();
-    setHasActiveDownload(false);
+    setActiveDownload(false);
     setActiveJobId(null);
     setActiveLink(null);
     setCancelRequested(false);
-  }, [hidePanel, setHasActiveDownload]);
+  }, [hidePanel, setActiveDownload]);
 
   useEffect(() => {
     registerHandlers({
       onComplete: handleProgressComplete,
-      onActiveChange: (active) => {
-        if (active) {
-          showPanel();
-        }
-      },
     });
     return () => registerHandlers({});
-  }, [registerHandlers, handleProgressComplete, showPanel]);
+  }, [registerHandlers, handleProgressComplete]);
 
 
   const handleCancelClick = useCallback(async () => {
@@ -545,7 +532,17 @@ const SpotifyDownloadPage = () => {
             <Message type={settingsLoading ? 'info' : 'warning'} text={downloadDisabledReason} />
           ) : null}
           {errorMessage && <Message type="error" text={errorMessage} />}
-          <div ref={progressHostRef} />
+          <div className="mt-4">
+            <DownloadProgress
+              visible={panelVisible}
+              onClose={hidePanel}
+              baseUrl={apiBaseUrl}
+              onActiveChange={(active) => setActiveDownload(Boolean(active))}
+              jobToken={jobToken}
+              collectionTitle={collectionTitle}
+              onCollectionTitleChange={setCollectionTitle}
+            />
+          </div>
         </div>
 
         <div ref={historySectionRef} className="bg-brand-50 dark:bg-gray-800 p-6 rounded-lg shadow-lg ring-1 ring-brand-100 dark:ring-0">

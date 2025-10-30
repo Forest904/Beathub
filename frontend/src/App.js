@@ -40,12 +40,12 @@ const App = () => (
                     <Routes>
                       <Route path="/" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
                       <Route path="/browse" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
-                      <Route path="/download" element={<RequireApiKeys requireCredentials><DownloadPage /></RequireApiKeys>} />
+                      <Route path="/download" element={<RequireApiKeys><DownloadPage /></RequireApiKeys>} />
                       <Route path="/playlists" element={<RequireApiKeys><MyPlaylistsPage /></RequireApiKeys>} />
                       <Route path="/favorites" element={<RequireApiKeys><FavoritesPage /></RequireApiKeys>} />
                       <Route path="/artist/:artistId" element={<RequireApiKeys><ArtistDetailsPage /></RequireApiKeys>} />
                       <Route path="/album/:albumId" element={<RequireApiKeys><AlbumDetailsPage /></RequireApiKeys>} />
-                      <Route path="/burn-cd" element={<RequireApiKeys requireCredentials><CDBurnerPage /></RequireApiKeys>} />
+                      <Route path="/burn-cd" element={<RequireApiKeys><CDBurnerPage /></RequireApiKeys>} />
                       <Route path="/settings" element={<SettingsPage />} />
                       <Route path="/login" element={<LoginPage />} />
                       <Route path="/register" element={<RegisterPage />} />
@@ -54,7 +54,9 @@ const App = () => (
                   <Footer />
                 </div>
               </Router>
-              <GlobalDownloadProgress />
+              <div className="hidden">
+                <GlobalDownloadProgress />
+              </div>
               <PlayerBar />
             </PlayerProvider>
           </DownloadPanelProvider>

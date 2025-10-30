@@ -9,7 +9,7 @@ const INITIAL_OVERALL = {
   overall_progress: 0,
 };
 
-const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChange }) => {
+const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChange, jobToken, collectionTitle, onCollectionTitleChange }) => {
   const esRef = useRef(null);
   const completionNotified = useRef(false);
   const [overall, setOverall] = useState(INITIAL_OVERALL);
@@ -17,9 +17,26 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
   const [songsOrder, setSongsOrder] = useState([]); // maintain stable first-seen order
   // key -> { key, name, status, progress, lastTs }
   
-  const [albumTitle, setAlbumTitle] = useState('');
+  const [albumTitle, setAlbumTitle] = useState(collectionTitle || '');
   const [completedCount, setCompletedCount] = useState(0);
   const [totalExpected, setTotalExpected] = useState(0);
+
+  useEffect(() => {
+    completionNotified.current = false;
+    setOverall(INITIAL_OVERALL);
+    setSongsMap({});
+    setSongsOrder([]);
+    setAlbumTitle(collectionTitle || '');
+    setCompletedCount(0);
+    setTotalExpected(0);
+    if (typeof onCollectionTitleChange === 'function') {
+      onCollectionTitleChange(collectionTitle || '');
+    }
+  }, [jobToken]);
+
+  useEffect(() => {
+    setAlbumTitle(collectionTitle || '');
+  }, [collectionTitle]);
 
   const processEvent = useCallback((payload) => {
     if (!payload) {
@@ -40,7 +57,18 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
     const payloadTitle = payload.song_display_name || payload.song_name || '';
     const hasTrackIdentifierForTitle = Boolean(payload.song_id) || Boolean(payload.spotify_url);
     if (!hasTrackIdentifierForTitle && payloadTitle) {
-      setAlbumTitle((prev) => prev || payloadTitle);
+      setAlbumTitle((prev) => {
+        if (prev) {
+          if (!collectionTitle && typeof onCollectionTitleChange === 'function') {
+            onCollectionTitleChange(prev);
+          }
+          return prev;
+        }
+        if (typeof onCollectionTitleChange === 'function') {
+          onCollectionTitleChange(payloadTitle);
+        }
+        return payloadTitle;
+      });
     }
 
     const key = payload.song_id || payload.spotify_url || payload.song_display_name || payload.song_name;
@@ -198,6 +226,9 @@ DownloadProgress.propTypes = {
   baseUrl: PropTypes.string,
   onComplete: PropTypes.func,
   onActiveChange: PropTypes.func,
+  jobToken: PropTypes.number,
+  collectionTitle: PropTypes.string,
+  onCollectionTitleChange: PropTypes.func,
 };
 
 DownloadProgress.defaultProps = {
@@ -205,6 +236,9 @@ DownloadProgress.defaultProps = {
   baseUrl: undefined,
   onComplete: undefined,
   onActiveChange: undefined,
+  jobToken: 0,
+  collectionTitle: '',
+  onCollectionTitleChange: undefined,
 };
 
 export default DownloadProgress;
