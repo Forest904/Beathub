@@ -62,10 +62,18 @@ class JobQueue:
         """Submit a job if not present; returns existing job for idempotency."""
         resolved_user_id = self._resolve_user_id(user_id)
         with self._lock:
+            # Enforce single active download per user (pending or in_progress)
+            # If an active job exists for this user, return it instead of enqueuing a new one.
+            for j in self._jobs.values():
+                if j.user_id == resolved_user_id and j.status in ("pending", "in_progress"):
+                    return j
             key = (resolved_user_id, link)
             jid = self._by_link.get(key)
             if jid:
-                return self._jobs[jid]
+                existing = self._jobs.get(jid)
+                if existing and existing.status in ("pending", "in_progress"):
+                    return existing
+                self._by_link.pop(key, None)
             job = Job(id=str(uuid.uuid4()), link=link, user_id=resolved_user_id)
             self._jobs[job.id] = job
             self._by_link[key] = job.id
@@ -81,6 +89,40 @@ class JobQueue:
         key = (resolved_user_id, link)
         jid = self._by_link.get(key)
         return self._jobs.get(jid) if jid else None
+
+    def get_active_for_user(self, user_id: Optional[int] = None) -> Optional[Job]:
+        """Return active (pending or in_progress) job for user if any."""
+        resolved_user_id = self._resolve_user_id(user_id)
+        with self._lock:
+            for j in self._jobs.values():
+                if j.user_id == resolved_user_id and j.status in ("pending", "in_progress"):
+                    return j
+        return None
+
+    def cancel_active_for_user(self, user_id: Optional[int] = None, *, timeout: float = 8.0) -> Optional[str]:
+        """Request cancellation of the active job for a user and wait briefly.
+
+        Returns the cancelled job_id if a job was found, otherwise None.
+        """
+        resolved_user_id = self._resolve_user_id(user_id)
+        job_id: Optional[str] = None
+        with self._lock:
+            for j in self._jobs.values():
+                if j.user_id == resolved_user_id and j.status in ("pending", "in_progress"):
+                    j.cancel_event.set()
+                    j.status = "cancelled"
+                    j.result = {"status": "error", "error_code": "cancelled", "message": "Job cancelled"}
+                    self._update_job_status(j, status=j.status, result=j.result)
+                    j.event.set()
+                    job_id = j.id
+                    break
+        if job_id is not None and timeout > 0:
+            try:
+                import time
+                time.sleep(min(timeout, 0.15))
+            except Exception:
+                pass
+        return job_id
 
     def wait(self, job_id: str, timeout: Optional[float] = None) -> Optional[JobResult]:
         job = self._jobs.get(job_id)

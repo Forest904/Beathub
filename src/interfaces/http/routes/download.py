@@ -62,6 +62,7 @@ def download_spotify_item_api():
     data = request.get_json() or {}
     spotify_link = data.get('spotify_link')
     async_mode = bool(data.get('async', False))
+    force_mode = bool(data.get('force', False))
 
     if not spotify_link:
         return jsonify({"status": "error", "message": "Spotify link is required."}), 400
@@ -69,6 +70,12 @@ def download_spotify_item_api():
     logger.info(f"Received download request for: {spotify_link} (async={async_mode})")
 
     # If job queue is available, use it for idempotent handling and parallelism
+    if jobs is not None and async_mode and force_mode:
+        # Cancel any active job for this user before starting a new one
+        try:
+            jobs.cancel_active_for_user(user_id=_resolve_user_id())
+        except Exception:
+            pass
     if jobs is not None:
         job = jobs.submit(spotify_link, user_id=_resolve_user_id())
         if async_mode:

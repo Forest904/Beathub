@@ -104,21 +104,6 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
   }, [onActiveChange, onComplete]);
 
   useEffect(() => {
-    if (!visible) {
-      if (esRef.current && typeof esRef.current.stop === 'function') {
-        esRef.current.stop();
-        esRef.current = null;
-      }
-      completionNotified.current = false;
-      setOverall(INITIAL_OVERALL);
-      setSongsMap({});
-      setSongsOrder([]);
-      setAlbumTitle('');
-      setCompletedCount(0);
-      setTotalExpected(0);
-      return undefined;
-    }
-
     const streamUrl = baseUrl ? `${baseUrl}/api/progress/stream` : endpoints.progressStream();
     const subscription = createProgressSubscription(streamUrl, {
       onMessage: processEvent,
@@ -133,7 +118,7 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
         esRef.current = null;
       }
     };
-  }, [baseUrl, processEvent, visible]);
+  }, [baseUrl, processEvent]);
 
   const overallPercentage = useMemo(() => {
     // Prefer backend-provided aggregate progress when available

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, Link } from 'react-router-dom';
 import DownloadForm from '../components/DownloadForm';
 import CancelDownloadButton from '../components/CancelDownloadButton';
-import DownloadProgress from '../components/DownloadProgress';
+import { useDownloadPanel } from '../context/DownloadPanelContext.jsx';
 import LyricsPanel from '../components/LyricsPanel';
 import useDownloadHistory from '../hooks/useDownloadHistory';
 import AlbumGallery from '../../../shared/components/AlbumGallery';
@@ -74,9 +74,7 @@ const SpotifyDownloadPage = () => {
   } = useDownloadHistory();
   const [loading, setLoading] = useState(false);
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
-  const [progressVisible, setProgressVisible] = useState(false);
   const [richMetadata, setRichMetadata] = useState(null);
-  const [hasActiveDownload, setHasActiveDownload] = useState(false);
   const [activeJobId, setActiveJobId] = useState(null);
   const [activeLink, setActiveLink] = useState(null);
   const [cancelRequested, setCancelRequested] = useState(false);
@@ -89,6 +87,7 @@ const SpotifyDownloadPage = () => {
   const historySectionRef = useRef(null);
 
   const apiBaseUrl = API_BASE_URL;
+  const { visible: panelVisible, show: showPanel, hide: hidePanel, hasActiveDownload, setHasActiveDownload, registerHandlers, registerHost } = useDownloadPanel();
   const downloadDisabledReason = useMemo(() => {
     if (settingsLoading) {
       return 'Checking the download engine status...';
@@ -99,6 +98,16 @@ const SpotifyDownloadPage = () => {
     return null;
   }, [settingsLoading, spotdlReady]);
   const downloadFormDisabled = Boolean(downloadDisabledReason);
+
+  const progressHostRef = useCallback((node) => {
+    registerHost(node);
+  }, [registerHost]);
+
+  useEffect(() => {
+    if (hasActiveDownload) {
+      showPanel();
+    }
+  }, [hasActiveDownload, showPanel]);
 
 
   const fetchAlbums = useCallback(async (options = {}) => {
@@ -127,8 +136,9 @@ const SpotifyDownloadPage = () => {
       if (settingsLoading || !spotdlReady) {
         return;
       }
+      const existingActive = hasActiveDownload;
       setLoading(true);
-      setProgressVisible(true);
+      showPanel();
       setHasActiveDownload(true);
       setActiveLink(spotifyLink);
       setCancelRequested(false);
@@ -137,7 +147,7 @@ const SpotifyDownloadPage = () => {
 
       try {
         // Start async job so it can be cancelled; backend returns 202 with job_id
-        const data = await post(endpoints.downloads.start(), { spotify_link: spotifyLink, async: true });
+        const data = await post(endpoints.downloads.start(), { spotify_link: spotifyLink, async: true, force: existingActive });
         if (data && data.job_id) {
           setActiveJobId(data.job_id);
         }
@@ -148,7 +158,7 @@ const SpotifyDownloadPage = () => {
         setLoading(false);
       }
     },
-    [settingsLoading, spotdlReady],
+    [settingsLoading, spotdlReady, hasActiveDownload, showPanel, setHasActiveDownload]
   );
 
   const handleDeleteAlbum = useCallback(
@@ -180,15 +190,6 @@ const SpotifyDownloadPage = () => {
     },
     [removeAlbum, selectedAlbumId],
   );
-
-  const handleActiveChange = useCallback((active) => {
-    setHasActiveDownload(Boolean(active));
-  }, []);
-
-  // Ensure progress panel becomes visible whenever an active download starts
-  useEffect(() => {
-    if (hasActiveDownload) setProgressVisible(true);
-  }, [hasActiveDownload]);
 
   const handleProgressComplete = useCallback((completionPayload) => {
     const normalizedStatus = (() => {
@@ -235,21 +236,34 @@ const SpotifyDownloadPage = () => {
       setPendingSelection(null);
     }
 
-    setProgressVisible(false);
+    hidePanel();
     setHasActiveDownload(false);
     setActiveJobId(null);
     setActiveLink(null);
     setCancelRequested(false);
     fetchAlbums({ silent: true });
-  }, [activeLink, fetchAlbums]);
+  }, [activeLink, fetchAlbums, hidePanel, setHasActiveDownload]);
 
   const handleProgressCancelled = useCallback(() => {
-    setProgressVisible(false);
+    hidePanel();
     setHasActiveDownload(false);
     setActiveJobId(null);
     setActiveLink(null);
     setCancelRequested(false);
-  }, []);
+  }, [hidePanel, setHasActiveDownload]);
+
+  useEffect(() => {
+    registerHandlers({
+      onComplete: handleProgressComplete,
+      onActiveChange: (active) => {
+        if (active) {
+          showPanel();
+        }
+      },
+    });
+    return () => registerHandlers({});
+  }, [registerHandlers, handleProgressComplete, showPanel]);
+
 
   const handleCancelClick = useCallback(async () => {
     if (!activeJobId && !activeLink) return;
@@ -330,9 +344,9 @@ const SpotifyDownloadPage = () => {
   // If instructed, show the progress panel immediately (e.g., from navigation shortcuts)
   useEffect(() => {
     if (location.state && location.state.showProgressPanel) {
-      setProgressVisible(true);
+      showPanel();
     }
-  }, [location.state]);
+  }, [location.state, showPanel]);
 
   useEffect(() => {
     if (!pendingSelection) return undefined;
@@ -515,13 +529,13 @@ const SpotifyDownloadPage = () => {
               ) : null
             }
             rightAction={
-              hasActiveDownload || progressVisible ? (
+              hasActiveDownload || panelVisible ? (
                 <button
                   type="button"
-                  onClick={() => setProgressVisible((prev) => !prev)}
+                  onClick={() => (panelVisible ? hidePanel() : showPanel())}
                   className="text-sm px-3 py-2 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 whitespace-nowrap dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200"
                 >
-                  {progressVisible ? 'Hide Panel' : 'Show Panel'}
+                  {panelVisible ? 'Hide Panel' : 'Show Panel'}
                 </button>
               ) : null
             }
@@ -531,16 +545,7 @@ const SpotifyDownloadPage = () => {
             <Message type={settingsLoading ? 'info' : 'warning'} text={downloadDisabledReason} />
           ) : null}
           {errorMessage && <Message type="error" text={errorMessage} />}
-          <DownloadProgress
-            visible={progressVisible}
-            onClose={() => setProgressVisible(false)}
-            baseUrl={apiBaseUrl}
-            onActiveChange={handleActiveChange}
-            onComplete={handleProgressComplete}
-            onCancelled={handleProgressCancelled}
-            jobId={activeJobId || undefined}
-            link={activeLink || undefined}
-          />
+          <div ref={progressHostRef} />
         </div>
 
         <div ref={historySectionRef} className="bg-brand-50 dark:bg-gray-800 p-6 rounded-lg shadow-lg ring-1 ring-brand-100 dark:ring-0">

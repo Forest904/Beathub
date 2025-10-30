@@ -20,6 +20,8 @@ import RegisterPage from './pages/RegisterPage';
 import MyPlaylistsPage from './features/playlists/pages/MyPlaylistsPage.jsx';
 import FavoritesPage from './features/favorites/pages/FavoritesPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import { DownloadPanelProvider } from './features/downloads/context/DownloadPanelContext.jsx';
+import GlobalDownloadProgress from './features/downloads/components/GlobalDownloadProgress.jsx';
 
 const queryClient = new QueryClient();
 
@@ -28,31 +30,34 @@ const App = () => (
     <AuthProvider>
       <SettingsStatusProvider>
         <ThemeProvider>
-          <PlayerProvider>
-            <Router>
-              <ScrollToTop />
-              <div className="flex min-h-screen flex-col bg-brand-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-                <Header />
-                <main className="flex-1 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-                  <Routes>
-                    <Route path="/" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
-                    <Route path="/browse" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
-                    <Route path="/download" element={<RequireApiKeys requireCredentials><DownloadPage /></RequireApiKeys>} />
-                    <Route path="/playlists" element={<RequireApiKeys><MyPlaylistsPage /></RequireApiKeys>} />
-                    <Route path="/favorites" element={<RequireApiKeys><FavoritesPage /></RequireApiKeys>} />
-                    <Route path="/artist/:artistId" element={<RequireApiKeys><ArtistDetailsPage /></RequireApiKeys>} />
-                    <Route path="/album/:albumId" element={<RequireApiKeys><AlbumDetailsPage /></RequireApiKeys>} />
-                    <Route path="/burn-cd" element={<RequireApiKeys requireCredentials><CDBurnerPage /></RequireApiKeys>} />
-                    <Route path="/settings" element={<SettingsPage />} />
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/register" element={<RegisterPage />} />
-                  </Routes>
-                </main>
-                <Footer />
-              </div>
-            </Router>
-            <PlayerBar />
-          </PlayerProvider>
+          <DownloadPanelProvider>
+            <PlayerProvider>
+              <Router>
+                <ScrollToTop />
+                <div className="flex min-h-screen flex-col bg-brand-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+                  <Header />
+                  <main className="flex-1 bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+                    <Routes>
+                      <Route path="/" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
+                      <Route path="/browse" element={<RequireApiKeys><ArtistBrowserPage /></RequireApiKeys>} />
+                      <Route path="/download" element={<RequireApiKeys requireCredentials><DownloadPage /></RequireApiKeys>} />
+                      <Route path="/playlists" element={<RequireApiKeys><MyPlaylistsPage /></RequireApiKeys>} />
+                      <Route path="/favorites" element={<RequireApiKeys><FavoritesPage /></RequireApiKeys>} />
+                      <Route path="/artist/:artistId" element={<RequireApiKeys><ArtistDetailsPage /></RequireApiKeys>} />
+                      <Route path="/album/:albumId" element={<RequireApiKeys><AlbumDetailsPage /></RequireApiKeys>} />
+                      <Route path="/burn-cd" element={<RequireApiKeys requireCredentials><CDBurnerPage /></RequireApiKeys>} />
+                      <Route path="/settings" element={<SettingsPage />} />
+                      <Route path="/login" element={<LoginPage />} />
+                      <Route path="/register" element={<RegisterPage />} />
+                    </Routes>
+                  </main>
+                  <Footer />
+                </div>
+              </Router>
+              <GlobalDownloadProgress />
+              <PlayerBar />
+            </PlayerProvider>
+          </DownloadPanelProvider>
         </ThemeProvider>
       </SettingsStatusProvider>
     </AuthProvider>
@@ -60,4 +65,3 @@ const App = () => (
 );
 
 export default App;
-
