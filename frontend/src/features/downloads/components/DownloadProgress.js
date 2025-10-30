@@ -15,6 +15,11 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
   const [overall, setOverall] = useState(INITIAL_OVERALL);
   const [songsMap, setSongsMap] = useState({}); // key -> { key, name, status, progress, lastTs }
   const [songsOrder, setSongsOrder] = useState([]); // maintain stable first-seen order
+  // key -> { key, name, status, progress, lastTs }
+  
+  const [albumTitle, setAlbumTitle] = useState('');
+  const [completedCount, setCompletedCount] = useState(0);
+  const [totalExpected, setTotalExpected] = useState(0);
 
   const processEvent = useCallback((payload) => {
     if (!payload) {
@@ -27,8 +32,21 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
       overall_progress: payload.overall_progress ?? prev.overall_progress ?? 0,
     }));
 
+    if (typeof payload.overall_total === 'number' && payload.overall_total > 0) {
+      setTotalExpected((prev) => (prev > 0 ? Math.max(prev, payload.overall_total) : payload.overall_total));
+    }
+
+    // Capture album title from album-level events (no track identifiers)
+    const payloadTitle = payload.song_display_name || payload.song_name || '';
+    const hasTrackIdentifierForTitle = Boolean(payload.song_id) || Boolean(payload.spotify_url);
+    if (!hasTrackIdentifierForTitle && payloadTitle) {
+      setAlbumTitle((prev) => prev || payloadTitle);
+    }
+
     const key = payload.song_id || payload.spotify_url || payload.song_display_name || payload.song_name;
-    if (key) {
+    // Only render per-track bars; ignore album-level entries without identifiers
+    const hasTrackIdentifier = Boolean(payload.song_id) || Boolean(payload.spotify_url);
+    if (key && hasTrackIdentifier) {
       const name = payload.song_display_name || payload.song_name || key;
       const status = payload.status || null;
       const progress = Number(payload.progress ?? 0);
@@ -41,6 +59,7 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
       const isSongComplete = normalizedProgress >= 100 || statusLower.includes('complete') || statusLower.includes('done');
 
       if (isSongComplete) {
+        setCompletedCount((prev) => prev + 1);
         setSongsMap((prev) => {
           if (!prev[key]) return prev;
           const next = { ...prev };
@@ -94,6 +113,9 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
       setOverall(INITIAL_OVERALL);
       setSongsMap({});
       setSongsOrder([]);
+      setAlbumTitle('');
+      setCompletedCount(0);
+      setTotalExpected(0);
       return undefined;
     }
 
@@ -114,10 +136,15 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
   }, [baseUrl, processEvent, visible]);
 
   const overallPercentage = useMemo(() => {
-    if (!overall.overall_total) return 0;
-    const raw = (Number(overall.overall_completed || 0) / Number(overall.overall_total)) * 100;
+    // Prefer backend-provided aggregate progress when available
+    const p = Number(overall.overall_progress || 0);
+    if (!Number.isNaN(p) && p > 0) {
+      return Math.max(0, Math.min(100, Math.round(p)));
+    }
+    if (!totalExpected) return 0;
+    const raw = (Number(completedCount || 0) / Number(totalExpected)) * 100;
     return Math.max(0, Math.min(100, Math.round(raw)));
-  }, [overall.overall_completed, overall.overall_total]);
+  }, [overall.overall_progress, completedCount, totalExpected]);
 
   const songList = useMemo(() => {
     // Render in stable first-seen order; completed bars are removed above
@@ -136,7 +163,7 @@ const DownloadProgress = ({ visible, onClose, baseUrl, onComplete, onActiveChang
 
       <div className="mb-3">
         <div className="text-sm text-slate-700 dark:text-gray-300">
-          Overall: {overall.overall_completed} / {overall.overall_total}
+          Overall download progress for {albumTitle || 'current selection'}: {completedCount} / {totalExpected || overall.overall_total || 0}
         </div>
         <div className="w-full bg-brand-200 dark:bg-gray-700 rounded h-3 mt-1">
           <div className="bg-brand-600 h-3 rounded" style={{ width: `${overallPercentage}%` }} />
