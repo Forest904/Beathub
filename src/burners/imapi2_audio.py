@@ -5,6 +5,8 @@ import contextlib
 import threading
 import logging
 import time
+import importlib
+from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 # We rely on comtypes to access IMAPI v2 COM interfaces
@@ -22,6 +24,103 @@ class IMAPIUnavailableError(RuntimeError):
 
 
 _THREAD_STATE = threading.local()
+_TYPELIB_PATCH_LOCK = threading.Lock()
+_TYPELIB_PATCH_DONE = False
+_STDOLE_REQUIRED = (
+    "OLE_YPOS_HIMETRIC",
+    "OLE_XPOS_HIMETRIC",
+    "OLE_XSIZE_HIMETRIC",
+)
+
+
+def _ensure_stdole_typeinfo(logger: Optional[logging.Logger] = None) -> None:
+    """Work around comtypes stdole regeneration bugs on Python 3.12+.
+
+    Some comtypes releases generate ``comtypes.gen.stdole`` without key
+    constants (notably ``OLE_YPOS_HIMETRIC``) which breaks IMAPI2.
+    We detect the broken import once per process and force comtypes to
+    regenerate the typelibrary modules in-place.
+    """
+    if comtypes is None or cc is None:
+        return
+
+    global _TYPELIB_PATCH_DONE
+    if _TYPELIB_PATCH_DONE:
+        return
+
+    with _TYPELIB_PATCH_LOCK:
+        if _TYPELIB_PATCH_DONE:
+            return
+
+        try:
+            stdole = importlib.import_module("comtypes.gen.stdole")
+        except ImportError as exc:
+            if "OLE_YPOS_HIMETRIC" not in str(exc):
+                raise IMAPIUnavailableError("Failed to import comtypes stdole typelibrary") from exc
+            stdole = _regenerate_stdole_typelib(logger, reason=str(exc))
+        else:
+            missing = [name for name in _STDOLE_REQUIRED if not hasattr(stdole, name)]
+            if missing:
+                stdole = _regenerate_stdole_typelib(logger, reason=f"missing {missing}")
+
+        missing_after = [name for name in _STDOLE_REQUIRED if not hasattr(stdole, name)]
+        if missing_after:
+            raise IMAPIUnavailableError(
+                f"comtypes stdole typelibrary still missing symbols: {missing_after}"
+            )
+
+        _TYPELIB_PATCH_DONE = True
+
+
+def _regenerate_stdole_typelib(
+    logger: Optional[logging.Logger],
+    *,
+    reason: str,
+):
+    """Force comtypes to rebuild stdole modules when generated code is incomplete."""
+    if logger:
+        logger.debug("Regenerating comtypes stdole typelibrary due to %s", reason)
+
+    try:
+        import comtypes.gen as gen_pkg  # type: ignore
+    except Exception as exc:  # pragma: no cover - defensive
+        raise IMAPIUnavailableError("comtypes.gen package unavailable") from exc
+
+    gen_dir = Path(gen_pkg.__path__[0])
+    module_stems = ("stdole", "_00020430_0000_0000_C000_000000000046_0_2_0")
+
+    for stem in module_stems:
+        for suffix in (".py", ".pyc", ".pyo"):
+            target = gen_dir / f"{stem}{suffix}"
+            try:
+                if target.exists():
+                    target.unlink()
+            except OSError as exc:  # pragma: no cover - filesystem edge
+                if logger:
+                    logger.warning("Failed to delete %s when regenerating stdole: %s", target, exc)
+
+    pycache = gen_dir / "__pycache__"
+    if pycache.is_dir():
+        for stem in module_stems:
+            for cached in pycache.glob(f"{stem}.*"):
+                try:
+                    cached.unlink()
+                except OSError as exc:  # pragma: no cover - filesystem edge
+                    if logger:
+                        logger.warning("Failed to purge cached stdole artefact %s: %s", cached, exc)
+
+    importlib.invalidate_caches()
+
+    try:
+        # stdole32.tlb is shipped with Windows and contains the required automation types.
+        cc.GetModule(("stdole32.tlb", 2, 0))
+    except Exception as exc:
+        raise IMAPIUnavailableError("Unable to regenerate stdole typelibrary via comtypes") from exc
+
+    try:
+        return importlib.import_module("comtypes.gen.stdole")
+    except ImportError as exc:
+        raise IMAPIUnavailableError("stdole typelibrary import still failing after regeneration") from exc
 
 
 def _ensure_com_initialized():
@@ -259,7 +358,11 @@ class IMAPI2AudioBurner:
         # Ensure COM is initialized for whichever thread invokes this
         _ensure_com_initialized()
         if self._disc_master is None:
-            self._disc_master = cc.CreateObject('IMAPI2.MsftDiscMaster2')
+            _ensure_stdole_typeinfo(self._logger)
+            try:
+                self._disc_master = cc.CreateObject('IMAPI2.MsftDiscMaster2')
+            except ImportError as exc:
+                raise IMAPIUnavailableError("IMAPI2 COM interfaces unavailable via comtypes") from exc
         return self._disc_master
 
     def list_recorders(self) -> List[Dict[str, object]]:
